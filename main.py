@@ -49,9 +49,9 @@ def main():
     except Exception as e:
         print(f"Warning: Database initialization failed: {e}")
 
-    # Create and show main window
+    # Create and show main window in maximized mode
     window = MainWindow()
-    window.show()
+    window.showMaximized()
 
     # Start event loop
     sys.exit(app.exec())

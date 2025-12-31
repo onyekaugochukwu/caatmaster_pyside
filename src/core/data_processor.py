@@ -45,14 +45,24 @@ class DataProcessor:
         if creates_columns and column:
             if isinstance(creates_columns, list):
                 # Multiple columns created (e.g., split operations)
-                output_cols = [col_name.format(col=column) for col_name in creates_columns]
-                params['output_cols'] = output_cols
+                # Only generate if output_cols not already provided
+                if 'output_cols' not in params:
+                    output_cols = [col_name.format(column=column) for col_name in creates_columns]
+                    # If only one column, use output_col (singular) instead of output_cols (plural)
+                    if len(output_cols) == 1:
+                        # Only set output_col if not already provided
+                        if 'output_col' not in params:
+                            params['output_col'] = output_cols[0]
+                    else:
+                        params['output_cols'] = output_cols
             elif creates_columns is True:
                 # Single column created
-                naming_pattern = op_info.get('column_naming_pattern', '{column}_{operation}')
-                operation_name = operation_id.split('_')[-1]  # Extract operation suffix
-                output_col = naming_pattern.format(column=column, operation=operation_name)
-                params['output_col'] = output_col
+                # Only generate output_col if not already provided
+                if 'output_col' not in params:
+                    naming_pattern = op_info.get('column_naming_pattern', '{column}_{operation}')
+                    operation_name = operation_id.split('_')[-1]  # Extract operation suffix
+                    output_col = naming_pattern.format(column=column, operation=operation_name)
+                    params['output_col'] = output_col
 
         # Dispatch based on operation type or specific ID
         # Text transformations
@@ -180,6 +190,34 @@ class DataProcessor:
             return self.ai_entity_extraction(df, **params)
         elif operation_id == 'ai_pattern_learn':
             return self.ai_pattern_learning(df, **params)
+        elif operation_id == 'ai_classify':
+            return self.ai_classify(df, **params)
+        elif operation_id == 'ai_summarize':
+            return self.ai_summarize(df, **params)
+        elif operation_id == 'ai_enrich':
+            return self.ai_enrich(df, **params)
+
+        # ML Classification & Prediction
+        elif operation_id == 'ml_classify':
+            return self.ml_classify(df, **params)
+        elif operation_id == 'ml_risk_score':
+            return self.ml_risk_score(df, **params)
+        elif operation_id == 'ml_predict':
+            return self.ml_predict(df, **params)
+
+        # Audit transformations
+        elif operation_id == 'audit_duplicate_detection':
+            return self.audit_duplicate_detection(df, **params)
+        elif operation_id == 'audit_gap_analysis':
+            return self.audit_gap_analysis(df, **params)
+        elif operation_id == 'audit_outlier_detection':
+            return self.audit_outlier_detection(df, **params)
+        elif operation_id == 'audit_round_numbers':
+            return self.audit_round_numbers(df, **params)
+
+        # Statistics group operations
+        elif operation_id == 'stat_add_group_stats':
+            return self.stat_add_group_stats(df, **params)
 
         # Column operations
         elif operation_id == 'column_rename':
@@ -363,9 +401,18 @@ class DataProcessor:
 
     def _ensure_datetime(self, df: pl.DataFrame, column: str):
         """Ensure column is datetime type"""
-        if df[column].dtype == pl.Utf8:
+        col_dtype = df[column].dtype
+
+        # If already datetime type, return as is
+        if isinstance(col_dtype, pl.Datetime) or isinstance(col_dtype, pl.Date):
+            return df[column]
+
+        # If string type, convert to datetime
+        if col_dtype == pl.Utf8:
             return df[column].str.to_datetime()
-        return df[column]
+
+        # For other types, try to convert
+        return df[column].cast(pl.Datetime)
 
     def extract_year(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
         """Extract year"""
@@ -706,6 +753,312 @@ class DataProcessor:
     def ai_pattern_learning(self, df: pl.DataFrame, column: str, output_col: str, pattern: str = None) -> pl.DataFrame:
         """Pattern learning (flash fill) - placeholder"""
         return df.with_columns(pl.col(column).alias(output_col))
+
+    # ============================================================================
+    # ML CLASSIFICATION & PREDICTION IMPLEMENTATIONS
+    # ============================================================================
+
+    def ml_classify(self, df: pl.DataFrame, features: List[str], target: str, output_col: str, probability_col: str,
+                   model_id: str = None, **kwargs) -> pl.DataFrame:
+        """ML Classification - trains model and predicts (simplified)"""
+        try:
+            from sklearn.ensemble import RandomForestClassifier
+            from sklearn.preprocessing import LabelEncoder
+            import numpy as np
+        except ImportError:
+            # Fallback: return mock predictions
+            return df.with_columns([
+                pl.lit("unknown").alias(output_col),
+                pl.lit(0.5).alias(probability_col)
+            ])
+
+        # Prepare features
+        X = df.select(features).to_pandas()
+        y_raw = df[target].to_pandas()
+
+        # Encode target if string
+        le = LabelEncoder()
+        y = le.fit_transform(y_raw.astype(str))
+
+        # Train simple model
+        model = RandomForestClassifier(n_estimators=50, random_state=42)
+        model.fit(X, y)
+
+        # Predict
+        predictions = model.predict(X)
+        probabilities = model.predict_proba(X).max(axis=1)
+
+        # Map back to original labels
+        predicted_labels = le.inverse_transform(predictions)
+
+        return df.with_columns([
+            pl.Series(name=output_col, values=predicted_labels),
+            pl.Series(name=probability_col, values=probabilities)
+        ])
+
+    def ml_risk_score(self, df: pl.DataFrame, group_column: str, features: List[str], output_col: str) -> pl.DataFrame:
+        """Calculate risk score per group"""
+        import numpy as np
+
+        # Normalize features
+        feature_data = df.select(features).to_numpy()
+        means = np.mean(feature_data, axis=0)
+        stds = np.std(feature_data, axis=0)
+        stds[stds == 0] = 1
+        normalized = (feature_data - means) / stds
+
+        # Calculate risk as weighted sum of normalized features (simplified)
+        weights = np.ones(len(features)) / len(features)
+        risk_scores = np.dot(normalized, weights)
+        risk_scores = (risk_scores - risk_scores.min()) / (risk_scores.max() - risk_scores.min() + 1e-8)
+
+        return df.with_columns(pl.Series(name=output_col, values=risk_scores))
+
+    def ml_predict(self, df: pl.DataFrame, model_id: str, features: List[str], output_col: str) -> pl.DataFrame:
+        """Apply trained model to predict new values"""
+        import joblib
+        from pathlib import Path
+
+        # Try to load model
+        model_path = Path(__file__).parent.parent.parent / "models" / f"{model_id}.joblib"
+
+        if not model_path.exists():
+            # Fallback: return original values with mock prediction
+            return df.with_columns(pl.col(features[0]).alias(output_col))
+
+        try:
+            model = joblib.load(model_path)
+            X = df.select(features).to_pandas()
+            predictions = model.predict(X)
+            return df.with_columns(pl.Series(name=output_col, values=predictions))
+        except Exception:
+            return df.with_columns(pl.col(features[0]).alias(output_col))
+
+    # ============================================================================
+    # AI ENRICHMENT IMPLEMENTATIONS
+    # ============================================================================
+
+    def ai_classify(self, df: pl.DataFrame, column: str, categories: List[str], output_col: str,
+                   confidence_col: str, **kwargs) -> pl.DataFrame:
+        """AI Text Classification - simplified keyword-based"""
+        def classify_text(text):
+            if text is None:
+                return "Unknown", 0.0
+            text_lower = str(text).lower()
+            best_category = categories[0] if categories else "Unclassified"
+            best_score = 0.0
+
+            for cat in categories:
+                cat_lower = cat.lower()
+                if cat_lower in text_lower:
+                    return cat, 0.9
+                # Partial match score
+                words = cat_lower.split()
+                match_count = sum(1 for w in words if w in text_lower)
+                score = match_count / len(words) if words else 0
+                if score > best_score:
+                    best_score = score
+                    best_category = cat
+
+            return best_category, best_score
+
+        results = [classify_text(v) for v in df[column]]
+        return df.with_columns([
+            pl.Series(name=output_col, values=[r[0] for r in results]),
+            pl.Series(name=confidence_col, values=[r[1] for r in results])
+        ])
+
+    def ai_summarize(self, df: pl.DataFrame, column: str, max_length: int, output_col: str) -> pl.DataFrame:
+        """AI Summarize - simplified extraction"""
+        def summarize(text):
+            if text is None:
+                return ""
+            text = str(text)
+            # Simple truncation with ellipsis
+            if len(text) > max_length:
+                return text[:max_length - 3] + "..."
+            return text
+
+        return df.with_columns(
+            pl.col(column).map_elements(summarize, return_dtype=pl.Utf8).alias(output_col)
+        )
+
+    def ai_enrich(self, df: pl.DataFrame, column: str, enrichment_type: str, output_col: str) -> pl.DataFrame:
+        """AI Enrich - simplified enrichment based on type"""
+        def enrich(value):
+            if value is None:
+                return ""
+            value = str(value)
+            if enrichment_type == "industry":
+                # Simple heuristic classification
+                keywords = {"tech": "Technology", "health": "Healthcare", "finance": "Financial",
+                           "retail": "Retail", "manufacturing": "Manufacturing"}
+                for kw, ind in keywords.items():
+                    if kw in value.lower():
+                        return ind
+                return "Other"
+            elif enrichment_type == "sentiment":
+                return "Neutral"
+            elif enrichment_type == "category":
+                return value.split()[0] if value else "Unknown"
+            else:
+                return value
+
+        return df.with_columns(
+            pl.col(column).map_elements(enrich, return_dtype=pl.Utf8).alias(output_col)
+        )
+
+    # ============================================================================
+    # AUDIT IMPLEMENTATIONS
+    # ============================================================================
+
+    def audit_duplicate_detection(self, df: pl.DataFrame, columns: List[str], output_col: str,
+                                  flag_col: str, **kwargs) -> pl.DataFrame:
+        """Detect duplicate rows based on specified columns"""
+        # Create a grouping key
+        select_exprs = [pl.col(c).cast(pl.Utf8).str.replace(r"[^\w]", "_", literal=True).alias(c) for c in columns]
+        temp_df = df.with_columns(select_exprs)
+
+        # Create group IDs
+        group_keys = temp_df.select(columns).with_columns(
+            pl.concat_str(columns, separator="_").alias("_group_key")
+        )["_group_key"].to_list()
+
+        # Count occurrences
+        from collections import Counter
+        counts = Counter(group_keys)
+
+        # Assign group IDs and flags
+        group_ids = []
+        is_duplicates = []
+        seen = {}
+
+        for i, key in enumerate(group_keys):
+            if key not in seen:
+                seen[key] = len(seen)
+            group_ids.append(seen[key])
+            is_duplicates.append(counts[key] > 1)
+
+        return df.with_columns([
+            pl.Series(name=output_col, values=group_ids),
+            pl.Series(name=flag_col, values=is_duplicates)
+        ])
+
+    def audit_gap_analysis(self, df: pl.DataFrame, id_column: str, output_col: str,
+                          missing_count_col: str, **kwargs) -> pl.DataFrame:
+        """Detect gaps in sequential ID column"""
+        # Sort by ID and detect gaps
+        ids = df[id_column].to_numpy()
+        is_sorted = np.all(ids[:-1] <= ids[1:])
+
+        if not is_sorted:
+            # Sort indices
+            sorted_idx = np.argsort(ids)
+            ids = ids[sorted_idx]
+
+        # Detect gaps
+        is_missing = np.zeros(len(ids), dtype=bool)
+        gaps_after = np.zeros(len(ids), dtype=int)
+
+        if len(ids) > 1:
+            for i in range(len(ids) - 1):
+                expected_diff = ids[i + 1] - ids[i]
+                if expected_diff > 1:
+                    # Mark current as having gap after
+                    is_missing[i] = True
+                    gaps_after[i] = expected_diff - 1
+
+        # If not sorted, map back to original order
+        if not is_sorted:
+            is_missing_orig = np.zeros(len(ids), dtype=bool)
+            gaps_after_orig = np.zeros(len(ids), dtype=int)
+            for orig_idx, sorted_i in enumerate(sorted_idx):
+                is_missing_orig[orig_idx] = is_missing[sorted_i]
+                gaps_after_orig[orig_idx] = gaps_after[sorted_i]
+            is_missing = is_missing_orig
+            gaps_after = gaps_after_orig
+
+        return df.with_columns([
+            pl.Series(name=output_col, values=is_missing),
+            pl.Series(name=missing_count_col, values=gaps_after)
+        ])
+
+    def audit_outlier_detection(self, df: pl.DataFrame, column: str, method: str, output_col: str,
+                               deviation_col: str, **kwargs) -> pl.DataFrame:
+        """Detect statistical outliers for audit"""
+        col_data = df[column].to_numpy()
+        is_outlier = np.zeros(len(col_data), dtype=bool)
+        deviation = np.zeros(len(col_data))
+
+        if method == "zscore" or method == "mad":
+            mean = np.mean(col_data)
+            std = np.std(col_data)
+            if std == 0:
+                std = 1
+            zscores = np.abs((col_data - mean) / std)
+            deviation = zscores
+            is_outlier = zscores > 3.0
+        else:  # IQR method
+            Q1 = np.percentile(col_data, 25)
+            Q3 = np.percentile(col_data, 75)
+            IQR = Q3 - Q1
+            lower = Q1 - 1.5 * IQR
+            upper = Q3 + 1.5 * IQR
+            is_outlier = (col_data < lower) | (col_data > upper)
+            deviation = np.where(col_data < lower, lower - col_data, col_data - upper)
+            deviation = np.clip(deviation, 0, None)
+
+        return df.with_columns([
+            pl.Series(name=output_col, values=is_outlier),
+            pl.Series(name=deviation_col, values=deviation)
+        ])
+
+    def audit_round_numbers(self, df: pl.DataFrame, column: str, threshold: float, output_col: str,
+                           score_col: str, **kwargs) -> pl.DataFrame:
+        """Detect unusually round numbers (potential manipulation)"""
+        def calc_roundness(val):
+            if val is None or val == 0:
+                return 0.0
+            val = abs(float(val))
+            # Calculate ratio of trailing zeros for integers
+            log10 = np.log10(val)
+            mantissa = 10 ** (log10 - np.floor(log10))
+            # Higher score = more round (mantissa close to 1, 10, 100...)
+            round_scores = [1.0, 0.1, 0.01, 0.001]
+            score = max(1 - min(abs(mantissa - r) for r in round_scores), 0)
+            return score
+
+        roundness = [calc_roundness(v) for v in df[column]]
+        is_round = [s >= threshold for s in roundness]
+
+        return df.with_columns([
+            pl.Series(name=output_col, values=is_round),
+            pl.Series(name=score_col, values=roundness)
+        ])
+
+    # ============================================================================
+    # STATISTICS ADD GROUP IMPLEMENTATIONS
+    # ============================================================================
+
+    def stat_add_group_stats(self, df: pl.DataFrame, group_column: str, target_column: str,
+                            calculations: List[str], **kwargs) -> pl.DataFrame:
+        """Add aggregate statistics as columns per group"""
+        result_df = df.clone()
+
+        # Calculate group statistics
+        group_stats = df.group_by(group_column).agg([
+            pl.col(target_column).mean().alias(f"{target_column}_mean"),
+            pl.col(target_column).std().alias(f"{target_column}_std"),
+            pl.col(target_column).min().alias(f"{target_column}_min"),
+            pl.col(target_column).max().alias(f"{target_column}_max"),
+            pl.col(target_column).sum().alias(f"{target_column}_sum"),
+            pl.col(target_column).count().alias(f"{target_column}_count"),
+        ])
+
+        # Join back to original dataframe
+        result_df = result_df.join(group_stats, on=group_column, how="left")
+
+        return result_df
 
     # ============================================================================
     # COLUMN OPERATION IMPLEMENTATIONS

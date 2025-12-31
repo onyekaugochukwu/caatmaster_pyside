@@ -8,7 +8,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QPushButton, QToolButton, QListWidget, QListWidgetItem,
-    QScrollArea, QMenu
+    QScrollArea, QMenu, QSizePolicy
 )
 
 
@@ -109,6 +109,8 @@ class Sidebar(QFrame):
     navigation_requested = Signal(str)  # view_name
     dataset_selected = Signal(str)  # dataset_id
     upload_requested = Signal()  # Request to upload dataset
+    project_edit_requested = Signal()  # Request to edit current project
+    project_delete_requested = Signal()  # Request to delete current project
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -135,13 +137,16 @@ class Sidebar(QFrame):
             client_name = self.current_project.client_name if self.current_project.client_name else "No Client"
             self.client_label.setText(client_name)
 
-            # Update phase button text
-            phase = self.current_project.phase.capitalize() if self.current_project.phase else "Planning"
-            self.planning_btn.setText(phase)
+            # Show project action buttons
+            self.edit_project_btn.setVisible(True)
+            self.delete_project_btn.setVisible(True)
         else:
             self.project_label.setText("No Project Selected")
             self.client_label.setText("No Client")
-            self.planning_btn.setText("Planning")
+
+            # Hide project action buttons
+            self.edit_project_btn.setVisible(False)
+            self.delete_project_btn.setVisible(False)
 
     def _update_datasets_list(self):
         """Update the datasets list with current project's datasets"""
@@ -149,17 +154,11 @@ class Sidebar(QFrame):
         self.dataset_items.clear()
 
         if not self.current_project:
-            no_data_label = QListWidgetItem("No project loaded")
-            no_data_label.setForeground(Qt.gray)
-            self.datasets_list.addItem(no_data_label)
             return
 
         datasets = self.current_project.list_datasets()
 
         if not datasets:
-            no_data_label = QListWidgetItem("No datasets yet")
-            no_data_label.setForeground(Qt.gray)
-            self.datasets_list.addItem(no_data_label)
             return
 
         for dataset in datasets:
@@ -234,20 +233,10 @@ class Sidebar(QFrame):
         header_content = QWidget()
         header_content.setStyleSheet("background-color: #0f172a;")
         header_layout = QVBoxLayout(header_content)
-        header_layout.setContentsMargins(16, 16, 16, 8)
+        header_layout.setContentsMargins(16, 12, 16, 8)
 
-        # Logo/Title
-        title_label = QLabel("CaatMaster")
-        title_label.setStyleSheet("""
-            QLabel {
-                color: white;
-                font-size: 20px;
-                font-weight: bold;
-            }
-        """)
-        header_layout.addWidget(title_label)
-
-        subtitle_label = QLabel("Project Workspace")
+        # Workspace label
+        subtitle_label = QLabel("Workspace")
         subtitle_label.setStyleSheet("""
             QLabel {
                 color: #64748b;
@@ -258,15 +247,42 @@ class Sidebar(QFrame):
 
         layout.addWidget(header_content)
 
-        # Scrollable content area
+        # Scrollable content area - properly structured
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setMinimumHeight(200)  # Ensure scroll area can shrink
+        scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                background-color: #0f172a;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background-color: #1e293b;
+                width: 8px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #475569;
+                border-radius: 4px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #64748b;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
 
+        # Create scroll content widget that holds ALL sidebar items
         scroll_content = QWidget()
+        scroll_content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         scroll_content.setStyleSheet("background-color: #0f172a;")
         scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setContentsMargins(16, 8, 16, 8)
+        scroll_layout.setContentsMargins(16, 8, 16, 16)
         scroll_layout.setSpacing(8)
 
         # Project section
@@ -281,7 +297,11 @@ class Sidebar(QFrame):
         """)
         scroll_layout.addWidget(project_label)
 
-        # Project name
+        # Project name with action buttons
+        project_row = QHBoxLayout()
+        project_row.setContentsMargins(0, 0, 0, 0)
+        project_row.setSpacing(8)
+
         self.project_label = QLabel("No Project Selected")
         self.project_label.setStyleSheet("""
             QLabel {
@@ -290,7 +310,60 @@ class Sidebar(QFrame):
                 padding: 4px 0px;
             }
         """)
-        scroll_layout.addWidget(self.project_label)
+        project_row.addWidget(self.project_label, 1)
+
+        # Project actions container (edit/delete buttons)
+        self.project_actions_widget = QWidget()
+        project_actions_layout = QHBoxLayout(self.project_actions_widget)
+        project_actions_layout.setContentsMargins(0, 0, 0, 0)
+        project_actions_layout.setSpacing(4)
+
+        # Edit project button
+        self.edit_project_btn = QPushButton()
+        self.edit_project_btn.setFixedSize(22, 22)
+        self.edit_project_btn.setText("✏")
+        self.edit_project_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #6b7280;
+                border: none;
+                border-radius: 4px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #374151;
+                color: white;
+            }
+        """)
+        self.edit_project_btn.setCursor(Qt.PointingHandCursor)
+        self.edit_project_btn.clicked.connect(self.project_edit_requested.emit)
+        self.edit_project_btn.setVisible(False)  # Hidden until project is set
+        project_actions_layout.addWidget(self.edit_project_btn)
+
+        # Delete project button
+        self.delete_project_btn = QPushButton()
+        self.delete_project_btn.setFixedSize(22, 22)
+        self.delete_project_btn.setText("🗑")
+        self.delete_project_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #6b7280;
+                border: none;
+                border-radius: 4px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #374151;
+                color: #ef4444;
+            }
+        """)
+        self.delete_project_btn.setCursor(Qt.PointingHandCursor)
+        self.delete_project_btn.clicked.connect(self.project_delete_requested.emit)
+        self.delete_project_btn.setVisible(False)  # Hidden until project is set
+        project_actions_layout.addWidget(self.delete_project_btn)
+
+        project_row.addWidget(self.project_actions_widget)
+        scroll_layout.addLayout(project_row)
 
         # Client name
         self.client_label = QLabel("No Client")
@@ -302,13 +375,6 @@ class Sidebar(QFrame):
             }
         """)
         scroll_layout.addWidget(self.client_label)
-
-        # Phase button
-        self.planning_btn = SidebarButton("Planning")
-        self.planning_btn.setChecked(True)
-        self.planning_btn.update_style(True)
-        self.planning_btn.clicked.connect(lambda: self.navigation_requested.emit("planning"))
-        scroll_layout.addWidget(self.planning_btn)
 
         # Datasets section
         datasets_header = QHBoxLayout()
@@ -374,14 +440,14 @@ class Sidebar(QFrame):
         scroll_layout.addWidget(mode_label)
 
         # Data Workspace button
-        self.data_workspace_btn = SidebarButton("Data Workspace", "💾")
+        self.data_workspace_btn = SidebarButton("Data", "💾")
         self.data_workspace_btn.setChecked(False)
         self.data_workspace_btn.update_style(False)
         self.data_workspace_btn.clicked.connect(lambda: self.navigation_requested.emit("data"))
         scroll_layout.addWidget(self.data_workspace_btn)
 
-        # SQL Workspace button
-        self.sql_workspace_btn = SidebarButton("SQL Workspace", "📝")
+        # SQL Query button
+        self.sql_workspace_btn = SidebarButton("SQL Query", "📝")
         self.sql_workspace_btn.clicked.connect(lambda: self.navigation_requested.emit("sql"))
         scroll_layout.addWidget(self.sql_workspace_btn)
 
@@ -403,18 +469,11 @@ class Sidebar(QFrame):
         self.export_review_btn.clicked.connect(lambda: self.navigation_requested.emit("export_review"))
         scroll_layout.addWidget(self.export_review_btn)
 
-        scroll_layout.addStretch()
+        # Add some spacing
+        scroll_layout.addSpacing(16)
 
-        scroll.setWidget(scroll_content)
-        layout.addWidget(scroll, 1)
-
-        # Bottom section
-        bottom_content = QWidget()
-        bottom_content.setStyleSheet("background-color: #0f172a;")
-        bottom_layout = QVBoxLayout(bottom_content)
-        bottom_layout.setContentsMargins(16, 8, 16, 16)
-
-        # Bottom buttons
+        # Bottom buttons (now INSIDE scroll area for full scrollability)
+        # Back to Projects button
         self.back_btn = QPushButton("← Back to Projects")
         self.back_btn.setStyleSheet("""
             QPushButton {
@@ -431,8 +490,9 @@ class Sidebar(QFrame):
         """)
         self.back_btn.setCursor(Qt.PointingHandCursor)
         self.back_btn.clicked.connect(lambda: self.navigation_requested.emit("projects"))
-        bottom_layout.addWidget(self.back_btn)
+        scroll_layout.addWidget(self.back_btn)
 
+        # Settings button
         self.settings_btn = QPushButton("⚙ Settings")
         self.settings_btn.setStyleSheet("""
             QPushButton {
@@ -449,27 +509,31 @@ class Sidebar(QFrame):
         """)
         self.settings_btn.setCursor(Qt.PointingHandCursor)
         self.settings_btn.clicked.connect(lambda: self.navigation_requested.emit("settings"))
-        bottom_layout.addWidget(self.settings_btn)
+        scroll_layout.addWidget(self.settings_btn)
 
-        layout.addWidget(bottom_content)
+        # Add bottom spacing
+        scroll_layout.addSpacing(16)
+
+        # Set the scroll content as the scroll area widget
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll, 1)
 
     def set_active_button(self, button_name):
         """Set the active navigation button"""
         # Reset all buttons
-        for btn in [self.planning_btn, self.data_workspace_btn, self.sql_workspace_btn]:
+        for btn in [self.data_workspace_btn, self.sql_workspace_btn]:
             btn.setChecked(False)
             btn.update_style(False)
 
         # Set active button
-        if button_name == "planning" and self.planning_btn:
-            self.planning_btn.setChecked(True)
-            self.planning_btn.update_style(True)
-        elif button_name == "data" and self.data_workspace_btn:
-            self.data_workspace_btn.setChecked(True)
-            self.data_workspace_btn.update_style(True)
-        elif button_name == "sql" and self.sql_workspace_btn:
-            self.sql_workspace_btn.setChecked(True)
-            self.sql_workspace_btn.update_style(True)
+        button_map = {
+            "data": self.data_workspace_btn,
+            "sql": self.sql_workspace_btn,
+        }
+
+        if button_name in button_map and button_map[button_name]:
+            button_map[button_name].setChecked(True)
+            button_map[button_name].update_style(True)
 
     def add_dataset(self, dataset):
         """Add a dataset to the sidebar list"""
@@ -484,6 +548,7 @@ class Sidebar(QFrame):
         self.datasets_list.addItem(item)
         self.dataset_items[dataset.id] = item
 
-        # Select the new dataset
+        # Select the new dataset and emit signal
         self.datasets_list.setCurrentItem(item)
         self.current_dataset_id = dataset.id
+        self.dataset_selected.emit(dataset.id)

@@ -8,11 +8,12 @@ from typing import Optional
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QStackedWidget, QStatusBar, QMenuBar, QMenu,
-    QSplitter, QMessageBox, QApplication, QFrame, QLabel
+    QStackedWidget, QStatusBar,
+    QSplitter, QMessageBox, QApplication, QFrame, QLabel,
+    QPushButton, QScrollArea
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize
-from PySide6.QtGui import QAction, QIcon, QKeySequence, QFont
+from PySide6.QtGui import QFont
 
 # Import project management
 from core.project_manager import Project, Dataset, ProjectExporter
@@ -20,8 +21,10 @@ from core.data_processor import LegacyDataProcessor
 from services.export_service import ExportService
 from gui.dialogs.project_dialog import NewProjectDialog, OpenProjectDialog, SaveProjectDialog, DatasetManagerDialog
 
-# Import the new sidebar
+# Import the new sidebar, ribbon and backstage
 from gui.components.sidebar import Sidebar
+from gui.components.ribbon import RibbonBar, ApplicationMenu
+from gui.components.backstage import BackstageView
 
 
 class MainWindow(QMainWindow):
@@ -35,7 +38,7 @@ class MainWindow(QMainWindow):
         self._apply_theme()
         self.setup_auth()
         self.setup_ui()
-        self.create_menus()
+        self.setup_backstage()
         self.create_statusbar()
         self.show_login_dialog()
 
@@ -51,33 +54,6 @@ class MainWindow(QMainWindow):
         self.setStyleSheet("""
             QMainWindow {
                 background-color: #ffffff;
-            }
-            QMenuBar {
-                background-color: #f9fafb;
-                border-bottom: 1px solid #e5e7eb;
-                padding: 4px;
-            }
-            QMenuBar::item {
-                color: #111827;
-                padding: 6px 12px;
-                border-radius: 4px;
-            }
-            QMenuBar::item:selected {
-                background-color: #e5e7eb;
-            }
-            QMenu {
-                background-color: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 6px;
-                padding: 4px;
-            }
-            QMenu::item {
-                color: #111827;
-                padding: 8px 16px;
-                border-radius: 4px;
-            }
-            QMenu::item:selected {
-                background-color: #f3f4f6;
             }
             QStatusBar {
                 background-color: #f9fafb;
@@ -105,43 +81,185 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("CaatMaster - Professional Audit Analytics Tool")
         self.setMinimumSize(1200, 800)
         self.setObjectName("MainWindow")
+        self.setMenuBar(None)  # Remove traditional menu bar
 
         # Create central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        # Main layout
-        main_layout = QHBoxLayout(central_widget)
+        # Main layout - vertical stack: ApplicationMenu, then sidebar+content
+        main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Create the new sidebar (inspired by data_workspace_app.py)
+        # Application Menu (File button + app branding)
+        self.app_menu = ApplicationMenu(main_window=self)
+        main_layout.addWidget(self.app_menu)
+
+        # Create scroll area for middle content (sidebar + content area)
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                background-color: #ffffff;
+                border: none;
+            }
+            QScrollBar:horizontal {
+                background-color: #f3f4f6;
+                height: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:horizontal {
+                background-color: #d1d5db;
+                border-radius: 6px;
+                min-width: 30px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background-color: #9ca3af;
+            }
+            QScrollBar:vertical {
+                background-color: #f3f4f6;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #d1d5db;
+                border-radius: 6px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #9ca3af;
+            }
+        """)
+
+        # Middle area: sidebar + content area
+        middle_area = QWidget()
+        middle_layout = QHBoxLayout(middle_area)
+        middle_layout.setContentsMargins(0, 0, 0, 0)
+        middle_layout.setSpacing(0)
+
+        # Create the new sidebar
         self.sidebar = Sidebar()
         self.sidebar.navigation_requested.connect(self.on_navigation_requested)
         self.sidebar.dataset_selected.connect(self.on_dataset_selected)
         self.sidebar.upload_requested.connect(self.on_upload_requested)
-        main_layout.addWidget(self.sidebar)
+        self.sidebar.project_edit_requested.connect(self.edit_current_project)
+        self.sidebar.project_delete_requested.connect(self.delete_current_project)
+        middle_layout.addWidget(self.sidebar)
 
-        # Content area (right side)
+        # Content area (right side) - Light mode
         content_area = QWidget()
+        content_area.setObjectName("ContentArea")
         content_area.setStyleSheet("""
-            QWidget {
+            QWidget#ContentArea {
                 background-color: #ffffff;
+            }
+            QTableWidget {
+                background-color: white;
+                gridline-color: #e5e7eb;
+                color: #111827;
+            }
+            QTableWidget::item {
+                color: #111827;
+            }
+            QTableWidget::item:selected {
+                background-color: #dbeafe;
+                color: #111827;
+            }
+            QHeaderView::section {
+                background-color: #f9fafb;
+                color: #374151;
             }
         """)
         content_layout = QVBoxLayout(content_area)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
 
+        # Add Ribbon Bar at the top of content area
+        self.ribbon_bar = RibbonBar(main_window=self)
+        self.ribbon_bar.setVisible(False)
+        content_layout.addWidget(self.ribbon_bar)
+
         # Create stacked widget for views
         self.content_stack = QStackedWidget()
         self.content_stack.setObjectName("ContentStack")
         content_layout.addWidget(self.content_stack)
 
-        main_layout.addWidget(content_area, 1)
+        middle_layout.addWidget(content_area, 1)
+
+        # Set the middle_area as the scroll area's widget
+        scroll_area.setWidget(middle_area)
+        main_layout.addWidget(scroll_area, 1)
 
         # Create main views
         self.create_views()
+
+    def setup_backstage(self):
+        """Setup the backstage view overlay"""
+        # Backstage view (full screen overlay)
+        self.backstage_view = BackstageView()
+        self.backstage_view.setVisible(False)
+
+        # Connect backstage signals
+        self.backstage_view.new_project.connect(self.new_project)
+        self.backstage_view.open_project.connect(self.open_project)
+        self.backstage_view.save_project.connect(self.save_project)
+        self.backstage_view.export_data.connect(self.export_data)
+        self.backstage_view.export_review.connect(self.export_for_review)
+        self.backstage_view.settings.connect(self._on_settings)
+        self.backstage_view.help_requested.connect(self._on_help_requested)
+        self.backstage_view.dashboard_requested.connect(lambda: self.on_navigation_requested("dashboard"))
+        self.backstage_view.close.connect(self.toggle_backstage)
+
+        # Add backstage as overlay on top of everything
+        self.backstage_view.setParent(self.centralWidget())
+        self.backstage_view.setGeometry(0, 0, self.width(), self.height())
+
+    def toggle_backstage(self):
+        """Toggle the backstage view"""
+        is_visible = self.backstage_view.isVisible()
+        self.backstage_view.setVisible(not is_visible)
+        self.backstage_view.setGeometry(0, 0, self.width(), self.height())
+
+    def show_backstage(self):
+        """Show the backstage view"""
+        self.backstage_view.setVisible(True)
+        self.backstage_view.setGeometry(0, 0, self.width(), self.height())
+
+    def hide_backstage(self):
+        """Hide the backstage view"""
+        self.backstage_view.setVisible(False)
+
+    def resizeEvent(self, event):
+        """Handle window resize"""
+        super().resizeEvent(event)
+        # Update backstage geometry
+        if self.backstage_view.isVisible():
+            self.backstage_view.setGeometry(0, 0, self.width(), self.height())
+
+    def _on_settings(self):
+        """Navigate to settings"""
+        self.hide_backstage()
+        self.content_stack.setCurrentWidget(self.views["settings"])
+        self.sidebar.set_active_button("settings")
+
+    def _on_help_requested(self, help_option):
+        """Handle help option selection"""
+        self.hide_backstage()
+        # Show appropriate help content based on option
+        if "User Guide" in help_option:
+            self.statusBar().showMessage("Opening user guide...")
+            # TODO: implement user guide viewer
+        elif "Tutorials" in help_option:
+            self.statusBar().showMessage("Opening tutorials...")
+        elif "Keyboard Shortcuts" in help_option:
+            self.statusBar().showMessage("Opening keyboard shortcuts reference...")
+        elif "Check for Updates" in help_option:
+            self.statusBar().showMessage("Checking for updates...")
+        elif "About" in help_option:
+            self.show_about()
 
     def create_views(self):
         """Create all main views and add them to the stacked widget"""
@@ -175,6 +293,11 @@ class MainWindow(QMainWindow):
             "settings": SettingsView(),
         }
 
+        # Connect ProjectsView signal
+        projects_view = self.views["projects"]
+        if hasattr(projects_view, 'project_open_requested'):
+            projects_view.project_open_requested.connect(self.on_project_open_requested)
+
         # Connect data view to other views that consume its data
         data_view = self.views["data"]
         transform_view = self.views["transform"]
@@ -188,6 +311,8 @@ class MainWindow(QMainWindow):
         data_view.data_loaded.connect(query_view.set_dataframe)
         data_view.data_loaded.connect(reports_view.set_dataframe)
         data_view.dataset_added.connect(self._on_dataset_added)
+        data_view.show_transform_requested.connect(self._on_show_transform_after_upload)
+        transform_view.pipelineChanged.connect(self._on_pipeline_changed)
 
         # Set project on data_view
         data_view.set_project(self.current_project) if self.current_project else None
@@ -206,14 +331,28 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def on_navigation_requested(self, view_name):
         """Handle navigation requests from the sidebar"""
+        # Views that show ribbon (data transformation modes)
+        ribbon_views = {"data", "transform", "visualizations", "reports", "query"}
+        # Views that hide ribbon (SQL and other modes)
+        no_ribbon_views = {"sql", "dashboard", "ml models", "projects", "sessions", "settings"}
+
         if view_name in self.views:
             self.content_stack.setCurrentWidget(self.views[view_name])
             self.sidebar.set_active_button(view_name)
-            self.statusBar().showMessage(f"Navigated to {view_name.title()}")
+
+            # Show/hide ribbon based on view
+            if view_name in ribbon_views:
+                self.ribbon_bar.setVisible(True)
+            elif view_name in no_ribbon_views:
+                self.ribbon_bar.setVisible(False)
+
+            display_name = view_name.replace("_", " ").title()
+            self.statusBar().showMessage(f"Navigated to {display_name}")
         elif view_name == "upload":
             # Navigate to data view and trigger upload
             self.content_stack.setCurrentWidget(self.views["data"])
             self.sidebar.set_active_button("data")
+            self.ribbon_bar.setVisible(True)
             data_view = self.views.get("data")
             if data_view and hasattr(data_view, "show_import_dialog"):
                 data_view.show_import_dialog()
@@ -242,6 +381,9 @@ class MainWindow(QMainWindow):
 
                 if transform_view:
                     transform_view.set_dataframe(df)
+                    # Also set the pipeline if dataset has one
+                    if dataset.transformation_pipeline:
+                        transform_view.pipeline = dataset.transformation_pipeline
                 if sql_view:
                     sql_view.set_dataframe(df)
                 if viz_view:
@@ -253,6 +395,13 @@ class MainWindow(QMainWindow):
 
                 self.statusBar().showMessage(f"Selected dataset: {dataset.name}")
 
+    @Slot(object)
+    def _on_pipeline_changed(self, pipeline):
+        """Handle pipeline changes - save to current dataset"""
+        if self.current_dataset and pipeline:
+            self.current_dataset.set_pipeline(pipeline)
+            self.statusBar().showMessage(f"Transformations saved to dataset: {self.current_dataset.name}")
+
     @Slot()
     def on_upload_requested(self):
         """Handle upload request from sidebar"""
@@ -262,154 +411,44 @@ class MainWindow(QMainWindow):
         if data_view and hasattr(data_view, "show_import_dialog"):
             data_view.show_import_dialog()
 
+    def _on_show_transform_after_upload(self):
+        """Navigate to transform view after dataset upload"""
+        self.content_stack.setCurrentWidget(self.views["transform"])
+        self.sidebar.set_active_button("transform")
+        self.ribbon_bar.setVisible(True)  # Show ribbon in transform view
+        self.statusBar().showMessage("Data uploaded successfully. Use the Applied Steps panel to start transforming your data.")
+
+    def on_project_open_requested(self, project):
+        """Handle project open request from ProjectsView"""
+        if project is None:
+            # None means create new project
+            self.new_project()
+        else:
+            # Load the existing project
+            self.current_project = project
+            self.set_project(self.current_project)
+            self.refresh_dashboard_stats()
+            self.statusBar().showMessage(f"Opened project: {project.name}")
+
+            # Load first dataset if available
+            datasets = project.list_datasets()
+            if datasets:
+                self.current_dataset = datasets[0]
+                # Update views with the dataset
+                current_df = self.current_dataset.get_current_dataframe()
+                if current_df is not None:
+                    self.views["transform"].set_dataframe(current_df)
+                    self.views["sql"].set_dataframe(current_df)
+
+            # Navigate to dashboard
+            self.content_stack.setCurrentWidget(self.views["dashboard"])
+            self.ribbon_bar.setVisible(False)
+
     def _on_dataset_added(self, dataset):
         """Handle new dataset being added - update sidebar"""
         if hasattr(self, 'sidebar'):
             self.sidebar.add_dataset(dataset)
         self.statusBar().showMessage(f"Dataset '{dataset.name}' added to project")
-
-    def create_menus(self):
-        """Create application menu bar"""
-        menubar = self.menuBar()
-        menubar.setObjectName("MenuBar")
-
-        # File menu
-        file_menu = menubar.addMenu("&File")
-
-        new_project_action = QAction("Create New Project", self)
-        new_project_action.setShortcut(QKeySequence.New)
-        new_project_action.setIcon(QIcon.fromTheme("folder-new"))
-        new_project_action.triggered.connect(self.new_project)
-        file_menu.addAction(new_project_action)
-
-        open_project_action = QAction("Open Project", self)
-        open_project_action.setShortcut(QKeySequence.Open)
-        open_project_action.setIcon(QIcon.fromTheme("folder"))
-        open_project_action.triggered.connect(self.open_project)
-        file_menu.addAction(open_project_action)
-
-        save_project_action = QAction("Save Project", self)
-        save_project_action.setShortcut(QKeySequence.Save)
-        save_project_action.setIcon(QIcon.fromTheme("document-save"))
-        save_project_action.triggered.connect(self.save_project)
-        file_menu.addAction(save_project_action)
-
-        file_menu.addSeparator()
-
-        import_data_action = QAction("Import Data", self)
-        import_data_action.setShortcut(QKeySequence("Ctrl+I"))
-        import_data_action.setIcon(QIcon.fromTheme("document-open"))
-        import_data_action.triggered.connect(self.import_data)
-        file_menu.addAction(import_data_action)
-
-        export_action = QAction("Export Data", self)
-        export_action.setIcon(QIcon.fromTheme("document-save"))
-        export_action.triggered.connect(self.export_data)
-        file_menu.addAction(export_action)
-
-        file_menu.addSeparator()
-
-        exit_action = QAction("E&xit", self)
-        exit_action.setShortcut(QKeySequence.Quit)
-        exit_action.setIcon(QIcon.fromTheme("application-exit"))
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-
-        # Project menu
-        project_menu = menubar.addMenu("&Project")
-
-        manage_datasets_action = QAction("Manage Datasets", self)
-        manage_datasets_action.setIcon(QIcon.fromTheme("folder"))
-        manage_datasets_action.triggered.connect(self.manage_datasets)
-        project_menu.addAction(manage_datasets_action)
-
-        # Edit menu
-        edit_menu = menubar.addMenu("&Edit")
-
-        undo_action = QAction("Undo", self)
-        undo_action.setShortcut(QKeySequence.Undo)
-        undo_action.setIcon(QIcon.fromTheme("edit-undo"))
-        undo_action.triggered.connect(self.undo)
-        edit_menu.addAction(undo_action)
-
-        redo_action = QAction("Redo", self)
-        redo_action.setShortcut(QKeySequence.Redo)
-        redo_action.setIcon(QIcon.fromTheme("edit-redo"))
-        redo_action.triggered.connect(self.redo)
-        edit_menu.addAction(redo_action)
-
-        edit_menu.addSeparator()
-
-        settings_action = QAction("Settings", self)
-        settings_action.setIcon(QIcon.fromTheme("configure"))
-        settings_action.triggered.connect(
-            lambda: self.content_stack.setCurrentWidget(self.views["settings"])
-        )
-        edit_menu.addAction(settings_action)
-
-        # View menu
-        view_menu = menubar.addMenu("&View")
-
-        fullscreen_action = QAction("Fullscreen", self)
-        fullscreen_action.setShortcut(QKeySequence.FullScreen)
-        fullscreen_action.setIcon(QIcon.fromTheme("view-fullscreen"))
-        fullscreen_action.triggered.connect(self.toggle_fullscreen)
-        view_menu.addAction(fullscreen_action)
-
-        view_menu.addSeparator()
-
-        # Add navigation actions to the View menu (only main views)
-        view_names = ["dashboard", "data", "transform", "sql", "analyze", "visualizations", "query", "projects"]
-        for name in view_names:
-            view = self.views.get(name)
-            if view:
-                display_name = name.replace("_", " ").title()
-                icon_map = {
-                    "dashboard": "view-dashboard",
-                    "data": "table",
-                    "transform": "transform",
-                    "sql": "code-braces",
-                    "analyze": "chart",
-                    "visualizations": "chart-line",
-                    "query": "code-context",
-                    "projects": "folder",
-                }
-                action = QAction(display_name, self)
-                action.setIcon(QIcon.fromTheme(icon_map.get(name, "applications")))
-                action.triggered.connect(
-                    lambda checked=False, v=view: self.content_stack.setCurrentWidget(v)
-                )
-                view_menu.addAction(action)
-
-        # Tools menu
-        tools_menu = menubar.addMenu("&Tools")
-        tools_menu.addSeparator()
-
-        # Add tools to Tools menu
-        tools_names = ["ml models", "reports", "sessions"]
-        for name in tools_names:
-            view = self.views.get(name)
-            if view:
-                display_name = name.replace("_", " ").title()
-                icon_map = {
-                    "ml models": "train",
-                    "reports": "document-text",
-                    "sessions": "document",
-                }
-                action = QAction(display_name, self)
-                action.setIcon(QIcon.fromTheme(icon_map.get(name, "applications")))
-                action.triggered.connect(
-                    lambda checked=False, v=view: self.content_stack.setCurrentWidget(v)
-                )
-                tools_menu.addAction(action)
-
-        # Help menu
-        help_menu = menubar.addMenu("&Help")
-
-        about_action = QAction("About CaatMaster", self)
-        about_action.setIcon(QIcon.fromTheme("help-about"))
-        about_action.triggered.connect(self.show_about)
-        help_menu.addAction(about_action)
 
     def create_statusbar(self):
         """Create status bar"""
@@ -417,17 +456,328 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Ready")
 
     # ========================================================================
+    # Ribbon Actions
+    # ========================================================================
+
+    def handle_ribbon_action(self, action_name: str):
+        """Handle ribbon button actions.
+
+        Args:
+            action_name (str): Name of the action to execute
+        """
+        action_handlers = {
+            # File operations
+            "import_data": self.import_data,
+            "export_data": self.export_data,
+            "export_review": self.export_for_review,
+
+            # Sort actions
+            "sort_asc": self._on_sort_asc,
+            "sort_desc": self._on_sort_desc,
+
+            # Remove actions
+            "remove_rows": self._on_remove_rows,
+            "remove_cols": self._on_remove_cols,
+
+            # Reduce rows
+            "keep_top": self._on_keep_top,
+            "keep_bottom": self._on_keep_bottom,
+
+            # Text transformations
+            "text_upper": lambda: self._on_transform("text_uppercase"),
+            "text_lower": lambda: self._on_transform("text_lowercase"),
+            "text_title": lambda: self._on_transform("text_titlecase"),
+            "text_length": lambda: self._on_transform("text_length"),
+            "text_extract": lambda: self._on_transform("text_extract_numbers"),
+            "text_trim": lambda: self._on_transform("text_trim"),
+
+            # Split operations
+            "split_comma": lambda: self._on_transform("split_comma"),
+            "split_space": lambda: self._on_transform("split_space"),
+            "split_custom": lambda: self._on_transform("split_custom"),
+
+            # Date/Time operations
+            "extract_year": lambda: self._on_transform("datetime_year"),
+            "extract_month": lambda: self._on_transform("datetime_month"),
+            "extract_weekday": lambda: self._on_transform("datetime_weekday"),
+            "extract_hour": lambda: self._on_transform("datetime_hour"),
+            "date_age": lambda: self._on_transform("datetime_age_days"),
+            "date_quarter": lambda: self._on_transform("datetime_quarter"),
+
+            # Pivot operations
+            "pivot": self._on_pivot,
+            "unpivot": self._on_unpivot,
+
+            # Column operations
+            "rename_col": self._on_rename_column,
+            "change_dtype": self._on_change_dtype,
+            "reorder_cols": self._on_reorder_cols,
+            "select_cols": self._on_select_cols,
+            "filter": self._on_filter,
+
+            # Add column operations
+            "custom_col": self._on_custom_column,
+            "index_col": self._on_index_column,
+            "stat_quick": self._on_stat_quick,
+
+            # Math operations
+            "math_round": lambda: self._on_transform("math_round"),
+            "math_abs": lambda: self._on_transform("math_abs"),
+            "math_sqrt": lambda: self._on_transform("math_sqrt"),
+
+            # AI operations
+            "ai_explain": lambda: self._on_transform("ai_explain"),
+            "ai_sentiment": lambda: self._on_transform("ai_sentiment"),
+            "ai_extract": lambda: self._on_transform("ai_extract"),
+            "ai_pattern": lambda: self._on_transform("ai_pattern_learn"),
+            "ai_classify": lambda: self._on_transform("ai_classify"),
+            "ai_summarize": lambda: self._on_transform("ai_summarize"),
+            "ai_enrich": lambda: self._on_transform("ai_enrich"),
+
+            # ML operations
+            "ml_anomaly_iforest": lambda: self._on_transform("ml_anomaly_iforest"),
+            "ml_anomaly_zscore": lambda: self._on_transform("ml_anomaly_zscore"),
+            "ml_anomaly_iqr": lambda: self._on_transform("ml_anomaly_iqr"),
+            "ml_kmeans": lambda: self._on_transform("ml_cluster"),
+            "ml_forecast": lambda: self._on_transform("ml_forecast"),
+            "ml_lof": lambda: self._on_transform("ml_anomaly_lof"),
+            "ml_train": self._on_ml_train,
+            "ml_classify": lambda: self._on_transform("ml_classify"),
+            "ml_risk_score": lambda: self._on_transform("ml_risk_score"),
+            "ml_predict": lambda: self._on_transform("ml_predict"),
+
+            # Audit operations
+            "stat_zscore": lambda: self._on_transform("stat_zscore"),
+            "stat_pct_rank": lambda: self._on_transform("stat_percent_rank"),
+            "stat_rank": lambda: self._on_transform("stat_rank"),
+            "benford_law": lambda: self._on_transform("audit_benford_law"),
+            "audit_flag": self._on_audit_flag,
+            "audit_duplicates": lambda: self._on_transform("audit_duplicate_detection"),
+            "audit_gaps": lambda: self._on_transform("audit_gap_analysis"),
+            "audit_outliers": lambda: self._on_transform("audit_outlier_detection"),
+            "audit_round_numbers": lambda: self._on_transform("audit_round_numbers"),
+
+            # Statistics operations
+            "stat_group_stats": lambda: self._on_transform("stat_add_group_stats"),
+
+            # View operations
+            "query_settings": self._on_query_settings,
+            "dependencies": self._on_dependencies,
+            "col_quality": self._on_col_quality,
+            "col_dist": self._on_col_dist,
+            "col_profile": self._on_col_profile,
+            "formula_bar": self._on_formula_bar,
+            "steps_panel": self._on_steps_panel,
+        }
+
+        if action_name in action_handlers:
+            handler = action_handlers[action_name]
+            if callable(handler):
+                handler()
+            self.statusBar().showMessage(f"Executed: {action_name.replace('_', ' ').title()}")
+        else:
+            self.statusBar().showMessage(f"Action '{action_name}' not yet implemented")
+
+    # Placeholder methods for ribbon actions
+    def _on_sort_asc(self):
+        """Sort ascending - navigate to transform view."""
+        self.content_stack.setCurrentWidget(self.views["transform"])
+        self.statusBar().showMessage("Use right-click context menu on column headers to sort")
+
+    def _on_sort_desc(self):
+        """Sort descending."""
+        self._on_sort_asc()
+
+    def _on_remove_rows(self):
+        """Remove rows."""
+        QMessageBox.information(self, "Remove Rows", "Use filters to remove rows. Right-click column header for options.")
+
+    def _on_remove_cols(self):
+        """Remove columns."""
+        QMessageBox.information(self, "Remove Columns", "Right-click column header and select 'Remove'.")
+
+    def _on_keep_top(self):
+        """Keep top rows."""
+        QMessageBox.information(self, "Keep Top Rows", "Use 'Head' transformation in Transform view.")
+
+    def _on_keep_bottom(self):
+        """Keep bottom rows."""
+        QMessageBox.information(self, "Keep Bottom Rows", "Use 'Tail' transformation in Transform view.")
+
+    def _on_transform(self, operation_id: str):
+        """Apply transformation by opening a dialog or using the selected column."""
+        if not self._check_data_loaded():
+            return
+
+        # Navigate to transform view
+        self.content_stack.setCurrentWidget(self.views["transform"])
+
+        # Get the transform view
+        transform_view = self.views.get("transform")
+        if not transform_view or not transform_view.pipeline:
+            self.statusBar().showMessage("No data loaded. Please load a dataset first.")
+            return
+
+        # Get the selected column from the transform view table
+        table = transform_view.data_table
+        selected_columns = []
+
+        # Try to get selected column from horizontal header
+        header = table.horizontalHeader()
+        selected_index = header.currentIndex()
+        if selected_index.isValid():
+            column_name = table.horizontalHeaderItem(selected_index).text()
+            selected_columns.append(column_name)
+
+        # If no column selected, use the first column
+        if not selected_columns and table.columnCount() > 0:
+            column_name = table.horizontalHeaderItem(0).text()
+            selected_columns.append(column_name)
+
+        if not selected_columns:
+            self.statusBar().showMessage("No columns available. Please load data first.")
+            return
+
+        column_name = selected_columns[0]
+
+        # Create the transformation dialog
+        from gui.dialogs.transformation_dialog_factory import TransformationDialogFactory
+
+        dialog = TransformationDialogFactory.create_dialog(
+            operation_id=operation_id,
+            dataframe=transform_view.original_dataframe,
+            parent=self,
+            initial_params={'column': column_name}
+        )
+
+        if dialog and dialog.exec():
+            params = dialog.get_parameters()
+            if params is not None:
+                transform_view.apply_transformation(operation_id, params)
+                self.statusBar().showMessage(f"Applied {operation_id} transformation")
+        else:
+            self.statusBar().showMessage("Transformation cancelled")
+
+    def _on_pivot(self):
+        """Open pivot table dialog."""
+        from gui.dialogs.pivot_dialog import PivotDialog
+        if not self._check_data_loaded():
+            return
+        dialog = PivotDialog(self.current_dataset.get_current_dataframe(), self)
+        dialog.exec()
+
+    def _on_unpivot(self):
+        """Open unpivot dialog."""
+        from gui.dialogs.unpivot_dialog import UnpivotDialog
+        if not self._check_data_loaded():
+            return
+        dialog = UnpivotDialog(self.current_dataset.get_current_dataframe(), self)
+        dialog.exec()
+
+    def _on_rename_column(self):
+        """Rename column."""
+        self.content_stack.setCurrentWidget(self.views["transform"])
+        self.statusBar().showMessage("Right-click column header and select 'Rename Column'")
+
+    def _on_change_dtype(self):
+        """Change data type."""
+        self.content_stack.setCurrentWidget(self.views["transform"])
+        self.statusBar().showMessage("Right-click column header and select 'Change Data Type'")
+
+    def _on_custom_column(self):
+        """Add custom column."""
+        self.content_stack.setCurrentWidget(self.views["transform"])
+        self.statusBar().showMessage("Use 'Custom Column' transformation in Transform view")
+
+    def _on_index_column(self):
+        """Add index column."""
+        self._on_transform("stat_quick_stats")
+
+    def _on_reorder_cols(self):
+        """Reorder columns."""
+        self.content_stack.setCurrentWidget(self.views["transform"])
+        self.statusBar().showMessage("Use drag and drop on column headers to reorder columns")
+
+    def _on_select_cols(self):
+        """Select columns."""
+        self.content_stack.setCurrentWidget(self.views["transform"])
+        self.statusBar().showMessage("Use column selection in Transform view")
+
+    def _on_filter(self):
+        """Filter rows."""
+        self.content_stack.setCurrentWidget(self.views["transform"])
+        self.statusBar().showMessage("Use filter transformation in Transform view")
+
+    def _on_stat_quick(self):
+        """Quick statistics."""
+        self._on_transform("stat_quick_stats")
+
+    def _on_ml_train(self):
+        """Open ML training dialog."""
+        from gui.dialogs.ml_training_dialog import MLTrainingDialog
+        if not self._check_data_loaded():
+            return
+        dialog = MLTrainingDialog(self.current_dataset.get_current_dataframe(), self)
+        dialog.exec()
+
+    def _on_audit_flag(self):
+        """Flag rows for audit."""
+        self.statusBar().showMessage("Use 'Audit Flag' transformation to mark suspicious records")
+
+    def _on_query_settings(self):
+        """Query settings."""
+        QMessageBox.information(self, "Query Settings", "Query settings available in Transform view sidebar.")
+
+    def _on_dependencies(self):
+        """Show dependencies."""
+        QMessageBox.information(self, "Dependencies", "Data lineage and dependencies view coming soon.")
+
+    def _on_col_quality(self):
+        """Show column quality."""
+        QMessageBox.information(self, "Column Quality", "Column quality indicators show null value percentages.")
+
+    def _on_col_dist(self):
+        """Show column distribution."""
+        QMessageBox.information(self, "Distribution", "Column distribution charts coming soon.")
+
+    def _on_col_profile(self):
+        """Show column profile."""
+        QMessageBox.information(self, "Column Profile", "Detailed column profiling coming soon.")
+
+    def _on_formula_bar(self):
+        """Toggle formula bar."""
+        QMessageBox.information(self, "Formula Bar", "Formula bar for custom expressions coming soon.")
+
+    def _on_steps_panel(self):
+        """Toggle steps panel."""
+        self.content_stack.setCurrentWidget(self.views["transform"])
+        self.statusBar().showMessage("Steps panel is visible in Transform view")
+
+    def _check_data_loaded(self) -> bool:
+        """Check if data is loaded."""
+        if not self.current_dataset:
+            QMessageBox.warning(self, "No Data", "Please load data first.")
+            return False
+
+        df = self.current_dataset.get_current_dataframe()
+        if df is None:
+            QMessageBox.warning(self, "No Data", "Please load data first.")
+            return False
+
+        return True
+
+    # ========================================================================
     # Actions
     # ========================================================================
 
     def new_project(self):
-        """Create a new project"""
+        """Create a new project using the proper dialog"""
         dialog = NewProjectDialog(self)
         if dialog.exec():
             project_data = dialog.get_project_data()
             self.current_project = Project(
                 name=project_data['name'],
-                description=project_data['description'],
+                description=project_data.get('description'),
                 client_name=project_data.get('client_name'),
                 phase=project_data.get('phase', 'planning'),
                 engagement_type=project_data.get('engagement_type', 'financial audit'),
@@ -438,6 +788,51 @@ class MainWindow(QMainWindow):
             self.refresh_dashboard_stats()
             self.statusBar().showMessage(f"Created project: {project_data['name']}")
 
+            # Save the project to a default location
+            self._save_new_project(self.current_project)
+
+            # Close backstage view if it's open and navigate to dashboard
+            self.backstage_view.setVisible(False)
+            self.content_stack.setCurrentWidget(self.views["dashboard"])
+            self.ribbon_bar.setVisible(False)
+
+    def _save_new_project(self, project):
+        """Save a newly created project to the default projects directory"""
+        from core.project_manager import ProjectExporter
+        from pathlib import Path
+        import json
+
+        # Create projects directory if it doesn't exist
+        projects_dir = Path.home() / "Documents" / "CaatMaster" / "Projects"
+        projects_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create project metadata
+        project_metadata = {
+            'id': project.id,
+            'name': project.name,
+            'description': project.description,
+            'client_name': project.client_name,
+            'phase': project.phase,
+            'engagement_type': project.engagement_type,
+            'risk_score': project.risk_score,
+            'objectives': project.objectives,
+            'datasets': {},  # Empty datasets dict
+            'metadata': {
+                'created_at': project.metadata.get('created_at', ''),
+                'last_modified': project.metadata.get('last_modified', ''),
+                'version': '1.0'
+            }
+        }
+
+        # Save as JSON
+        safe_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in project.name)
+        project_file = projects_dir / f"{safe_name}.json"
+
+        with open(project_file, 'w') as f:
+            json.dump(project_metadata, f, indent=2)
+
+        self.statusBar().showMessage(f"Created and saved project: {project.name} to {project_file}")
+
     def new_session(self):
         """Create a new session"""
         QMessageBox.information(self, "New Session",
@@ -446,6 +841,41 @@ class MainWindow(QMainWindow):
 
     def open_project(self):
         """Open an existing project"""
+        # Check if Backstage View has pending project path
+        if hasattr(self.backstage_view, '_pending_project_path'):
+            project_path = self.backstage_view._pending_project_path
+            delattr(self.backstage_view, '_pending_project_path')
+
+            # Load project from the specified path
+            from core.project_manager import ProjectExporter
+            try:
+                project = ProjectExporter.import_project(project_path)
+                if project:
+                    self.current_project = project
+                    self.set_project(self.current_project)
+                    self.refresh_dashboard_stats()
+                    self.statusBar().showMessage(f"Opened project: {project.name}")
+
+                    # Load first dataset if available
+                    datasets = project.list_datasets()
+                    if datasets:
+                        self.current_dataset = datasets[0]
+                        # Update views with the dataset
+                        current_df = self.current_dataset.get_current_dataframe()
+                        if current_df is not None:
+                            self.views["transform"].set_dataframe(current_df)
+                            self.views["sql"].set_dataframe(current_df)
+
+                    # Close backstage view and navigate to dashboard
+                    self.backstage_view.setVisible(False)
+                    self.content_stack.setCurrentWidget(self.views["dashboard"])
+                    self.ribbon_bar.setVisible(False)
+                    return
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Failed to open project:\n{str(e)}")
+                return
+
+        # Fall back to dialog
         dialog = OpenProjectDialog(self)
         if dialog.exec():
             project = dialog.get_selected_project()
@@ -464,6 +894,63 @@ class MainWindow(QMainWindow):
                     if current_df is not None:
                         self.views["transform"].set_dataframe(current_df)
                         self.views["sql"].set_dataframe(current_df)
+
+                # Close backstage view and navigate to dashboard
+                self.backstage_view.setVisible(False)
+                self.content_stack.setCurrentWidget(self.views["dashboard"])
+                self.ribbon_bar.setVisible(False)
+
+    def edit_current_project(self):
+        """Edit the current project"""
+        if not self.current_project:
+            QMessageBox.warning(self, "No Project", "No project is currently open.")
+            return
+
+        from PySide6.QtWidgets import QInputDialog
+        # For simplicity, use input dialogs - could be enhanced with a proper edit dialog
+        new_name, ok = QInputDialog.getText(
+            self, "Edit Project Name",
+            "Enter new project name:",
+            text=self.current_project.name
+        )
+
+        if ok and new_name.strip():
+            self.current_project.name = new_name.strip()
+            self.set_project(self.current_project)
+            self.refresh_dashboard_stats()
+            self.statusBar().showMessage(f"Project renamed to: {new_name}")
+
+    def delete_current_project(self):
+        """Delete the current project"""
+        if not self.current_project:
+            QMessageBox.warning(self, "No Project", "No project is currently open.")
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Delete Project",
+            f"Are you sure you want to delete the project '{self.current_project.name}'?\n\n"
+            "This will delete all datasets and work associated with this project. "
+            "This action cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            project_name = self.current_project.name
+
+            # Clear the current project
+            self.current_project = None
+            self.current_dataset = None
+
+            # Update UI
+            self.set_project(None)
+            self.refresh_dashboard_stats()
+
+            # Navigate to dashboard
+            self.content_stack.setCurrentWidget(self.views["dashboard"])
+
+            self.statusBar().showMessage(f"Project '{project_name}' deleted")
 
     def save_project(self):
         """Save the current project"""
@@ -863,7 +1350,14 @@ class MainWindow(QMainWindow):
     def set_project(self, project):
         """Set the current active project"""
         self.current_project = project
-        self.setWindowTitle(f"CaatMaster - {project.name}")
+
+        if project:
+            self.setWindowTitle(f"CaatMaster - {project.name}")
+        else:
+            self.setWindowTitle("CaatMaster - Professional Audit Analytics Tool")
+
+        # Update backstage view
+        self.backstage_view.set_project(project)
 
         # Update sidebar with project info
         self.sidebar.set_project(project)

@@ -360,7 +360,7 @@ class TransformationStep(Base):
     step_order = Column(Integer, default=0)
 
     # Relationships
-    session = relationship("ProjectSession")
+    session = relationship("ProjectSession", overlaps="transformation_steps")
     result_dataset = relationship("Dataset")
 
 

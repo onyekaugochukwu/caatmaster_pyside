@@ -4,10 +4,10 @@ Dialogs for creating, opening, and managing CaatMaster projects.
 """
 
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox,
+    QWidget, QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox,
     QLabel, QLineEdit, QTextEdit, QListWidget, QListWidgetItem,
     QPushButton, QHBoxLayout, QGroupBox, QFileDialog, QMessageBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QSplitter, QComboBox, QSlider, QFrame
+    QTableWidget, QTableWidgetItem, QHeaderView, QSplitter, QComboBox, QSlider, QFrame, QScrollArea
 )
 from PySide6.QtCore import Qt, Signal, Slot
 from typing import Optional, List
@@ -28,7 +28,7 @@ class NewProjectDialog(QDialog):
     def setup_ui(self):
         self.setWindowTitle("Create New Project")
         self.setMinimumWidth(700)
-        self.setMinimumHeight(650)
+        self.setMinimumHeight(500)  # Reduced since it's now scrollable
         self.setModal(True)
 
         # Apply dark text stylesheet
@@ -120,6 +120,36 @@ class NewProjectDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setSpacing(16)
 
+        # Create scroll area for the main content
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: white;
+            }
+            QScrollBar:vertical {
+                background-color: #f3f4f6;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #d1d5db;
+                border-radius: 6px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #9ca3af;
+            }
+        """)
+
+        # Create scroll content widget
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setSpacing(16)
+
         # Basic Information Section
         basic_label = QLabel("Basic Information")
         basic_label.setStyleSheet("""
@@ -129,7 +159,7 @@ class NewProjectDialog(QDialog):
                 color: #111827;
             }
         """)
-        layout.addWidget(basic_label)
+        scroll_layout.addWidget(basic_label)
 
         basic_frame = QFrame()
         basic_frame.setStyleSheet("""
@@ -195,7 +225,7 @@ class NewProjectDialog(QDialog):
         risk_frame.setLayout(risk_layout)
         basic_layout.addRow("Risk Score:", risk_frame)
 
-        layout.addWidget(basic_frame)
+        scroll_layout.addWidget(basic_frame)
 
         # Description Section
         desc_label = QLabel("Description & Scope")
@@ -206,7 +236,7 @@ class NewProjectDialog(QDialog):
                 color: #111827;
             }
         """)
-        layout.addWidget(desc_label)
+        scroll_layout.addWidget(desc_label)
 
         desc_frame = QFrame()
         desc_frame.setStyleSheet("""
@@ -232,7 +262,7 @@ class NewProjectDialog(QDialog):
         self.objectives_input.setPlaceholderText("List the main audit objectives...")
         desc_layout.addRow("Objectives:", self.objectives_input)
 
-        layout.addWidget(desc_frame)
+        scroll_layout.addWidget(desc_frame)
 
         # Project Phase Section
         phase_label = QLabel("Project Phase")
@@ -243,7 +273,7 @@ class NewProjectDialog(QDialog):
                 color: #111827;
             }
         """)
-        layout.addWidget(phase_label)
+        scroll_layout.addWidget(phase_label)
 
         phase_frame = QFrame()
         phase_frame.setStyleSheet("""
@@ -269,9 +299,16 @@ class NewProjectDialog(QDialog):
         self.phase_combo.setMinimumWidth(400)
         phase_layout.addRow("Current Phase:", self.phase_combo)
 
-        layout.addWidget(phase_frame)
+        scroll_layout.addWidget(phase_frame)
 
-        # Buttons
+        # Add some spacing at the bottom
+        scroll_layout.addSpacing(16)
+
+        # Set the scroll content as the scroll area widget
+        scroll.setWidget(scroll_content)
+        layout.addWidget(scroll, 1)  # Give scroll area maximum space
+
+        # Buttons (outside scroll area)
         buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )

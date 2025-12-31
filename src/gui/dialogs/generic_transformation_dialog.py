@@ -151,11 +151,34 @@ class GenericTransformationDialog(QDialog):
                 self.input_widgets[param_name] = widget
                 self.form_layout.addRow(QLabel(label_text), widget)
 
+        # Add output_col field if this operation creates columns and it's in initial_params
+        if 'output_col' in self.initial_params and 'output_col' not in self.input_widgets:
+            output_label = QLabel("Output Column Name:")
+            output_widget = QLineEdit()
+            output_widget.setText(self.initial_params['output_col'])
+            self.input_widgets['output_col'] = output_widget
+            self.form_layout.addRow(output_label, output_widget)
+
     def get_parameters(self) -> Dict[str, Any]:
         """Extracts parameter values from the form widgets."""
         params = self.initial_params.copy()
 
         for param_name, widget in self.input_widgets.items():
+            # Check if this parameter is in the schema (output_col may be added separately)
+            if param_name not in self.param_schema:
+                # Handle special cases like output_col which isn't in the schema
+                if isinstance(widget, QLineEdit):
+                    params[param_name] = widget.text()
+                elif isinstance(widget, QComboBox):
+                    params[param_name] = widget.currentText()
+                elif isinstance(widget, QCheckBox):
+                    params[param_name] = widget.isChecked()
+                elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+                    params[param_name] = widget.value()
+                else:
+                    params[param_name] = widget.text()
+                continue
+
             schema = self.param_schema[param_name]
             param_type = schema['type']
             value = None

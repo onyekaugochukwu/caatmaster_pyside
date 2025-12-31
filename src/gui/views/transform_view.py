@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
     QSplitter, QMessageBox, QMenu, QListWidget, QListWidgetItem,
-    QGroupBox, QTextEdit, QTreeWidget, QTreeWidgetItem, QTabWidget
+    QGroupBox, QTextEdit, QTreeWidget, QTreeWidgetItem, QTabWidget, QScrollArea, QDialog
 )
 from PySide6.QtCore import Qt, Signal, Slot
 import polars as pl
@@ -26,6 +26,7 @@ class TransformView(QWidget):
     """Transform data view using a pipeline-based approach"""
 
     dataChanged = Signal(pl.DataFrame)
+    pipelineChanged = Signal(object)  # Signal when pipeline is updated (emits the pipeline)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -39,10 +40,18 @@ class TransformView(QWidget):
         main_layout.setSpacing(0)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # --- Left Panel: Steps and Inspector ---
+        # --- Left Panel: Steps and Inspector (scrollable) ---
         left_panel = QWidget()
         left_panel.setObjectName("LeftPanel")
         left_panel.setFixedWidth(350)
+
+        # Wrap left panel content in scroll area
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        left_scroll.setWidget(left_panel)
+
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(10, 10, 10, 10)
 
@@ -98,7 +107,8 @@ class TransformView(QWidget):
         inspector_layout.addWidget(self.inspector_tabs)
         left_layout.addWidget(inspector_group)
 
-        main_layout.addWidget(left_panel)
+        left_layout.addStretch()  # Add stretch to push content to top
+        main_layout.addWidget(left_scroll)
 
         # --- Right Panel: Data Preview ---
         preview_widget = QWidget()
@@ -143,35 +153,211 @@ class TransformView(QWidget):
 
         menu = QMenu(self)
 
+        # Group operations by category (matching Ribbon structure)
         grouped_ops = defaultdict(list)
         for op_id, op_data in OPERATION_REGISTRY.items():
-            grouped_ops[op_data['type']].append((op_id, op_data))
+            category = op_data.get('category', 'other')
+            grouped_ops[category].append((op_id, op_data))
 
-        for op_type in sorted(grouped_ops.keys(), key=lambda x: x.value):
-            if not grouped_ops[op_type]:
+        # Define category display names and order
+        category_order = {
+            'text': 'Text',
+            'math': 'Math',
+            'datetime': 'Date & Time',
+            'statistical': 'Statistics',
+            'audit': 'Audit',
+            'ml': 'Machine Learning',
+            'ai': 'AI',
+            'other': 'Other'
+        }
+
+        # Process each category in order
+        for category_key, category_display in category_order.items():
+            if category_key not in grouped_ops or not grouped_ops[category_key]:
                 continue
 
-            sub_menu = menu.addMenu(op_type.name.replace("_", " ").title())
-            for op_id, op_data in sorted(grouped_ops[op_type], key=lambda x: x[1]['display_name']):
-                action = sub_menu.addAction(op_data['display_name'])
+            # Create submenu for this category
+            category_menu = menu.addMenu(category_display)
+
+            # For datetime category, create sub-submenus for Extract, Calculate, etc.
+            if category_key == 'datetime':
+                self._add_datetime_submenu(category_menu, grouped_ops[category_key], column_name)
+            # For text category, create sub-submenus for Case, Extract, etc.
+            elif category_key == 'text':
+                self._add_text_submenu(category_menu, grouped_ops[category_key], column_name)
+            # For math category, create sub-submenus for Basic, Trig, etc.
+            elif category_key == 'math':
+                self._add_math_submenu(category_menu, grouped_ops[category_key], column_name)
+            else:
+                # For other categories, just list operations directly
+                for op_id, op_data in sorted(grouped_ops[category_key], key=lambda x: x[1]['display_name']):
+                    action = category_menu.addAction(op_data['display_name'])
+                    action.triggered.connect(
+                        lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                    )
+
+        menu.exec(header.mapToGlobal(pos))
+
+    def _add_datetime_submenu(self, parent_menu, operations, column_name):
+        """Add datetime operations with sub-submenus"""
+        # Group datetime operations by function type
+        extract_ops = []
+        calc_ops = []
+        other_ops = []
+
+        for op_id, op_data in operations:
+            if 'extract' in op_data['display_name'].lower() or op_id.startswith('datetime_'):
+                if any(x in op_id for x in ['year', 'month', 'day', 'hour', 'minute', 'second', 'weekday', 'quarter']):
+                    extract_ops.append((op_id, op_data))
+                else:
+                    calc_ops.append((op_id, op_data))
+            else:
+                other_ops.append((op_id, op_data))
+
+        # Extract submenu
+        if extract_ops:
+            extract_menu = parent_menu.addMenu("Extract")
+            for op_id, op_data in sorted(extract_ops, key=lambda x: x[1]['display_name']):
+                action = extract_menu.addAction(op_data['display_name'])
                 action.triggered.connect(
                     lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
                 )
 
-        menu.exec(header.mapToGlobal(pos))
+        # Calculate submenu
+        if calc_ops:
+            calc_menu = parent_menu.addMenu("Calculate")
+            for op_id, op_data in sorted(calc_ops, key=lambda x: x[1]['display_name']):
+                action = calc_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Other operations
+        for op_id, op_data in sorted(other_ops, key=lambda x: x[1]['display_name']):
+            action = parent_menu.addAction(op_data['display_name'])
+            action.triggered.connect(
+                lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+            )
+
+    def _add_text_submenu(self, parent_menu, operations, column_name):
+        """Add text operations with sub-submenus"""
+        # Group text operations
+        case_ops = []
+        extract_ops = []
+        clean_ops = []
+        other_ops = []
+
+        for op_id, op_data in operations:
+            name = op_data['display_name'].lower()
+            if 'case' in name or 'upper' in name or 'lower' in name or 'title' in name:
+                case_ops.append((op_id, op_data))
+            elif 'extract' in name:
+                extract_ops.append((op_id, op_data))
+            elif 'trim' in name or 'clean' in name or 'whitespace' in name:
+                clean_ops.append((op_id, op_data))
+            else:
+                other_ops.append((op_id, op_data))
+
+        # Case submenu
+        if case_ops:
+            case_menu = parent_menu.addMenu("Case")
+            for op_id, op_data in sorted(case_ops, key=lambda x: x[1]['display_name']):
+                action = case_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Extract submenu
+        if extract_ops:
+            extract_menu = parent_menu.addMenu("Extract")
+            for op_id, op_data in sorted(extract_ops, key=lambda x: x[1]['display_name']):
+                action = extract_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Clean submenu
+        if clean_ops:
+            clean_menu = parent_menu.addMenu("Clean")
+            for op_id, op_data in sorted(clean_ops, key=lambda x: x[1]['display_name']):
+                action = clean_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Other operations
+        for op_id, op_data in sorted(other_ops, key=lambda x: x[1]['display_name']):
+            action = parent_menu.addAction(op_data['display_name'])
+            action.triggered.connect(
+                lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+            )
+
+    def _add_math_submenu(self, parent_menu, operations, column_name):
+        """Add math operations with sub-submenus"""
+        # Group math operations
+        basic_ops = []
+        trig_ops = []
+        other_ops = []
+
+        for op_id, op_data in operations:
+            if op_id.startswith('trig_'):
+                trig_ops.append((op_id, op_data))
+            elif op_id.startswith('math_'):
+                basic_ops.append((op_id, op_data))
+            else:
+                other_ops.append((op_id, op_data))
+
+        # Basic submenu
+        if basic_ops:
+            basic_menu = parent_menu.addMenu("Basic")
+            for op_id, op_data in sorted(basic_ops, key=lambda x: x[1]['display_name']):
+                action = basic_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Trigonometric submenu
+        if trig_ops:
+            trig_menu = parent_menu.addMenu("Trigonometric")
+            for op_id, op_data in sorted(trig_ops, key=lambda x: x[1]['display_name']):
+                action = trig_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Other operations
+        for op_id, op_data in sorted(other_ops, key=lambda x: x[1]['display_name']):
+            action = parent_menu.addAction(op_data['display_name'])
+            action.triggered.connect(
+                lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+            )
 
     def on_transformation_selected(self, operation_id: str, column_name: str):
         """Handles the selection of a transformation from the context menu."""
+        if not self.pipeline:
+            QMessageBox.warning(self, "No Data", "Please load data first.")
+            return
+
         op_data = OPERATION_REGISTRY[operation_id]
 
         # Prepare initial parameters
         initial_params = {'column': column_name}
 
-        # Set default output column name based on operation
-        if op_data.get('creates_columns', False):
-            naming_pattern = op_data.get('column_naming_pattern', '{column}_{operation}')
-            operation_name = operation_id.split('_')[-1]
-            initial_params['output_col'] = naming_pattern.format(column=column_name, operation=operation_name)
+        # Set default output column name(s) based on operation
+        creates_columns = op_data.get('creates_columns', False)
+        if creates_columns:
+            if isinstance(creates_columns, list):
+                # Multiple columns created - generate output_cols list
+                output_cols = [col_name.format(column=column_name) for col_name in creates_columns]
+                initial_params['output_cols'] = output_cols
+                # If only one column, also set output_col for backward compatibility
+                if len(output_cols) == 1:
+                    initial_params['output_col'] = output_cols[0]
+            else:
+                # Single column created - generate output_col
+                naming_pattern = op_data.get('column_naming_pattern', '{column}_{operation}')
+                operation_name = operation_id.split('_')[-1]
+                initial_params['output_col'] = naming_pattern.format(column=column_name, operation=operation_name)
 
         # Create dialog using the factory
         dialog = TransformationDialogFactory.create_dialog(
@@ -181,10 +367,12 @@ class TransformView(QWidget):
             initial_params=initial_params
         )
 
-        if dialog and dialog.exec():
-            params = dialog.get_parameters()
-            if params is not None:
-                self.apply_transformation(operation_id, params)
+        if dialog:
+            result = dialog.exec()
+            if result == QDialog.Accepted:
+                params = dialog.get_parameters()
+                if params is not None:
+                    self.apply_transformation(operation_id, params)
 
     def apply_transformation(self, operation_id: str, params: dict):
         """Adds a step to the pipeline and refreshes the view."""
@@ -207,8 +395,9 @@ class TransformView(QWidget):
             # Clear inspector when new step is added
             self.clear_inspector()
 
-            # Emit signal for parent views
+            # Emit signals for parent views
             self.dataChanged.emit(transformed_df)
+            self.pipelineChanged.emit(self.pipeline)
 
         except Exception as e:
             QMessageBox.critical(
@@ -235,6 +424,7 @@ class TransformView(QWidget):
             self.populate_table(transformed_df)
             self.update_info()
             self.dataChanged.emit(transformed_df)
+            self.pipelineChanged.emit(self.pipeline)
 
         except Exception as e:
             QMessageBox.critical(self, "Undo Error", f"Failed to undo step:\n{str(e)}")
@@ -258,6 +448,7 @@ class TransformView(QWidget):
                 self.populate_table(self.pipeline.original_df)
                 self.update_info()
                 self.dataChanged.emit(self.pipeline.original_df)
+                self.pipelineChanged.emit(self.pipeline)
             except Exception as e:
                 QMessageBox.critical(
                     self, "Clear Error", f"Failed to clear steps:\n{str(e)}"

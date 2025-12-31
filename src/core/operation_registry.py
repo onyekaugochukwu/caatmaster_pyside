@@ -41,7 +41,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_lower"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_lower"
     },
     "text_titlecase": {
         "display_name": "Title Case",
@@ -51,7 +52,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_title"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_title"
     },
     "text_trim": {
         "display_name": "Trim Whitespace",
@@ -61,7 +63,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_trimmed"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_trimmed"
     },
     "text_extract_numbers": {
         "display_name": "Extract Numbers",
@@ -71,7 +74,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_numbers"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_numbers"
     },
     "text_extract_text": {
         "display_name": "Extract Text",
@@ -81,7 +85,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_text"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_text"
     },
     "text_reverse": {
         "display_name": "Reverse Text",
@@ -91,7 +96,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_reversed"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_reversed"
     },
     "text_length": {
         "display_name": "Text Length",
@@ -101,7 +107,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_length"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_length"
     },
     "text_hash_md5": {
         "display_name": "Hash (MD5)",
@@ -111,7 +118,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_md5"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_md5"
     },
     "text_soundex": {
         "display_name": "Soundex Code",
@@ -121,7 +129,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_soundex"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_soundex"
     },
 
     # =========================================================================
@@ -136,7 +145,8 @@ OPERATION_REGISTRY = {
             "column": {"type": "column", "required": True, "label": "Column"},
             "decimals": {"type": "int", "required": False, "default": 2, "label": "Decimals"}
         },
-        "creates_columns": ["{col}_rounded"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_rounded"
     },
     "math_ceil": {
         "display_name": "Ceiling",
@@ -146,7 +156,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_ceil"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_ceil"
     },
     "math_floor": {
         "display_name": "Floor",
@@ -156,7 +167,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_floor"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_floor"
     },
     "math_abs": {
         "display_name": "Absolute Value",
@@ -166,7 +178,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_abs"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_abs"
     },
     "math_sqrt": {
         "display_name": "Square Root",
@@ -176,7 +189,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_sqrt"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_sqrt"
     },
     "math_square": {
         "display_name": "Square",
@@ -186,7 +200,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_sq"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_sq"
     },
     "math_log": {
         "display_name": "Logarithm (ln)",
@@ -196,7 +211,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_log"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_log"
     },
     "math_log10": {
         "display_name": "Logarithm (base 10)",
@@ -206,7 +222,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_log10"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_log10"
     },
     "math_exp": {
         "display_name": "Exponential",
@@ -216,7 +233,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_exp"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_exp"
     },
 
     # =========================================================================
@@ -230,7 +248,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_sin"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_sin"
     },
     "trig_cos": {
         "display_name": "Cosine",
@@ -240,7 +259,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_cos"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_cos"
     },
     "trig_tan": {
         "display_name": "Tangent",
@@ -250,7 +270,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_tan"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_tan"
     },
     "trig_asin": {
         "display_name": "Arc Sine",
@@ -260,7 +281,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_asin"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_asin"
     },
     "trig_acos": {
         "display_name": "Arc Cosine",
@@ -270,7 +292,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_acos"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_acos"
     },
     "trig_atan": {
         "display_name": "Arc Tangent",
@@ -280,7 +303,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_atan"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_atan"
     },
 
     # =========================================================================
@@ -294,7 +318,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Date Column"}
         },
-        "creates_columns": ["{col}_year"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_year"
     },
     "datetime_month": {
         "display_name": "Extract Month",
@@ -304,7 +329,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Date Column"}
         },
-        "creates_columns": ["{col}_month"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_month"
     },
     "datetime_day": {
         "display_name": "Extract Day",
@@ -314,7 +340,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Date Column"}
         },
-        "creates_columns": ["{col}_day"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_day"
     },
     "datetime_hour": {
         "display_name": "Extract Hour",
@@ -324,7 +351,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Datetime Column"}
         },
-        "creates_columns": ["{col}_hour"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_hour"
     },
     "datetime_minute": {
         "display_name": "Extract Minute",
@@ -334,7 +362,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Datetime Column"}
         },
-        "creates_columns": ["{col}_minute"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_minute"
     },
     "datetime_second": {
         "display_name": "Extract Second",
@@ -344,7 +373,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Datetime Column"}
         },
-        "creates_columns": ["{col}_second"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_second"
     },
     "datetime_weekday": {
         "display_name": "Extract Weekday",
@@ -354,7 +384,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Date Column"}
         },
-        "creates_columns": ["{col}_weekday"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_weekday"
     },
     "datetime_quarter": {
         "display_name": "Extract Quarter",
@@ -364,7 +395,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Date Column"}
         },
-        "creates_columns": ["{col}_quarter"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_quarter"
     },
     "datetime_age_days": {
         "display_name": "Age (Days)",
@@ -374,7 +406,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Date Column"}
         },
-        "creates_columns": ["{col}_age_days"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_age_days"
     },
     "datetime_age_years": {
         "display_name": "Age (Years)",
@@ -384,7 +417,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Date Column"}
         },
-        "creates_columns": ["{col}_age_years"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_age_years"
     },
     "datetime_is_weekend": {
         "display_name": "Is Weekend",
@@ -394,7 +428,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Date Column"}
         },
-        "creates_columns": ["{col}_is_weekend"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_is_weekend"
     },
     "datetime_is_leap_year": {
         "display_name": "Is Leap Year",
@@ -404,7 +439,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Date Column"}
         },
-        "creates_columns": ["{col}_is_leap_year"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_is_leap_year"
     },
     "datetime_days_in_month": {
         "display_name": "Days in Month",
@@ -414,7 +450,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Date Column"}
         },
-        "creates_columns": ["{col}_days_in_month"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_days_in_month"
     },
 
     # =========================================================================
@@ -428,7 +465,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_zscore"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_zscore"
     },
     "stat_percent_rank": {
         "display_name": "Percent Rank",
@@ -438,7 +476,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_pct_rank"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_pct_rank"
     },
     "stat_rank": {
         "display_name": "Rank",
@@ -448,7 +487,8 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_rank"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_rank"
     },
 
     # =========================================================================
@@ -489,7 +529,7 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_part0", "{col}_part1"]
+        "creates_columns": ["{column}_part0", "{column}_part1"]
     },
     "split_space": {
         "display_name": "Split by Space",
@@ -499,7 +539,7 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_part0", "{col}_part1"]
+        "creates_columns": ["{column}_part0", "{column}_part1"]
     },
     "split_semicolon": {
         "display_name": "Split by Semicolon",
@@ -509,7 +549,7 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_part0", "{col}_part1"]
+        "creates_columns": ["{column}_part0", "{column}_part1"]
     },
     "split_pipe": {
         "display_name": "Split by Pipe",
@@ -519,7 +559,7 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_part0", "{col}_part1"]
+        "creates_columns": ["{column}_part0", "{column}_part1"]
     },
     "split_custom": {
         "display_name": "Split by Custom Character",
@@ -530,7 +570,7 @@ OPERATION_REGISTRY = {
             "column": {"type": "column", "required": True, "label": "Column"},
             "delimiter": {"type": "string", "required": True, "label": "Delimiter"}
         },
-        "creates_columns": ["{col}_part0", "{col}_part1"]
+        "creates_columns": ["{column}_part0", "{column}_part1"]
     },
 
     # =========================================================================
@@ -576,7 +616,7 @@ OPERATION_REGISTRY = {
             "column": {"type": "column", "required": True, "label": "Column"},
             "contamination": {"type": "float", "required": False, "default": 0.1, "label": "Contamination"}
         },
-        "creates_columns": ["{col}_is_anomaly", "{col}_anomaly_score"]
+        "creates_columns": ["{column}_is_anomaly", "{column}_anomaly_score"]
     },
     "ml_anomaly_zscore": {
         "display_name": "Anomaly Detection (Z-Score)",
@@ -587,7 +627,7 @@ OPERATION_REGISTRY = {
             "column": {"type": "column", "required": True, "label": "Column"},
             "threshold": {"type": "float", "required": False, "default": 3.0, "label": "Threshold (std devs)"}
         },
-        "creates_columns": ["{col}_is_outlier", "{col}_zscore"]
+        "creates_columns": ["{column}_is_outlier", "{column}_zscore"]
     },
     "ml_anomaly_iqr": {
         "display_name": "Anomaly Detection (IQR)",
@@ -598,7 +638,7 @@ OPERATION_REGISTRY = {
             "column": {"type": "column", "required": True, "label": "Column"},
             "multiplier": {"type": "float", "required": False, "default": 1.5, "label": "IQR Multiplier"}
         },
-        "creates_columns": ["{col}_is_outlier", "{col}_iqr_distance"]
+        "creates_columns": ["{column}_is_outlier", "{column}_iqr_distance"]
     },
     "ml_anomaly_lof": {
         "display_name": "Anomaly Detection (Local Outlier Factor)",
@@ -609,7 +649,7 @@ OPERATION_REGISTRY = {
             "column": {"type": "column", "required": True, "label": "Column"},
             "n_neighbors": {"type": "int", "required": False, "default": 20, "label": "Number of Neighbors"}
         },
-        "creates_columns": ["{col}_is_outlier", "{col}_lof_score"]
+        "creates_columns": ["{column}_is_outlier", "{column}_lof_score"]
     },
     "ml_outlier": {
         "display_name": "Outlier Detection",
@@ -621,7 +661,7 @@ OPERATION_REGISTRY = {
             "method": {"type": "string", "required": False, "default": "iqr",
                       "options": ["iqr", "zscore"], "label": "Method"}
         },
-        "creates_columns": ["{col}_is_outlier", "{col}_outlier_score"]
+        "creates_columns": ["{column}_is_outlier", "{column}_outlier_score"]
     },
     "ml_cluster": {
         "display_name": "K-Means Clustering",
@@ -677,7 +717,7 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column to Analyze"}
         },
-        "creates_columns": ["{col}_benford_deviation", "{col}_is_suspicious"]
+        "creates_columns": ["{column}_benford_deviation", "{column}_is_suspicious"]
     },
 
     # =========================================================================
@@ -693,7 +733,8 @@ OPERATION_REGISTRY = {
             "style": {"type": "string", "required": False, "default": "concise",
                      "options": ["concise", "detailed"], "label": "Explanation Style"}
         },
-        "creates_columns": ["{col}_ai_explanation"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_ai_explanation"
     },
     "ai_sentiment": {
         "display_name": "Sentiment Analysis",
@@ -703,7 +744,7 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Text Column"}
         },
-        "creates_columns": ["{col}_sentiment_score", "{col}_sentiment_label"]
+        "creates_columns": ["{column}_sentiment_score", "{column}_sentiment_label"]
     },
     "ai_extract": {
         "display_name": "Extract Entities",
@@ -715,7 +756,8 @@ OPERATION_REGISTRY = {
             "entity_type": {"type": "string", "required": True,
                            "options": ["email", "phone", "date", "money"], "label": "Entity Type"}
         },
-        "creates_columns": ["{col}_extracted"]
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_extracted"
     },
     "ai_pattern_learn": {
         "display_name": "Pattern Learning (Flash Fill)",
@@ -740,7 +782,7 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"}
         },
-        "creates_columns": ["{col}_min", "{col}_max", "{col}_mean", "{col}_std"]
+        "creates_columns": ["{column}_min", "{column}_max", "{column}_mean", "{column}_std"]
     },
     "stat_group_stats": {
         "display_name": "Add Group Statistics",
@@ -755,5 +797,163 @@ OPERATION_REGISTRY = {
                            "default": ["mean", "std"], "label": "Calculations"}
         },
         "creates_columns": ["{target_column}_mean", "{target_column}_std"]
+    },
+
+    # =========================================================================
+    # ML CLASSIFICATION & PREDICTION OPERATIONS
+    # =========================================================================
+    "ml_classify": {
+        "display_name": "ML Classification",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Classifies data using a supervised ML model",
+        "parameter_schema": {
+            "features": {"type": "list[column]", "required": True, "label": "Feature Columns"},
+            "target": {"type": "column", "required": True, "label": "Target Column (Labels)"},
+            "model_id": {"type": "string", "required": False, "label": "Model ID"},
+            "output_column": {"type": "string", "required": False, "default": "predicted_class", "label": "Output Column"},
+            "probability_column": {"type": "string", "required": False, "default": "probability", "label": "Probability Column"}
+        },
+        "creates_columns": ["{output_column}", "{probability_column}"]
+    },
+    "ml_risk_score": {
+        "display_name": "ML Risk Score",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Calculates risk scores per group based on features",
+        "parameter_schema": {
+            "group_column": {"type": "column", "required": True, "label": "Group Column"},
+            "features": {"type": "list[column]", "required": True, "label": "Feature Columns"},
+            "output_column": {"type": "string", "required": False, "default": "risk_score", "label": "Output Column"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+    "ml_predict": {
+        "display_name": "ML Predict",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Applies a trained model to predict new values",
+        "parameter_schema": {
+            "model_id": {"type": "string", "required": True, "label": "Model ID"},
+            "features": {"type": "list[column]", "required": True, "label": "Feature Columns"},
+            "output_column": {"type": "string", "required": False, "default": "predicted", "label": "Output Column"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+
+    # =========================================================================
+    # AI OPERATIONS (Enrichment & Classification)
+    # =========================================================================
+    "ai_classify": {
+        "display_name": "AI Text Classification",
+        "type": TransformationStepType.AI_ENRICH,
+        "category": "ai",
+        "description": "Classifies text into categories using AI",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Text Column"},
+            "categories": {"type": "list[str]", "required": True, "label": "Categories"},
+            "output_column": {"type": "string", "required": False, "default": "ai_category", "label": "Category Column"},
+            "confidence_column": {"type": "string", "required": False, "default": "ai_confidence", "label": "Confidence Column"}
+        },
+        "creates_columns": ["{output_column}", "{confidence_column}"]
+    },
+    "ai_summarize": {
+        "display_name": "AI Summarize",
+        "type": TransformationStepType.AI_ENRICH,
+        "category": "ai",
+        "description": "Generates AI summaries for text content",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Text Column"},
+            "max_length": {"type": "int", "required": False, "default": 100, "label": "Max Length"},
+            "output_column": {"type": "string", "required": False, "default": "summary", "label": "Output Column"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+    "ai_enrich": {
+        "display_name": "AI Enrich",
+        "type": TransformationStepType.AI_ENRICH,
+        "category": "ai",
+        "description": "Enriches data with AI-generated information",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Source Column"},
+            "enrichment_type": {"type": "string", "required": True,
+                               "options": ["industry", "sentiment", "category", "entity"],
+                               "label": "Enrichment Type"},
+            "output_column": {"type": "string", "required": False, "default": "enriched", "label": "Output Column"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+
+    # =========================================================================
+    # AUDIT OPERATIONS (Duplicate, Gap, Outlier Detection)
+    # =========================================================================
+    "audit_duplicate_detection": {
+        "display_name": "Duplicate Detection",
+        "type": TransformationStepType.AUDIT_FLAG,
+        "category": "audit",
+        "description": "Detects duplicate rows based on specified columns",
+        "parameter_schema": {
+            "columns": {"type": "list[column]", "required": True, "label": "Columns to Check"},
+            "output_column": {"type": "string", "required": False, "default": "duplicate_group_id", "label": "Group ID Column"},
+            "flag_column": {"type": "string", "required": False, "default": "is_duplicate", "label": "Flag Column"}
+        },
+        "creates_columns": ["{output_column}", "{flag_column}"]
+    },
+    "audit_gap_analysis": {
+        "display_name": "Gap Analysis",
+        "type": TransformationStepType.AUDIT_FLAG,
+        "category": "audit",
+        "description": "Detects missing values in sequential ID columns",
+        "parameter_schema": {
+            "id_column": {"type": "column", "required": True, "label": "ID Column"},
+            "output_column": {"type": "string", "required": False, "default": "is_missing_sequence", "label": "Missing Flag Column"},
+            "missing_count_column": {"type": "string", "required": "False", "default": "gaps_after_this", "label": "Gap Count Column"}
+        },
+        "creates_columns": ["{output_column}", "{missing_count_column}"]
+    },
+    "audit_outlier_detection": {
+        "display_name": "Audit Outlier Detection",
+        "type": TransformationStepType.AUDIT_FLAG,
+        "category": "audit",
+        "description": "Detects statistical outliers for audit purposes",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "method": {"type": "string", "required": False, "default": "iqr",
+                      "options": ["iqr", "zscore", "mad"], "label": "Method"},
+            "output_column": {"type": "string", "required": False, "default": "is_outlier", "label": "Flag Column"},
+            "deviation_column": {"type": "string", "required": False, "default": "outlier_deviation", "label": "Deviation Column"}
+        },
+        "creates_columns": ["{output_column}", "{deviation_column}"]
+    },
+    "audit_round_numbers": {
+        "display_name": "Round Number Detection",
+        "type": TransformationStepType.AUDIT_FLAG,
+        "category": "audit",
+        "description": "Flags unusually round numbers (potential manipulation)",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "threshold": {"type": "float", "required": False, "default": 0.9, "label": "Roundness Threshold"},
+            "output_column": {"type": "string", "required": False, "default": "is_round_number", "label": "Flag Column"},
+            "score_column": {"type": "string", "required": False, "default": "roundness_score", "label": "Score Column"}
+        },
+        "creates_columns": ["{output_column}", "{score_column}"]
+    },
+
+    # =========================================================================
+    # STATISTICS ADD GROUP OPERATIONS
+    # =========================================================================
+    "stat_add_group_stats": {
+        "display_name": "Add Group Statistics",
+        "type": TransformationStepType.STAT_ADD_GROUP,
+        "category": "statistics",
+        "description": "Adds aggregate statistics as columns (mean, std, zscore, etc.)",
+        "parameter_schema": {
+            "group_column": {"type": "column", "required": True, "label": "Group By Column"},
+            "target_column": {"type": "column", "required": True, "label": "Target Column"},
+            "calculations": {"type": "list[str]", "required": False,
+                           "options": ["mean", "std", "min", "max", "sum", "count", "zscore"],
+                           "default": ["mean", "std"], "label": "Calculations"}
+        },
+        "creates_columns": ["{target_column}_mean_by_{group}", "{target_column}_std_by_{group}"]
     },
 }

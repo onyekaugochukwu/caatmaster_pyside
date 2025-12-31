@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QFileDialog, QProgressBar, QGroupBox
 )
 from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QSyntaxHighlighter, QTextCharFormat, QColor, QFont, QTextDocument
+from PySide6.QtGui import QSyntaxHighlighter, QTextCharFormat, QColor, QFont, QTextDocument, QIcon
 from pathlib import Path
 import re
 
@@ -273,9 +273,16 @@ class QueryView(QWidget):
             # Get table schema
             schema = self.sql_service.get_table_schema(table_name)
 
-            # Create table item
+            # Create table item with folder icon
             table_item = QTreeWidgetItem([table_name, "TABLE"])
-            table_item.setIcon(0, self.style().standardIcon(self.style().SP_DirIcon))
+            try:
+                from PySide6.QtWidgets import QApplication
+                style = QApplication.style()
+                # Try to use standard icons (SP_DirIcon might not exist in all styles)
+                table_item.setIcon(0, style.standardIcon(style.SP_DirIcon))
+            except (AttributeError, TypeError):
+                # Fallback to folder icon
+                table_item.setIcon(0, QIcon.fromTheme("folder"))
             self.schema_tree.addTopLevelItem(table_item)
 
             # Add columns
@@ -284,7 +291,12 @@ class QueryView(QWidget):
                     col_info['name'],
                     col_info['type']
                 ])
-                col_item.setIcon(0, self.style().standardIcon(self.style().SP_FileIcon))
+                try:
+                    from PySide6.QtWidgets import QApplication
+                    style = QApplication.style()
+                    col_item.setIcon(0, style.standardIcon(style.SP_FileIcon))
+                except (AttributeError, TypeError):
+                    col_item.setIcon(0, QIcon.fromTheme("text-x-generic"))
                 table_item.addChild(col_item)
 
             table_item.setExpanded(True)

@@ -54,6 +54,16 @@ from .steps_panel import (
     StepStatus,
 )
 
+from .backstage import BackstageView
+
+from .ribbon import (
+    RibbonButton,
+    SmallRibbonButton,
+    RibbonTab,
+    RibbonGroup,
+    RibbonBar,
+)
+
 __all__ = [
     # Modern UI
     "ModernButton",
@@ -101,4 +111,12 @@ __all__ = [
     "AppliedStepsPanel",
     "TransformationStep",
     "StepStatus",
+    # Backstage
+    "BackstageView",
+    # Ribbon
+    "RibbonButton",
+    "SmallRibbonButton",
+    "RibbonTab",
+    "RibbonGroup",
+    "RibbonBar",
 ]

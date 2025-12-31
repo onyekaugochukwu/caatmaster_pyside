@@ -16,24 +16,25 @@ import re
 
 
 class SQLSyntaxHighlighter(QSyntaxHighlighter):
-    """SQL syntax highlighter for the query editor."""
+    """SQL syntax highlighter for the query editor - Light mode colors."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # Define formats
+        # Define formats - Light mode colors
         self.keyword_format = QTextCharFormat()
-        self.keyword_format.setForeground(QColor("#0000FF"))  # Blue
+        self.keyword_format.setForeground(QColor("#2563eb"))  # Blue
         self.keyword_format.setFontWeight(QFont.Bold)
 
         self.function_format = QTextCharFormat()
-        self.function_format.setForeground(QColor("#800080"))  # Purple
+        self.function_format.setForeground(QColor("#9333ea"))  # Purple
 
         self.string_format = QTextCharFormat()
-        self.string_format.setForeground(QColor("#A31515"))  # Dark red
+        self.string_format.setForeground(QColor("#dc2626"))  # Red
+        self.string_format.setFontItalic(True)
 
         self.comment_format = QTextCharFormat()
-        self.comment_format.setForeground(QColor("#008000"))  # Green
+        self.comment_format.setForeground(QColor("#6b7280"))  # Gray
         self.comment_format.setFontItalic(True)
 
         # SQL keywords
@@ -223,15 +224,15 @@ class SQLTransformView(QWidget):
 
         editor_layout.addLayout(toolbar_layout)
 
-        # Query editor with syntax highlighting
+        # Query editor with syntax highlighting - Light mode
         self.query_editor = QTextEdit()
         self.query_editor.setFont(QFont("Consolas", 10))
         self.query_editor.setMinimumHeight(120)
         self.query_editor.setStyleSheet("""
             QTextEdit {
-                background-color: #1e1e1e;
-                color: #d4d4d4;
-                border: 1px solid #3c3c3c;
+                background-color: #ffffff;
+                color: #111827;
+                border: 1px solid #e5e7eb;
                 border-radius: 6px;
                 padding: 8px;
             }
@@ -362,17 +363,15 @@ class SQLTransformView(QWidget):
         if self.duckdb_conn is None:
             self.duckdb_conn = duckdb.connect(database=':memory:')
 
-        # Convert to pandas for DuckDB
-        df_pandas = df.to_pandas()
+        # Register the Polars DataFrame directly with DuckDB
+        self.duckdb_conn.register('data', df)
+        self.registered_tables['data'] = df
 
-        # Register the table
-        self.duckdb_conn.register('data', df_pandas)
-        self.registered_tables['data'] = df_pandas
-
-        # Register any columns for custom functions
+        # Register any columns for custom functions as DuckDB relations
         for col in df.columns:
-            col_data = df[col].to_list()
-            self.duckdb_conn.register(f'col_{col}', pd.Series(col_data, name=col))
+            # Create a Polars DataFrame with just this column
+            col_df = df.select(pl.col(col))
+            self.duckdb_conn.register(f'col_{col}', col_df)
 
     @Slot()
     def execute_query(self):

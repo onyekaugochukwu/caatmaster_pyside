@@ -168,7 +168,7 @@ class Project:
     def from_dict(cls, data: Dict[str, Any]) -> 'Project':
         """Deserialize project from dictionary."""
         project = cls(
-            id=data["id"],
+            id=data.get("id"),
             name=data["name"],
             description=data.get("description", ""),
             client_name=data.get("client_name"),

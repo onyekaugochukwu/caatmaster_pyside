@@ -2,12 +2,10 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QFileDialog, QTableWidget, QTableWidgetItem,
-    QHeaderView, QSplitter, QTextEdit, QComboBox, QFrame,
-    QLineEdit, QInputDialog
+    QHeaderView, QFrame, QLineEdit, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QFont, QColor, QPalette
-from pathlib import Path
+from PySide6.QtGui import QFont, QColor
 
 from core.project_manager import Dataset
 
@@ -17,6 +15,7 @@ class DataView(QWidget):
 
     data_loaded = Signal(object)  # Signal when data is loaded
     dataset_added = Signal(Dataset)  # Signal when dataset is added to project
+    show_transform_requested = Signal()  # Signal to show transform view after upload
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -32,267 +31,26 @@ class DataView(QWidget):
 
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(32, 24, 32, 24)
-        main_layout.setSpacing(16)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        # Header section
-        header = QWidget()
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(4)
-
-        title = QLabel("Data Workspace")
-        title.setStyleSheet("""
-            QLabel {
-                font-size: 24px;
-                font-weight: 600;
-                color: #1f2937;
-            }
-        """)
-        header_layout.addWidget(title)
-
-        subtitle = QLabel("Transform data with right-click menus and visual tools")
-        subtitle.setStyleSheet("""
-            QLabel {
-                font-size: 13px;
-                color: #374151;
-            }
-        """)
-        header_layout.addWidget(subtitle)
-
-        main_layout.addWidget(header)
-
-        # Tabs section
-        tabs_widget = QWidget()
-        tabs_layout = QHBoxLayout(tabs_widget)
-        tabs_layout.setContentsMargins(0, 16, 0, 0)
-        tabs_layout.setSpacing(0)
-
-        # Worksheets tab
-        self.worksheets_tab = QPushButton("📄 Worksheets (1)")
-        self.worksheets_tab.setCheckable(True)
-        self.worksheets_tab.setChecked(True)
-        self.worksheets_tab.setCursor(Qt.PointingHandCursor)
-        self.worksheets_tab.setMinimumHeight(32)
-        self.worksheets_tab.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #1f2937;
-                border: none;
-                border-bottom: 2px solid #3b82f6;
-                border-radius: 0px;
-                padding: 6px 12px;
-                font-size: 13px;
-                font-weight: 500;
-            }
-        """)
-        tabs_layout.addWidget(self.worksheets_tab)
-
-        # Datasets tab
-        datasets_tab = QPushButton("📊 Datasets (15)")
-        datasets_tab.setCheckable(True)
-        datasets_tab.setCursor(Qt.PointingHandCursor)
-        datasets_tab.setMinimumHeight(32)
-        datasets_tab.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #374151;
-                border: none;
-                border-bottom: 2px solid transparent;
-                border-radius: 0px;
-                padding: 6px 12px;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                color: #111827;
-                border-bottom: 2px solid #9ca3af;
-            }
-        """)
-        tabs_layout.addWidget(datasets_tab)
-
-        # Applied Steps tab
-        applied_tab = QPushButton("📋 Applied Steps (0)")
-        applied_tab.setCheckable(True)
-        applied_tab.setCursor(Qt.PointingHandCursor)
-        applied_tab.setMinimumHeight(32)
-        applied_tab.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #374151;
-                border: none;
-                border-bottom: 2px solid transparent;
-                border-radius: 0px;
-                padding: 6px 12px;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                color: #111827;
-                border-bottom: 2px solid #9ca3af;
-            }
-        """)
-        tabs_layout.addWidget(applied_tab)
-
-        tabs_layout.addStretch()
-        main_layout.addWidget(tabs_widget)
-
-        # Worksheet info section
-        worksheet_info = QWidget()
-        ws_layout = QHBoxLayout(worksheet_info)
-        ws_layout.setContentsMargins(0, 8, 0, 0)
-        ws_layout.setSpacing(12)
-
-        worksheet_btn = QPushButton("📄 denormalized_ta...")
-        worksheet_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f9fafb;
-                color: #1f2937;
-                border: 1px solid #e5e7eb;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: #f3f4f6;
-            }
-        """)
-        worksheet_btn.setMinimumWidth(200)
-        ws_layout.addWidget(worksheet_btn)
-
-        plus_btn = QPushButton("+")
-        plus_btn.setFixedSize(36, 36)
-        plus_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f9fafb;
-                color: #374151;
-                border: 1px solid #e5e7eb;
-                border-radius: 6px;
-                font-size: 18px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #f3f4f6;
-                color: #111827;
-            }
-        """)
-        ws_layout.addWidget(plus_btn)
-
-        ws_layout.addStretch()
-        main_layout.addWidget(worksheet_info)
-
-        # Stats section
-        stats = QWidget()
-        stats_layout = QHBoxLayout(stats)
-        stats_layout.setContentsMargins(0, 8, 0, 0)
-        stats_layout.setSpacing(32)
-
-        # Rows stat
-        rows_layout = QVBoxLayout()
-        rows_label = QLabel("Rows")
-        rows_label.setStyleSheet("color: #374151; font-size: 12px;")
-        self.rows_value = QLabel("0")
-        self.rows_value.setStyleSheet("color: #111827; font-size: 20px; font-weight: 600;")
-        rows_layout.addWidget(rows_label)
-        rows_layout.addWidget(self.rows_value)
-        stats_layout.addLayout(rows_layout)
-
-        # Columns stat
-        cols_layout = QVBoxLayout()
-        cols_label = QLabel("Columns")
-        cols_label.setStyleSheet("color: #374151; font-size: 12px;")
-        self.cols_value = QLabel("0")
-        self.cols_value.setStyleSheet("color: #111827; font-size: 20px; font-weight: 600;")
-        cols_layout.addWidget(cols_label)
-        cols_layout.addWidget(self.cols_value)
-        stats_layout.addLayout(cols_layout)
-
-        stats_layout.addStretch()
-        main_layout.addWidget(stats)
-
-        # Action buttons
-        actions_layout = QHBoxLayout()
-        actions_layout.setContentsMargins(0, 12, 0, 8)
-
-        # Import button
-        self.import_btn = QPushButton("Import Data")
-        self.import_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
-        """)
-        self.import_btn.clicked.connect(self.show_import_dialog)
-        actions_layout.addWidget(self.import_btn)
-
-        # Export button
-        self.export_btn = QPushButton("Export Data")
-        self.export_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f9fafb;
-                color: #1f2937;
-                border: 1px solid #e5e7eb;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #f3f4f6;
-            }
-        """)
-        self.export_btn.clicked.connect(self.show_export_dialog)
-        self.export_btn.setEnabled(False)
-        actions_layout.addWidget(self.export_btn)
-
-        actions_layout.addStretch()
-
-        # Table info
-        info_label = QLabel("0 rows    0 columns")
-        info_label.setStyleSheet("""
-            QLabel {
-                color: #1f2937;
-                font-size: 13px;
-                font-weight: 600;
-            }
-        """)
-        actions_layout.addWidget(info_label)
-
-        scroll_label = QLabel("No data loaded")
-        scroll_label.setStyleSheet("""
-            QLabel {
-                color: #374151;
-                font-size: 12px;
-            }
-        """)
-        actions_layout.addWidget(scroll_label)
-
-        main_layout.addLayout(actions_layout)
-
-        # Data preview table
+        # Data table fills the entire view - Light mode
         self.data_table = QTableWidget()
         self.data_table.setStyleSheet("""
             QTableWidget {
-                border: 1px solid #e5e7eb;
-                border-radius: 6px;
+                border: none;
                 background-color: white;
-                gridline-color: #f3f4f6;
+                gridline-color: #e5e7eb;
+                color: #111827;
             }
             QTableWidget::item {
                 padding: 8px;
-                color: #1f2937;
+                color: #111827;
                 font-size: 13px;
             }
             QTableWidget::item:selected {
                 background-color: #dbeafe;
-                color: #1f2937;
+                color: #111827;
             }
             QHeaderView::section {
                 background-color: #f9fafb;
@@ -301,7 +59,7 @@ class DataView(QWidget):
                 font-size: 12px;
                 border: none;
                 border-bottom: 1px solid #e5e7eb;
-                border-right: 1px solid #f3f4f6;
+                border-right: 1px solid #e5e7eb;
                 padding: 10px 8px;
             }
         """)
@@ -313,6 +71,17 @@ class DataView(QWidget):
 
     def show_import_dialog(self):
         """Show file import dialog"""
+        # Enforce project requirement - no project = no upload
+        if not self.current_project:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "No Project Selected",
+                "Please create or open a project before importing a dataset.\n\n"
+                "Projects are required to organize and track your audit work."
+            )
+            return
+
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Import Data",
@@ -336,6 +105,7 @@ class DataView(QWidget):
             self.current_dataframe = df
 
             # Get file name for default dataset name
+            from pathlib import Path
             file_name = Path(file_path).stem
 
             # Ask for dataset name
@@ -357,23 +127,17 @@ class DataView(QWidget):
                 self.current_dataset = dataset
                 self.dataset_added.emit(dataset)
 
+                # Emit signal to show transform view with applied steps
+                self.show_transform_requested.emit()
+
             # Update UI
             self.populate_table(df)
-            self.update_stats(df)
-
-            # Enable export button
-            self.export_btn.setEnabled(True)
 
             self.data_loaded.emit(df)
 
         except Exception as e:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Error", f"Failed to load data:\n{str(e)}")
-
-    def update_stats(self, df):
-        """Update the stats display"""
-        self.rows_value.setText(f"{len(df):,}")
-        self.cols_value.setText(str(len(df.columns)))
 
     def show_export_dialog(self):
         """Show export dialog"""

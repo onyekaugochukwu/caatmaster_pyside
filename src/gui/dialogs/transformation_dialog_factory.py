@@ -96,7 +96,9 @@ class TransformationDialogFactory:
         if dialog_class:
             try:
                 # Create specific dialog
-                return dialog_class(dataframe, parent)
+                dialog = dialog_class(dataframe, parent)
+                dialog.setModal(True)
+                return dialog
             except Exception as e:
                 print(f"Failed to create specific dialog for {operation_id}: {e}")
                 # Fall back to generic dialog
@@ -110,13 +112,15 @@ class TransformationDialogFactory:
             return None
 
         try:
-            return GenericTransformationDialog(
+            dialog = GenericTransformationDialog(
                 operation_id=operation_id,
                 param_schema=op_data.get('parameter_schema', {}),
                 dataframe=dataframe,
                 parent=parent,
                 initial_params=initial_params
             )
+            dialog.setModal(True)
+            return dialog
         except Exception as e:
             print(f"Failed to create generic dialog for {operation_id}: {e}")
             return None
