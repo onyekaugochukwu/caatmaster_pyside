@@ -332,6 +332,97 @@ class TransformView(QWidget):
                 lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
             )
 
+    def _extract_placeholders(self, template: str):
+        """Extract placeholder names from a template string.
+
+        Returns a list of placeholder names (without braces).
+        """
+        import re
+        return re.findall(r'\{([^}]+)\}', template)
+
+    def _format_column_name(self, template: str, values: dict):
+        """Format a column name template with provided values.
+
+        Missing placeholders are replaced with the placeholder name (without braces).
+        """
+        import re
+        # Find all placeholders
+        placeholders = set(re.findall(r'\{([^}]+)\}', template))
+        # Build mapping
+        mapping = {}
+        for ph in placeholders:
+            if ph in values and values[ph] is not None:
+                mapping[ph] = str(values[ph])
+            else:
+                # Fallback to placeholder name
+                mapping[ph] = ph
+        # Replace placeholders
+        result = template
+        for ph, val in mapping.items():
+            result = result.replace('{' + ph + '}', val)
+        return result
+
+    def _should_generate_output_cols(self, creates_columns, default_values):
+        """Determine whether to generate output_cols automatically.
+
+        Returns False if column name templates contain placeholders other than
+        'column' or 'operation', since those placeholders depend on user input
+        that may change in the dialog.
+        """
+        safe_placeholders = {'column', 'operation'}
+        if isinstance(creates_columns, list):
+            for template in creates_columns:
+                placeholders = self._extract_placeholders(template)
+                for ph in placeholders:
+                    if ph not in safe_placeholders:
+                        # This placeholder may be changed by user, skip generation
+                        return False
+        # All placeholders are safe, or creates_columns is not a list
+        return True
+
+    def _get_default_param_values(self, operation_id: str, column_name: str):
+        """Generate default parameter values for an operation.
+
+        Returns a dictionary mapping parameter names to default values,
+        suitable for formatting column name templates.
+        """
+        op_data = OPERATION_REGISTRY[operation_id]
+        param_schema = op_data.get('parameter_schema', {})
+        defaults = {'column': column_name}
+
+        # Add operation suffix for use in column naming patterns
+        operation_name = operation_id.split('_')[-1]
+        defaults['operation'] = operation_name
+
+        for param_name, schema in param_schema.items():
+            # Skip 'column' as we already set it
+            if param_name == 'column':
+                continue
+
+            # Use default from schema if available
+            if 'default' in schema:
+                defaults[param_name] = schema['default']
+            else:
+                # Generate a sensible default based on parameter name
+                if param_name.endswith('_column'):
+                    # For parameters like 'output_column', 'target_column', etc.
+                    # Use column_name with suffix
+                    suffix = param_name.replace('_column', '')
+                    if suffix:
+                        defaults[param_name] = f"{column_name}_{suffix}"
+                    else:
+                        defaults[param_name] = f"{column_name}_output"
+                elif param_name in ('output_col', 'probability_column', 'confidence_column',
+                                   'deviation_column', 'score_column', 'flag_column',
+                                   'missing_count_column', 'var_name', 'value_name'):
+                    # Common output column parameters
+                    defaults[param_name] = f"{column_name}_{param_name}"
+                else:
+                    # For other parameters, leave as None (will be filled by user)
+                    defaults[param_name] = None
+
+        return defaults
+
     def on_transformation_selected(self, operation_id: str, column_name: str):
         """Handles the selection of a transformation from the context menu."""
         if not self.pipeline:
@@ -340,24 +431,40 @@ class TransformView(QWidget):
 
         op_data = OPERATION_REGISTRY[operation_id]
 
-        # Prepare initial parameters
-        initial_params = {'column': column_name}
+        # Prepare initial parameters with defaults
+        default_values = self._get_default_param_values(operation_id, column_name)
+        initial_params = {k: v for k, v in default_values.items() if v is not None}
+        # Ensure column is set (should already be)
+        initial_params['column'] = column_name
+
+        # Filter out keys not in parameter schema (except special keys like output_col, output_cols)
+        param_schema = op_data.get('parameter_schema', {})
+        special_keys = {'output_col', 'output_cols'}
+        filtered_params = {}
+        for key, value in initial_params.items():
+            if key in param_schema or key in special_keys:
+                filtered_params[key] = value
+            # else: drop the key (e.g., 'operation' used for formatting)
+        initial_params = filtered_params
 
         # Set default output column name(s) based on operation
         creates_columns = op_data.get('creates_columns', False)
         if creates_columns:
             if isinstance(creates_columns, list):
-                # Multiple columns created - generate output_cols list
-                output_cols = [col_name.format(column=column_name) for col_name in creates_columns]
-                initial_params['output_cols'] = output_cols
-                # If only one column, also set output_col for backward compatibility
-                if len(output_cols) == 1:
-                    initial_params['output_col'] = output_cols[0]
+                # Multiple columns created - generate output_cols list only if all placeholders are safe
+                if self._should_generate_output_cols(creates_columns, default_values):
+                    output_cols = [self._format_column_name(col_name, default_values) for col_name in creates_columns]
+                    initial_params['output_cols'] = output_cols
+                    # If only one column, also set output_col for backward compatibility
+                    if len(output_cols) == 1:
+                        initial_params['output_col'] = output_cols[0]
             else:
-                # Single column created - generate output_col
+                # Single column created - generate output_col only if all placeholders are safe
                 naming_pattern = op_data.get('column_naming_pattern', '{column}_{operation}')
-                operation_name = operation_id.split('_')[-1]
-                initial_params['output_col'] = naming_pattern.format(column=column_name, operation=operation_name)
+                placeholders = self._extract_placeholders(naming_pattern)
+                safe_placeholders = {'column', 'operation'}
+                if all(ph in safe_placeholders for ph in placeholders):
+                    initial_params['output_col'] = self._format_column_name(naming_pattern, default_values)
 
         # Create dialog using the factory
         dialog = TransformationDialogFactory.create_dialog(

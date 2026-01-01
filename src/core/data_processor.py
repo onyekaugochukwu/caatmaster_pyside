@@ -9,6 +9,7 @@ import re
 import hashlib
 from datetime import datetime
 import numpy as np
+import inspect
 
 # Import the operation registry
 from .operation_registry import OPERATION_REGISTRY, TransformationStepType
@@ -19,6 +20,149 @@ class DataProcessor:
     A stateless processor that executes individual data transformation operations.
     The methods in this class are called by the TransformationPipeline.
     """
+
+    # Mapping from operation_id to method name (for parameter validation)
+    _OPERATION_METHODS = {
+        'text_uppercase': 'uppercase',
+        'text_lowercase': 'lowercase',
+        'text_titlecase': 'titlecase',
+        'text_trim': 'trim',
+        'text_extract_numbers': 'extract_numbers',
+        'text_extract_text': 'extract_text',
+        'text_reverse': 'reverse_text',
+        'text_length': 'text_length',
+        'text_hash_md5': 'hash_md5',
+        'text_soundex': 'soundex',
+        'math_round': 'round',
+        'math_ceil': 'ceil',
+        'math_floor': 'floor',
+        'math_abs': 'abs',
+        'math_sqrt': 'sqrt',
+        'math_square': 'square',
+        'math_log': 'log',
+        'math_log10': 'log10',
+        'math_exp': 'exp',
+        'trig_sin': 'sin',
+        'trig_cos': 'cos',
+        'trig_tan': 'tan',
+        'trig_asin': 'asin',
+        'trig_acos': 'acos',
+        'trig_atan': 'atan',
+        'datetime_year': 'year',
+        'datetime_month': 'month',
+        'datetime_day': 'day',
+        'datetime_hour': 'hour',
+        'datetime_minute': 'minute',
+        'datetime_second': 'second',
+        'datetime_weekday': 'weekday',
+        'datetime_quarter': 'quarter',
+        'datetime_age_days': 'age_days',
+        'datetime_age_years': 'age_years',
+        'datetime_is_weekend': 'is_weekend',
+        'datetime_is_leap_year': 'is_leap_year',
+        'datetime_days_in_month': 'days_in_month',
+        'stat_zscore': 'zscore',
+        'stat_percent_rank': 'percent_rank',
+        'stat_rank': 'rank',
+        'column_rename': 'rename_column',
+        'column_change_dtype': 'change_dtype',
+        'split_comma': 'split_by_comma',
+        'split_space': 'split_by_space',
+        'split_semicolon': 'split_by_semicolon',
+        'split_pipe': 'split_by_pipe',
+        'split_custom': 'split_by_custom',
+        'pivot_table': 'pivot_table',
+        'unpivot_table': 'unpivot_table',
+        'ml_anomaly_iforest': 'anomaly_iforest',
+        'ml_anomaly_zscore': 'anomaly_zscore',
+        'ml_anomaly_iqr': 'anomaly_iqr',
+        'ml_anomaly_lof': 'anomaly_lof',
+        'ml_outlier': 'outlier_detection',
+        'ml_cluster': 'kmeans_cluster',
+        'ml_forecast': 'forecast',
+        'ml_train': 'train_model',
+        'audit_benford_law': 'benford_law',
+        'ai_explain': 'explain_column',
+        'ai_sentiment': 'sentiment_analysis',
+        'ai_extract': 'extract_entities',
+        'ai_pattern_learn': 'ai_pattern_learn',
+        'stat_quick_stats': 'quick_stats',
+        'stat_group_stats': 'group_stats',
+        'ml_classify': 'ml_classify',
+        'ml_risk_score': 'ml_risk_score',
+        'ml_predict': 'ml_predict',
+        'ai_classify': 'ai_classify',
+        'ai_summarize': 'ai_summarize',
+        'ai_enrich': 'ai_enrich',
+        'audit_duplicate_detection': 'duplicate_detection',
+        'audit_gap_analysis': 'gap_analysis',
+        'audit_outlier_detection': 'audit_outlier_detection',
+        'audit_round_numbers': 'round_number_detection',
+        'stat_add_group_stats': 'add_group_stats',
+    }
+
+    def _format_column_template(self, template: str, params: Dict[str, Any]) -> str:
+        """Format a column name template with parameters.
+
+        Missing placeholders are replaced with the placeholder name (without braces).
+        """
+        # Find all placeholders
+        placeholders = set(re.findall(r'\{([^}]+)\}', template))
+        # Build mapping
+        mapping = {}
+        for ph in placeholders:
+            if ph in params and params[ph] is not None:
+                mapping[ph] = str(params[ph])
+            else:
+                # Fallback to placeholder name
+                mapping[ph] = ph
+        # Replace placeholders
+        result = template
+        for ph, val in mapping.items():
+            result = result.replace('{' + ph + '}', val)
+        return result
+
+    def _map_parameters_to_method(self, method, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Map parameter names to match method signature.
+
+        Handles common aliases like 'output_column' -> 'output_col'.
+        Removes parameters not accepted by the method.
+        """
+        import inspect
+        sig = inspect.signature(method)
+        param_names = set(sig.parameters.keys())
+        # Remove 'self' and 'df' as they are provided separately
+        param_names.discard('self')
+        param_names.discard('df')
+
+        # Common alias mapping (schema param -> method param)
+        alias_map = {
+            'output_column': 'output_col',
+            'probability_column': 'probability_col',
+            'confidence_column': 'confidence_col',
+            'deviation_column': 'deviation_col',
+            'score_column': 'score_col',
+            'flag_column': 'flag_col',
+            'missing_count_column': 'missing_count_col',
+            'var_name': 'var_name',
+            'value_name': 'value_name',
+        }
+
+        mapped_params = {}
+        for key, value in params.items():
+            # Try to map key via aliases
+            mapped_key = alias_map.get(key, key)
+            if mapped_key in param_names:
+                mapped_params[mapped_key] = value
+            # If key not in param_names, drop it (e.g., 'operation')
+
+        return mapped_params
+
+    def _call_mapped_method(self, method, df: pl.DataFrame, params: Dict[str, Any], **extra_kwargs):
+        """Call a method with mapped parameters and extra keyword arguments."""
+        mapped = self._map_parameters_to_method(method, params)
+        mapped.update(extra_kwargs)
+        return method(df, **mapped)
 
     def apply_operation(self, df: pl.DataFrame, operation_id: str, params: Dict[str, Any]) -> pl.DataFrame:
         """
@@ -47,7 +191,8 @@ class DataProcessor:
                 # Multiple columns created (e.g., split operations)
                 # Only generate if output_cols not already provided
                 if 'output_cols' not in params:
-                    output_cols = [col_name.format(column=column) for col_name in creates_columns]
+                    format_params = params.copy()
+                    output_cols = [self._format_column_template(col_name, format_params) for col_name in creates_columns]
                     # If only one column, use output_col (singular) instead of output_cols (plural)
                     if len(output_cols) == 1:
                         # Only set output_col if not already provided
@@ -60,196 +205,197 @@ class DataProcessor:
                 # Only generate output_col if not already provided
                 if 'output_col' not in params:
                     naming_pattern = op_info.get('column_naming_pattern', '{column}_{operation}')
-                    operation_name = operation_id.split('_')[-1]  # Extract operation suffix
-                    output_col = naming_pattern.format(column=column, operation=operation_name)
+                    format_params = params.copy()
+                    format_params['operation'] = operation_id.split('_')[-1]
+                    output_col = self._format_column_template(naming_pattern, format_params)
                     params['output_col'] = output_col
 
         # Dispatch based on operation type or specific ID
         # Text transformations
         if operation_id == 'text_uppercase':
-            return self.uppercase(df, **params)
+            return self._call_mapped_method(self.uppercase, df, params)
         elif operation_id == 'text_lowercase':
-            return self.lowercase(df, **params)
+            return self._call_mapped_method(self.lowercase, df, params)
         elif operation_id == 'text_titlecase':
-            return self.titlecase(df, **params)
+            return self._call_mapped_method(self.titlecase, df, params)
         elif operation_id == 'text_trim':
-            return self.trim(df, **params)
+            return self._call_mapped_method(self.trim, df, params)
         elif operation_id == 'text_extract_numbers':
-            return self.extract_numbers(df, **params)
+            return self._call_mapped_method(self.extract_numbers, df, params)
         elif operation_id == 'text_extract_text':
-            return self.extract_text(df, **params)
+            return self._call_mapped_method(self.extract_text, df, params)
         elif operation_id == 'text_reverse':
-            return self.reverse_text(df, **params)
+            return self._call_mapped_method(self.reverse_text, df, params)
         elif operation_id == 'text_length':
-            return self.text_length(df, **params)
+            return self._call_mapped_method(self.text_length, df, params)
         elif operation_id == 'text_hash_md5':
-            return self.hash_md5(df, **params)
+            return self._call_mapped_method(self.hash_md5, df, params)
         elif operation_id == 'text_soundex':
-            return self.soundex(df, **params)
+            return self._call_mapped_method(self.soundex, df, params)
 
         # Math transformations
         elif operation_id == 'math_round':
-            return self.round_val(df, **params)
+            return self._call_mapped_method(self.round_val, df, params)
         elif operation_id == 'math_ceil':
-            return self.ceil_val(df, **params)
+            return self._call_mapped_method(self.ceil_val, df, params)
         elif operation_id == 'math_floor':
-            return self.floor_val(df, **params)
+            return self._call_mapped_method(self.floor_val, df, params)
         elif operation_id == 'math_abs':
-            return self.abs_val(df, **params)
+            return self._call_mapped_method(self.abs_val, df, params)
         elif operation_id == 'math_sqrt':
-            return self.sqrt_val(df, **params)
+            return self._call_mapped_method(self.sqrt_val, df, params)
         elif operation_id == 'math_square':
-            return self.square_val(df, **params)
+            return self._call_mapped_method(self.square_val, df, params)
         elif operation_id == 'math_log':
-            return self.log_val(df, **params)
+            return self._call_mapped_method(self.log_val, df, params)
         elif operation_id == 'math_log10':
-            return self.log10_val(df, **params)
+            return self._call_mapped_method(self.log10_val, df, params)
         elif operation_id == 'math_exp':
-            return self.exp_val(df, **params)
+            return self._call_mapped_method(self.exp_val, df, params)
 
         # Trigonometric transformations
         elif operation_id == 'trig_sin':
-            return self.sin_val(df, **params)
+            return self._call_mapped_method(self.sin_val, df, params)
         elif operation_id == 'trig_cos':
-            return self.cos_val(df, **params)
+            return self._call_mapped_method(self.cos_val, df, params)
         elif operation_id == 'trig_tan':
-            return self.tan_val(df, **params)
+            return self._call_mapped_method(self.tan_val, df, params)
         elif operation_id == 'trig_asin':
-            return self.asin_val(df, **params)
+            return self._call_mapped_method(self.asin_val, df, params)
         elif operation_id == 'trig_acos':
-            return self.acos_val(df, **params)
+            return self._call_mapped_method(self.acos_val, df, params)
         elif operation_id == 'trig_atan':
-            return self.atan_val(df, **params)
+            return self._call_mapped_method(self.atan_val, df, params)
 
         # DateTime transformations
         elif operation_id == 'datetime_year':
-            return self.extract_year(df, **params)
+            return self._call_mapped_method(self.extract_year, df, params)
         elif operation_id == 'datetime_month':
-            return self.extract_month(df, **params)
+            return self._call_mapped_method(self.extract_month, df, params)
         elif operation_id == 'datetime_day':
-            return self.extract_day(df, **params)
+            return self._call_mapped_method(self.extract_day, df, params)
         elif operation_id == 'datetime_hour':
-            return self.extract_hour(df, **params)
+            return self._call_mapped_method(self.extract_hour, df, params)
         elif operation_id == 'datetime_minute':
-            return self.extract_minute(df, **params)
+            return self._call_mapped_method(self.extract_minute, df, params)
         elif operation_id == 'datetime_second':
-            return self.extract_second(df, **params)
+            return self._call_mapped_method(self.extract_second, df, params)
         elif operation_id == 'datetime_weekday':
-            return self.extract_weekday(df, **params)
+            return self._call_mapped_method(self.extract_weekday, df, params)
         elif operation_id == 'datetime_quarter':
-            return self.extract_quarter(df, **params)
+            return self._call_mapped_method(self.extract_quarter, df, params)
         elif operation_id == 'datetime_age_days':
-            return self.age_days(df, **params)
+            return self._call_mapped_method(self.age_days, df, params)
         elif operation_id == 'datetime_age_years':
-            return self.age_years(df, **params)
+            return self._call_mapped_method(self.age_years, df, params)
         elif operation_id == 'datetime_is_weekend':
-            return self.is_weekend(df, **params)
+            return self._call_mapped_method(self.is_weekend, df, params)
         elif operation_id == 'datetime_is_leap_year':
-            return self.is_leap_year(df, **params)
+            return self._call_mapped_method(self.is_leap_year, df, params)
         elif operation_id == 'datetime_days_in_month':
-            return self.days_in_month(df, **params)
+            return self._call_mapped_method(self.days_in_month, df, params)
 
         # Statistical transformations
         elif operation_id == 'stat_zscore':
-            return self.zscore_transform(df, **params)
+            return self._call_mapped_method(self.zscore_transform, df, params)
         elif operation_id == 'stat_percent_rank':
-            return self.percent_rank_transform(df, **params)
+            return self._call_mapped_method(self.percent_rank_transform, df, params)
         elif operation_id == 'stat_rank':
-            return self.rank_transform(df, **params)
+            return self._call_mapped_method(self.rank_transform, df, params)
 
         # ML transformations
         elif operation_id == 'ml_anomaly_iforest':
-            return self.ml_anomaly_iforest(df, **params)
+            return self._call_mapped_method(self.ml_anomaly_iforest, df, params)
         elif operation_id == 'ml_anomaly_zscore':
-            return self.ml_anomaly_zscore(df, **params)
+            return self._call_mapped_method(self.ml_anomaly_zscore, df, params)
         elif operation_id == 'ml_anomaly_iqr':
-            return self.ml_anomaly_iqr(df, **params)
+            return self._call_mapped_method(self.ml_anomaly_iqr, df, params)
         elif operation_id == 'ml_anomaly_lof':
-            return self.ml_anomaly_lof(df, **params)
+            return self._call_mapped_method(self.ml_anomaly_lof, df, params)
         elif operation_id == 'ml_outlier':
-            return self.ml_outlier_detection(df, **params)
+            return self._call_mapped_method(self.ml_outlier_detection, df, params)
         elif operation_id == 'ml_cluster':
-            return self.ml_clustering(df, **params)
+            return self._call_mapped_method(self.ml_clustering, df, params)
         elif operation_id == 'ml_forecast':
-            return self.ml_forecast(df, **params)
+            return self._call_mapped_method(self.ml_forecast, df, params)
 
         # ML Training operations
         elif operation_id == 'ml_train':
-            return self.ml_train_model(df, **params)
+            return self._call_mapped_method(self.ml_train_model, df, params)
 
         # Audit transformations
         elif operation_id == 'audit_benfords_law':
-            return self.audit_benford_law(df, **params)
+            return self._call_mapped_method(self.audit_benford_law, df, params)
 
         # AI transformations
         elif operation_id == 'ai_explain':
-            return self.ai_explain_column(df, **params)
+            return self._call_mapped_method(self.ai_explain_column, df, params)
         elif operation_id == 'ai_sentiment':
-            return self.ai_sentiment_analysis(df, **params)
+            return self._call_mapped_method(self.ai_sentiment_analysis, df, params)
         elif operation_id == 'ai_extract':
-            return self.ai_entity_extraction(df, **params)
+            return self._call_mapped_method(self.ai_entity_extraction, df, params)
         elif operation_id == 'ai_pattern_learn':
-            return self.ai_pattern_learning(df, **params)
+            return self._call_mapped_method(self.ai_pattern_learning, df, params)
         elif operation_id == 'ai_classify':
-            return self.ai_classify(df, **params)
+            return self._call_mapped_method(self.ai_classify, df, params)
         elif operation_id == 'ai_summarize':
-            return self.ai_summarize(df, **params)
+            return self._call_mapped_method(self.ai_summarize, df, params)
         elif operation_id == 'ai_enrich':
-            return self.ai_enrich(df, **params)
+            return self._call_mapped_method(self.ai_enrich, df, params)
 
         # ML Classification & Prediction
         elif operation_id == 'ml_classify':
-            return self.ml_classify(df, **params)
+            return self._call_mapped_method(self.ml_classify, df, params)
         elif operation_id == 'ml_risk_score':
-            return self.ml_risk_score(df, **params)
+            return self._call_mapped_method(self.ml_risk_score, df, params)
         elif operation_id == 'ml_predict':
-            return self.ml_predict(df, **params)
+            return self._call_mapped_method(self.ml_predict, df, params)
 
         # Audit transformations
         elif operation_id == 'audit_duplicate_detection':
-            return self.audit_duplicate_detection(df, **params)
+            return self._call_mapped_method(self.audit_duplicate_detection, df, params)
         elif operation_id == 'audit_gap_analysis':
-            return self.audit_gap_analysis(df, **params)
+            return self._call_mapped_method(self.audit_gap_analysis, df, params)
         elif operation_id == 'audit_outlier_detection':
-            return self.audit_outlier_detection(df, **params)
+            return self._call_mapped_method(self.audit_outlier_detection, df, params)
         elif operation_id == 'audit_round_numbers':
-            return self.audit_round_numbers(df, **params)
+            return self._call_mapped_method(self.audit_round_numbers, df, params)
 
         # Statistics group operations
         elif operation_id == 'stat_add_group_stats':
-            return self.stat_add_group_stats(df, **params)
+            return self._call_mapped_method(self.stat_add_group_stats, df, params)
 
         # Column operations
         elif operation_id == 'column_rename':
-            return self.rename_col(df, **params)
+            return self._call_mapped_method(self.rename_col, df, params)
         elif operation_id == 'column_change_dtype':
-            return self.change_data_type(df, **params)
+            return self._call_mapped_method(self.change_data_type, df, params)
 
         # Split operations
         elif operation_id == 'split_comma':
-            return self.split_column(df, **params, delimiter=',')
+            return self._call_mapped_method(self.split_column, df, params, delimiter=',')
         elif operation_id == 'split_space':
-            return self.split_column(df, **params, delimiter=' ')
+            return self._call_mapped_method(self.split_column, df, params, delimiter=' ')
         elif operation_id == 'split_semicolon':
-            return self.split_column(df, **params, delimiter=';')
+            return self._call_mapped_method(self.split_column, df, params, delimiter=';')
         elif operation_id == 'split_pipe':
-            return self.split_column(df, **params, delimiter='|')
+            return self._call_mapped_method(self.split_column, df, params, delimiter='|')
         elif operation_id == 'split_custom':
-            return self.split_column(df, **params)
+            return self._call_mapped_method(self.split_column, df, params)
 
         # Pivot operations
         elif op_type == TransformationStepType.PIVOT:
-            return self.pivot(df, **params)
+            return self._call_mapped_method(self.pivot, df, params)
         elif op_type == TransformationStepType.UNPIVOT:
-            return self.unpivot(df, **params)
+            return self._call_mapped_method(self.unpivot, df, params)
 
         # Filter operations
         elif op_type == TransformationStepType.FILTER:
-            return self.filter_rows(df, **params)
+            return self._call_mapped_method(self.filter_rows, df, params)
 
         # Sort operations
         elif op_type == TransformationStepType.SORT:
-            return self.sort_rows(df, **params)
+            return self._call_mapped_method(self.sort_rows, df, params)
 
         else:
             raise NotImplementedError(f"Operation '{operation_id}' of type '{op_type}' is not yet implemented.")
