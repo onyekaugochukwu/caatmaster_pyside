@@ -466,12 +466,13 @@ class TransformView(QWidget):
                 if all(ph in safe_placeholders for ph in placeholders):
                     initial_params['output_col'] = self._format_column_name(naming_pattern, default_values)
 
-        # Create dialog using the factory
+        # Create dialog using the factory with selected_column for auto-selection
         dialog = TransformationDialogFactory.create_dialog(
             operation_id=operation_id,
             dataframe=self.original_dataframe,
             parent=self,
-            initial_params=initial_params
+            initial_params=initial_params,
+            selected_column=column_name
         )
 
         if dialog:

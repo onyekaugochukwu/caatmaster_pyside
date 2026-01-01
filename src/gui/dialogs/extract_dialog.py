@@ -9,9 +9,10 @@ from typing import Optional, List, Dict, Any
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
     QPushButton, QCheckBox, QGroupBox, QWidget,
-    QMessageBox, QLineEdit, QRadioButton, QButtonGroup, QTabWidget, QWidget
+    QMessageBox, QLineEdit, QRadioButton, QButtonGroup, QTabWidget, QWidget,
+    QScrollArea, QSpinBox
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector
 
@@ -21,10 +22,27 @@ class ExtractDialog(BaseModal):
     Dialog for extracting components from text and date columns
     """
 
-    def __init__(self, dataframe: pl.DataFrame, parent=None):
+    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None):
         self.original_df = dataframe
-        super().__init__("Extract Values", dataframe, parent)
-        self.setMinimumSize(600, 500)
+        super().__init__("Extract Values", dataframe, parent, selected_column=selected_column)
+        self.setMinimumSize(600, 550)
+        self.set_selected_column(selected_column) if selected_column else None
+
+    def set_selected_column(self, column_name: str):
+        """Auto-select the column when opened from context menu"""
+        self.selected_column = column_name
+        if hasattr(self, 'column_selector') and column_name:
+            self.column_selector.set_current_column(column_name)
+            # Update output column name
+            self.output_col_edit.setText(f"{column_name}_extracted")
+            QTimer.singleShot(100, self.preview)
+
+    def _on_column_selected(self, column_name: str):
+        """Called when column is selected from context menu"""
+        if hasattr(self, 'column_selector'):
+            self.column_selector.set_current_column(column_name)
+            self.output_col_edit.setText(f"{column_name}_extracted")
+            QTimer.singleShot(100, self.preview)
 
     def _setup_ui(self):
         """Setup the extract dialog UI"""
@@ -116,18 +134,21 @@ class ExtractDialog(BaseModal):
         self.text_extract_type = QButtonGroup()
 
         text_options = [
-            ("First N Characters", "first_n"),
-            ("Last N Characters", "last_n"),
-            ("Characters from Position", "from_pos"),
-            ("Between Characters", "between"),
+            ("First N Characters", 1),
+            ("Last N Characters", 2),
+            ("Characters from Position", 3),
+            ("Between Characters", 4),
         ]
 
         for label, value in text_options:
             radio = QRadioButton(label)
             self.text_extract_type.addButton(radio, value)
             options_layout.addWidget(radio)
-            if value == "first_n":
+            if value == 1:
                 radio.setChecked(True)
+
+        # Store the radio buttons for reference
+        self.text_radio_buttons = {1: "first_n", 2: "last_n", 3: "from_pos", 4: "between"}
 
         # Parameters
         params_layout = QGridLayout()
@@ -161,28 +182,35 @@ class ExtractDialog(BaseModal):
         self.date_extract_type = QButtonGroup()
 
         date_options = [
-            ("Year", "year"),
-            ("Quarter", "quarter"),
-            ("Month (Number)", "month_num"),
-            ("Month Name", "month_name"),
-            ("Day of Month", "day"),
-            ("Day of Week", "dow"),
-            ("Day Name", "dow_name"),
-            ("Week of Year", "week"),
-            ("Hour", "hour"),
-            ("Minute", "minute"),
-            ("Second", "second"),
-            ("Day of Year", "doy"),
-            ("Is Weekend", "is_weekend"),
-            ("Days Until Today", "days_until"),
+            ("Year", 1),
+            ("Quarter", 2),
+            ("Month (Number)", 3),
+            ("Month Name", 4),
+            ("Day of Month", 5),
+            ("Day of Week", 6),
+            ("Day Name", 7),
+            ("Week of Year", 8),
+            ("Hour", 9),
+            ("Minute", 10),
+            ("Second", 11),
+            ("Day of Year", 12),
+            ("Is Weekend", 13),
+            ("Days Until Today", 14),
         ]
 
         for label, value in date_options:
             radio = QRadioButton(label)
             self.date_extract_type.addButton(radio, value)
             options_layout.addWidget(radio)
-            if value == "year":
+            if value == 1:
                 radio.setChecked(True)
+
+        # Store the radio buttons for reference
+        self.date_radio_buttons = {
+            1: "year", 2: "quarter", 3: "month_num", 4: "month_name", 5: "day",
+            6: "dow", 7: "dow_name", 8: "week", 9: "hour", 10: "minute",
+            11: "second", 12: "doy", 13: "is_weekend", 14: "days_until"
+        }
 
         layout.addWidget(options_group)
         layout.addStretch()
@@ -200,13 +228,13 @@ class ExtractDialog(BaseModal):
         }
 
         if tab_index == 0:  # Text
-            extract_type = self.text_extract_type.checkedId()
-            params["extract_type"] = extract_type
+            extract_type_id = self.text_extract_type.checkedId()
+            params["extract_type"] = self.text_radio_buttons.get(extract_type_id, "first_n")
             params["param1"] = self.text_param.value()
             params["param2"] = self.text_param2.value()
         else:  # Date
-            extract_type = self.date_extract_type.checkedId()
-            params["extract_type"] = extract_type
+            extract_type_id = self.date_extract_type.checkedId()
+            params["extract_type"] = self.date_radio_buttons.get(extract_type_id, "year")
 
         return params
 
@@ -223,7 +251,7 @@ class ExtractDialog(BaseModal):
         if tab_index == 0:  # Text
             if column in self.original_df.columns:
                 dtype = self.original_df[column].dtype
-                if dtype not in [pl.Utf8, pl.Str]:
+                if dtype not in [pl.Utf8]:
                     QMessageBox.warning(self, "Validation Error",
                                       "Selected column must be text type.")
                     return False

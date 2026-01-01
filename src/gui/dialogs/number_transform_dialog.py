@@ -1,0 +1,284 @@
+"""
+Number Transform Dialog for CAATmaster
+Modulo and Power transformations for numeric columns
+"""
+import polars as pl
+import numpy as np
+from typing import Optional, List, Dict, Any
+
+from PySide6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
+    QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox, QGroupBox,
+    QWidget, QMessageBox, QLineEdit, QRadioButton, QButtonGroup,
+    QTabWidget, QScrollArea
+)
+from PySide6.QtCore import Qt, QTimer
+
+from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector
+
+
+class NumberTransformDialog(BaseModal):
+    """
+    Dialog for numeric transformations: Modulo, Power, etc.
+    """
+
+    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None,
+                 transform_type: str = "modulo"):
+        self.original_df = dataframe
+        self.transform_type = transform_type
+        super().__init__("Number Transform", dataframe, parent, selected_column=selected_column)
+        self.setMinimumSize(550, 450)
+        self.set_selected_column(selected_column) if selected_column else None
+
+    def set_selected_column(self, column_name: str):
+        """Auto-select the column when opened from context menu"""
+        self.selected_column = column_name
+        if hasattr(self, 'column_selector') and column_name:
+            self.column_selector.set_current_column(column_name)
+            self.output_col_edit.setText(f"{column_name}_result")
+            QTimer.singleShot(100, self.preview)
+
+    def _on_column_selected(self, column_name: str):
+        """Called when column is selected from context menu"""
+        if hasattr(self, 'column_selector'):
+            self.column_selector.set_current_column(column_name)
+            self.output_col_edit.setText(f"{column_name}_result")
+            QTimer.singleShot(100, self.preview)
+
+    def _setup_ui(self):
+        """Setup the number transform dialog UI"""
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+
+        # Create scroll area for content
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        # Container widget for scroll area
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setSpacing(15)
+
+        # Column selection
+        col_group = QGroupBox("Source Column")
+        col_layout = QVBoxLayout(col_group)
+
+        self.column_selector = ColumnSelector(self.original_df)
+        self.column_selector.set_label("Column:")
+        col_layout.addWidget(self.column_selector)
+
+        scroll_layout.addWidget(col_group)
+
+        # Transform type tabs
+        self.tabs = QTabWidget()
+
+        # Modulo tab
+        self._create_modulo_tab()
+
+        # Power tab
+        self._create_power_tab()
+
+        self.tabs.addTab(self.modulo_tab, "Modulo")
+        self.tabs.addTab(self.power_tab, "Power")
+
+        scroll_layout.addWidget(self.tabs)
+
+        # Output options
+        output_group = QGroupBox("Output Column")
+        output_layout = QGridLayout(output_group)
+
+        output_layout.addWidget(QLabel("New Column Name:"), 0, 0)
+        self.output_col_edit = QLineEdit("result")
+        output_layout.addWidget(self.output_col_edit, 0, 1)
+
+        scroll_layout.addWidget(output_group)
+
+        # Preview
+        preview_group = QGroupBox("Preview")
+        preview_layout = QVBoxLayout(preview_group)
+
+        self.preview_table = PreviewTable(max_rows=10)
+        preview_layout.addWidget(self.preview_table)
+
+        # Stats
+        self.stats_label = QLabel()
+        self.stats_label.setStyleSheet("color: #666; font-style: italic;")
+        preview_layout.addWidget(self.stats_label)
+
+        scroll_layout.addWidget(preview_group)
+
+        # Set scroll area content
+        scroll_area.setWidget(scroll_content)
+        layout.addWidget(scroll_area)
+
+        # Button row
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(self.cancel_btn)
+
+        self.preview_btn = QPushButton("Preview")
+        self.preview_btn.clicked.connect(self.preview)
+        btn_layout.addWidget(self.preview_btn)
+
+        self.transform_btn = QPushButton("Apply Transform")
+        self.transform_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                padding: 8px 20px;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #106ebe;
+            }
+        """)
+        self.transform_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(self.transform_btn)
+
+        layout.addLayout(btn_layout)
+
+    def _create_modulo_tab(self):
+        """Create modulo transformation tab"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(15)
+
+        options_group = QGroupBox("Modulo Options")
+        options_layout = QGridLayout(options_group)
+
+        options_layout.addWidget(QLabel("Divisor:"), 0, 0)
+        self.modulo_divisor = QDoubleSpinBox()
+        self.modulo_divisor.setRange(0.001, 1000000)
+        self.modulo_divisor.setValue(10)
+        self.modulo_divisor.setDecimals(3)
+        options_layout.addWidget(self.modulo_divisor, 0, 1)
+
+        # Store remainder info
+        options_info = QLabel("Returns the remainder after division (e.g., 17 mod 10 = 7)")
+        options_info.setStyleSheet("color: #666; font-size: 11px;")
+        options_layout.addWidget(options_info, 1, 0, 1, 2)
+
+        layout.addWidget(options_group)
+        layout.addStretch()
+
+        self.modulo_tab = tab
+
+    def _create_power_tab(self):
+        """Create power transformation tab"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(15)
+
+        options_group = QGroupBox("Power Options")
+        options_layout = QGridLayout(options_group)
+
+        options_layout.addWidget(QLabel("Exponent:"), 0, 0)
+        self.power_exponent = QDoubleSpinBox()
+        self.power_exponent.setRange(-100, 100)
+        self.power_exponent.setValue(2)
+        self.power_exponent.setDecimals(2)
+        options_layout.addWidget(self.power_exponent, 0, 1)
+
+        # Presets
+        preset_group = QGroupBox("Quick Presets")
+        preset_layout = QHBoxLayout(preset_group)
+
+        presets = [
+            ("Square (x²)", 2),
+            ("Cube (x³)", 3),
+            ("Square Root (√x)", 0.5),
+            ("Reciprocal (1/x)", -1),
+        ]
+        for label, value in presets:
+            btn = QRadioButton(label)
+            btn.toggled.connect(lambda checked, v=value, b=btn: self._on_preset_selected(v, b) if checked else None)
+            preset_layout.addWidget(btn)
+
+        options_layout.addWidget(preset_group, 1, 0, 1, 2)
+
+        layout.addWidget(options_group)
+        layout.addStretch()
+
+        self.power_tab = tab
+
+    def _on_preset_selected(self, value: float, button):
+        """Handle preset button selection"""
+        self.power_exponent.setValue(value)
+
+    def get_parameters(self) -> dict:
+        """Get the transform parameters"""
+        tab_index = self.tabs.currentIndex()
+
+        return {
+            "column": self.column_selector.get_column(),
+            "output_column": self.output_col_edit.text() or "result",
+            "transform_type": ["modulo", "power"][tab_index],
+            "divisor": self.modulo_divisor.value(),
+            "exponent": self.power_exponent.value(),
+        }
+
+    def validate(self) -> bool:
+        """Validate parameters"""
+        column = self.column_selector.get_column()
+        if not column:
+            QMessageBox.warning(self, "Validation Error",
+                              "Please select a column.")
+            return False
+
+        if column in self.original_df.columns:
+            dtype = self.original_df[column].dtype
+            if dtype not in [pl.Float64, pl.Float32, pl.Int64, pl.Int32]:
+                QMessageBox.warning(self, "Validation Error",
+                                  "Selected column must be numeric.")
+                return False
+
+        return True
+
+    def preview(self):
+        """Generate preview of transformation"""
+        try:
+            params = self.get_parameters()
+            column = params["column"]
+            output_col = params["output_column"]
+
+            if not column:
+                return
+
+            # Get data
+            col_data = self.original_df[column].to_numpy()
+            valid_mask = ~np.isnan(col_data.astype(float))
+            valid_data = col_data[valid_mask]
+
+            # Apply transformation
+            if params["transform_type"] == "modulo":
+                divisor = params["divisor"]
+                if divisor == 0:
+                    divisor = 1
+                result = valid_data % divisor
+            else:  # power
+                exponent = params["exponent"]
+                result = np.power(valid_data, exponent)
+
+            # Update preview
+            preview_df = self.original_df[:10].clone()
+            result_series = np.full(10, np.nan)
+            result_series[valid_mask[:10]] = result[:10]
+            preview_df = preview_df.with_columns(
+                pl.Series(name=output_col, values=result_series)
+            )
+            self.preview_table.load_dataframe(preview_df)
+
+            # Update stats
+            mean_val = np.mean(result)
+            self.stats_label.setText(f"Sample mean: {mean_val:.4f}")
+
+        except Exception as e:
+            QMessageBox.warning(self, "Preview Error",
+                              f"Could not generate preview:\n{str(e)}")

@@ -18,6 +18,11 @@ from .split_dialog import SplitColumnDialog
 from .extract_dialog import ExtractDialog
 from .standardize_dialog import StandardizeDialog
 from .ml_training_dialog import MLTrainingDialog
+from .number_transform_dialog import NumberTransformDialog
+from .prefix_suffix_dialog import PrefixSuffixDialog
+from .replace_values_dialog import ReplaceValuesDialog
+from .group_stats_dialog import GroupStatsDialog
+from .ai_dialogs import AIExplainDialog, AISentimentDialog, AIEntityExtractionDialog
 
 # Import polars for type hints
 import polars as pl
@@ -59,6 +64,25 @@ class TransformationDialogFactory:
         'date_extract_month': ExtractDialog,
         'date_extract_day': ExtractDialog,
 
+        # Number transformations
+        'math_modulo': NumberTransformDialog,
+        'math_power': NumberTransformDialog,
+
+        # Prefix/Suffix
+        'text_add_prefix': PrefixSuffixDialog,
+        'text_add_suffix': PrefixSuffixDialog,
+
+        # Replace
+        'replace_values': ReplaceValuesDialog,
+
+        # Group Statistics
+        'stat_group_stats': GroupStatsDialog,
+
+        # AI Operations
+        'ai_explain': AIExplainDialog,
+        'ai_sentiment': AISentimentDialog,
+        'ai_extract': AIEntityExtractionDialog,
+
         # Standardization operations
         'stat_zscore': StandardizeDialog,
         'standardize_minmax': StandardizeDialog,
@@ -74,7 +98,8 @@ class TransformationDialogFactory:
         operation_id: str,
         dataframe: pl.DataFrame,
         parent: Optional[QWidget] = None,
-        initial_params: Optional[Dict[str, Any]] = None
+        initial_params: Optional[Dict[str, Any]] = None,
+        selected_column: Optional[str] = None
     ) -> Optional[QWidget]:
         """
         Create the appropriate dialog for the given operation.
@@ -84,6 +109,7 @@ class TransformationDialogFactory:
             dataframe: The current dataframe for column selection
             parent: Parent widget for the dialog
             initial_params: Initial parameter values
+            selected_column: The column that was right-clicked (for auto-selection)
 
         Returns:
             A dialog widget or None if creation fails
@@ -95,8 +121,21 @@ class TransformationDialogFactory:
 
         if dialog_class:
             try:
-                # Create specific dialog
-                dialog = dialog_class(dataframe, parent)
+                # Create specific dialog with selected_column support
+                import inspect
+                sig = inspect.signature(dialog_class.__init__)
+
+                # Special handling for NumberTransformDialog - needs transform_type
+                if dialog_class.__name__ == 'NumberTransformDialog':
+                    transform_type = 'modulo' if operation_id == 'math_modulo' else 'power'
+                    if 'selected_column' in sig.parameters:
+                        dialog = dialog_class(dataframe, parent, selected_column=selected_column, transform_type=transform_type)
+                    else:
+                        dialog = dialog_class(dataframe, parent, transform_type=transform_type)
+                elif 'selected_column' in sig.parameters:
+                    dialog = dialog_class(dataframe, parent, selected_column=selected_column)
+                else:
+                    dialog = dialog_class(dataframe, parent)
                 dialog.setModal(True)
                 return dialog
             except Exception as e:

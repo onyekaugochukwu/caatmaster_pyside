@@ -10,9 +10,9 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
     QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox, QRadioButton,
     QButtonGroup, QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView,
-    QWidget, QMessageBox, QLineEdit, QTabWidget, QWidget
+    QWidget, QMessageBox, QLineEdit, QTabWidget, QWidget, QScrollArea
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 
 from ..components.common_modals import (
     BaseModal, PreviewTable, NumberInput, ColumnSelector, StatusLabel
@@ -24,10 +24,27 @@ class AnomalyDetectionDialog(BaseModal):
     Anomaly Detection dialog with multiple method options
     """
 
-    def __init__(self, dataframe: pl.DataFrame, parent=None):
+    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None):
         self.original_df = dataframe
-        super().__init__("Anomaly Detection", dataframe, parent)
-        self.setMinimumSize(700, 600)
+        super().__init__("Anomaly Detection", dataframe, parent, selected_column=selected_column)
+        self.setMinimumSize(700, 650)
+        self.set_selected_column(selected_column) if selected_column else None
+
+    def set_selected_column(self, column_name: str):
+        """Auto-select the column when opened from context menu"""
+        self.selected_column = column_name
+        # Auto-select in all tabs
+        for col_selector in [self.iforest_col, self.zscore_col, self.iqr_col, self.lof_col]:
+            if hasattr(col_selector, 'set_current_column'):
+                col_selector.set_current_column(column_name)
+        QTimer.singleShot(100, self.preview)
+
+    def _on_column_selected(self, column_name: str):
+        """Called when column is selected from context menu"""
+        for col_selector in [self.iforest_col, self.zscore_col, self.iqr_col, self.lof_col]:
+            if hasattr(col_selector, 'set_current_column'):
+                col_selector.set_current_column(column_name)
+        QTimer.singleShot(100, self.preview)
 
     def _setup_ui(self):
         """Setup the anomaly detection dialog UI"""

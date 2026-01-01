@@ -10,9 +10,9 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
     QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox, QGroupBox,
     QWidget, QMessageBox, QLineEdit, QTableWidget, QTableWidgetItem,
-    QHeaderView, QSplitter
+    QHeaderView, QSplitter, QScrollArea
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtCharts import QChart, QChartView, QBarSeries, QBarSet, QValueAxis, QCategoryAxis
 
 from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector, StatusLabel
@@ -24,10 +24,24 @@ class BenfordDialog(BaseModal):
     Benford's Law Analysis dialog for audit fraud detection
     """
 
-    def __init__(self, dataframe: pl.DataFrame, parent=None):
+    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None):
         self.original_df = dataframe
-        super().__init__("Benford's Law Analysis", dataframe, parent)
+        super().__init__("Benford's Law Analysis", dataframe, parent, selected_column=selected_column)
         self.setMinimumSize(900, 700)
+        self.set_selected_column(selected_column) if selected_column else None
+
+    def set_selected_column(self, column_name: str):
+        """Auto-select the column when opened from context menu"""
+        self.selected_column = column_name
+        if hasattr(self, 'column_selector') and column_name:
+            self.column_selector.set_current_column(column_name)
+            QTimer.singleShot(100, self.preview)
+
+    def _on_column_selected(self, column_name: str):
+        """Called when column is selected from context menu"""
+        if hasattr(self, 'column_selector'):
+            self.column_selector.set_current_column(column_name)
+            QTimer.singleShot(100, self.preview)
 
     def _setup_ui(self):
         """Setup the Benford's Law dialog UI"""

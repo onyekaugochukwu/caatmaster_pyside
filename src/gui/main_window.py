@@ -624,9 +624,9 @@ class MainWindow(QMainWindow):
 
         # Try to get selected column from horizontal header
         header = table.horizontalHeader()
-        selected_index = header.currentIndex()
-        if selected_index.isValid():
-            column_name = table.horizontalHeaderItem(selected_index).text()
+        current_col = header.currentIndex()
+        if current_col.isValid():
+            column_name = table.horizontalHeaderItem(current_col.column()).text()
             selected_columns.append(column_name)
 
         # If no column selected, use the first column

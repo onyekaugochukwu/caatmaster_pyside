@@ -25,11 +25,13 @@ class BaseModal(QDialog):
     # Signals
     accepted_params = Signal(dict)  # Emitted with parameters on successful apply
 
-    def __init__(self, title: str, dataframe: pl.DataFrame = None, parent=None):
+    def __init__(self, title: str, dataframe: pl.DataFrame = None, parent=None,
+                 selected_column: str = None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
         self.dataframe = dataframe
+        self.selected_column = selected_column  # Store for auto-selection from context menu
         self._setup_ui()
         self._connect_signals()
 
@@ -70,8 +72,19 @@ class BaseModal(QDialog):
         self.dataframe = df
         self._on_dataframe_changed()
 
+    def set_selected_column(self, column_name: str):
+        """Set the selected column (for context menu auto-selection)"""
+        self.selected_column = column_name
+        # Try to auto-select the column in any column selectors
+        self._on_column_selected(column_name)
+
     def _on_dataframe_changed(self):
         """Called when dataframe changes - override in subclasses"""
+        pass
+
+    def _on_column_selected(self, column_name: str):
+        """Called when a column is selected from context menu.
+        Override in subclasses to auto-select the column."""
         pass
 
 
@@ -120,7 +133,7 @@ class ColumnSelector(QWidget):
         self.label.setText(text)
 
     def set_current_column(self, column_name: str):
-        """Set the current selected column"""
+        """Set the currently selected column"""
         if self.dataframe is not None and column_name in self.dataframe.columns:
             self.combo.setCurrentText(column_name)
 

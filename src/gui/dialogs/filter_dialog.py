@@ -9,9 +9,9 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
     QPushButton, QRadioButton, QButtonGroup, QGroupBox, QTableWidget,
     QTableWidgetItem, QWidget, QMessageBox, QLineEdit, QCheckBox,
-    QFrame, QToolButton
+    QFrame, QToolButton, QScrollArea
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 
 from ..components.common_modals import BaseModal, PreviewTable
 
@@ -164,11 +164,26 @@ class FilterDialog(BaseModal):
     Complex filter dialog with multiple conditions and AND/OR grouping
     """
 
-    def __init__(self, dataframe: pl.DataFrame, parent=None):
+    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None):
         self.original_df = dataframe
         self.conditions = []  # List of (widget, combine_with)
-        super().__init__("Filter Data", dataframe, parent)
+        super().__init__("Filter Data", dataframe, parent, selected_column=selected_column)
         self.setMinimumSize(700, 600)
+        self.set_selected_column(selected_column) if selected_column else None
+
+    def set_selected_column(self, column_name: str):
+        """Auto-select the column when opened from context menu"""
+        self.selected_column = column_name
+        if column_name and self.conditions:
+            # Set the first condition's column to the selected column
+            self.conditions[0].column_combo.setCurrentText(column_name)
+            QTimer.singleShot(100, self.preview)
+
+    def _on_column_selected(self, column_name: str):
+        """Called when column is selected from context menu"""
+        if column_name and self.conditions:
+            self.conditions[0].column_combo.setCurrentText(column_name)
+            QTimer.singleShot(100, self.preview)
 
     def _setup_ui(self):
         """Setup the filter dialog UI"""

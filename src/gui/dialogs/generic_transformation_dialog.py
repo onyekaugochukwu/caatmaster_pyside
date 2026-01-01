@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from typing import Dict, Any, List, Union
 
+
 class GenericTransformationDialog(QDialog):
     """A dialog that dynamically builds a form for a transformation."""
 
@@ -198,8 +199,21 @@ class GenericTransformationDialog(QDialog):
                     value = [item.strip() for item in widget.text().split(',') if item.strip()]
                 else:
                     value = widget.text()
+            elif isinstance(widget, QGroupBox):
+                # For QGroupBox containing a list widget, get the selected items from the list
+                # Find the QListWidget child
+                list_widget = widget.findChild(QListWidget)
+                if list_widget:
+                    selected_items = list_widget.selectedItems()
+                    value = [item.text() for item in selected_items]
+                else:
+                    value = []
             else:
-                value = widget.text()
+                # For any other widget type, try to get text or use str()
+                if hasattr(widget, 'text'):
+                    value = widget.text()
+                else:
+                    value = str(widget)
 
             params[param_name] = value
 

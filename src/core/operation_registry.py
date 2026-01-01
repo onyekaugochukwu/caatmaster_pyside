@@ -956,4 +956,134 @@ OPERATION_REGISTRY = {
         },
         "creates_columns": ["{target_column}_mean_by_{group}", "{target_column}_std_by_{group}"]
     },
+
+    # =========================================================================
+    # TEXT EXTRACTION OPERATIONS (Excel LEFT/RIGHT/MID style)
+    # =========================================================================
+    "text_extract_first": {
+        "display_name": "Extract First N Characters",
+        "type": TransformationStepType.CALCULATE,
+        "category": "text",
+        "description": "Extracts the first N characters from text (Excel LEFT function)",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "num_chars": {"type": "int", "required": False, "default": 1, "label": "Number of Characters"}
+        },
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_left"
+    },
+    "text_extract_last": {
+        "display_name": "Extract Last N Characters",
+        "type": TransformationStepType.CALCULATE,
+        "category": "text",
+        "description": "Extracts the last N characters from text (Excel RIGHT function)",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "num_chars": {"type": "int", "required": False, "default": 1, "label": "Number of Characters"}
+        },
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_right"
+    },
+    "text_extract_middle": {
+        "display_name": "Extract Middle Characters",
+        "type": TransformationStepType.CALCULATE,
+        "category": "text",
+        "description": "Extracts characters from the middle of text (Excel MID function)",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "start_pos": {"type": "int", "required": False, "default": 1, "label": "Start Position (1-indexed)"},
+            "num_chars": {"type": "int", "required": False, "default": 1, "label": "Number of Characters"}
+        },
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_mid"
+    },
+
+    # =========================================================================
+    # MATH OPERATIONS - MODULO & POWER
+    # =========================================================================
+    "math_modulo": {
+        "display_name": "Modulo (Remainder)",
+        "type": TransformationStepType.CALCULATE,
+        "category": "math",
+        "description": "Calculates the remainder after division",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "divisor": {"type": "int", "required": True, "label": "Divisor"}
+        },
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_mod"
+    },
+    "math_power": {
+        "display_name": "Raise to Power",
+        "type": TransformationStepType.CALCULATE,
+        "category": "math",
+        "description": "Raises the value to a specified power",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "exponent": {"type": "int", "required": True, "label": "Exponent"}
+        },
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_power"
+    },
+
+    # =========================================================================
+    # PREFIX/SUFFIX OPERATIONS
+    # =========================================================================
+    "text_add_prefix": {
+        "display_name": "Add Prefix",
+        "type": TransformationStepType.CALCULATE,
+        "category": "text",
+        "description": "Adds a prefix to the beginning of text",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "prefix": {"type": "string", "required": True, "label": "Prefix Text"}
+        },
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_prefixed"
+    },
+    "text_add_suffix": {
+        "display_name": "Add Suffix",
+        "type": TransformationStepType.CALCULATE,
+        "category": "text",
+        "description": "Adds a suffix to the end of text",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "suffix": {"type": "string", "required": True, "label": "Suffix Text"}
+        },
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_suffixed"
+    },
+
+    # =========================================================================
+    # REPLACE VALUES OPERATION
+    # =========================================================================
+    "replace_values": {
+        "display_name": "Find and Replace",
+        "type": TransformationStepType.CALCULATE,
+        "category": "text",
+        "description": "Finds and replaces values in a column",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "find_value": {"type": "string", "required": True, "label": "Find"},
+            "replace_value": {"type": "string", "required": True, "label": "Replace With"},
+            "case_sensitive": {"type": "bool", "required": False, "default": True, "label": "Case Sensitive"}
+        },
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_replaced"
+    },
+
+    # =========================================================================
+    # STANDARDIZATION OPERATIONS
+    # =========================================================================
+    "standardize_minmax": {
+        "display_name": "Min-Max Normalization",
+        "type": TransformationStepType.CALCULATE,
+        "category": "statistics",
+        "description": "Scales values to range 0-1 using min-max normalization",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"}
+        },
+        "creates_columns": True,
+        "column_naming_pattern": "{column}_minmax"
+    },
 }

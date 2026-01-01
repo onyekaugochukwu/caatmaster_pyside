@@ -9,7 +9,8 @@ from typing import Optional, List, Dict, Any
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
     QPushButton, QSpinBox, QCheckBox, QGroupBox, QWidget,
-    QMessageBox, QLineEdit, QRadioButton, QButtonGroup, QTabWidget, QWidget
+    QMessageBox, QLineEdit, QRadioButton, QButtonGroup, QTabWidget, QWidget,
+    QScrollArea
 )
 from PySide6.QtCore import Qt
 
@@ -21,10 +22,28 @@ class SplitColumnDialog(BaseModal):
     Dialog for splitting text columns into multiple columns
     """
 
-    def __init__(self, dataframe: pl.DataFrame, parent=None):
+    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None):
         self.original_df = dataframe
-        super().__init__("Split Column", dataframe, parent)
-        self.setMinimumSize(600, 500)
+        super().__init__("Split Column", dataframe, parent, selected_column=selected_column)
+        self.setMinimumSize(600, 550)
+        self.set_selected_column(selected_column) if selected_column else None
+
+    def set_selected_column(self, column_name: str):
+        """Auto-select the column when opened from context menu"""
+        self.selected_column = column_name
+        if hasattr(self, 'column_selector') and column_name:
+            self.column_selector.set_current_column(column_name)
+            # Update output column prefix
+            self.prefix_edit.setText(f"{column_name}_split")
+            # Trigger preview with selected column
+            QTimer.singleShot(100, self.preview)
+
+    def _on_column_selected(self, column_name: str):
+        """Called when column is selected from context menu"""
+        if hasattr(self, 'column_selector'):
+            self.column_selector.set_current_column(column_name)
+            self.prefix_edit.setText(f"{column_name}_split")
+            QTimer.singleShot(100, self.preview)
 
     def _setup_ui(self):
         """Setup the split column dialog UI"""
@@ -242,7 +261,7 @@ class SplitColumnDialog(BaseModal):
 
         if column in self.original_df.columns:
             dtype = self.original_df[column].dtype
-            if dtype not in [pl.Utf8, pl.Str]:
+            if dtype not in [pl.Utf8]:
                 QMessageBox.warning(self, "Validation Error",
                                   "Selected column must be text type.")
                 return False

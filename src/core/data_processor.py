@@ -99,6 +99,17 @@ class DataProcessor:
         'audit_outlier_detection': 'audit_outlier_detection',
         'audit_round_numbers': 'round_number_detection',
         'stat_add_group_stats': 'add_group_stats',
+
+        # New operations added to registry
+        'text_extract_first': 'extract_first_chars',
+        'text_extract_last': 'extract_last_chars',
+        'text_extract_middle': 'extract_middle_chars',
+        'math_modulo': 'modulo',
+        'math_power': 'power',
+        'text_add_prefix': 'add_prefix',
+        'text_add_suffix': 'add_suffix',
+        'replace_values': 'replace_values',
+        'standardize_minmax': 'minmax_normalize',
     }
 
     def _format_column_template(self, template: str, params: Dict[str, Any]) -> str:
@@ -233,6 +244,24 @@ class DataProcessor:
         elif operation_id == 'text_soundex':
             return self._call_mapped_method(self.soundex, df, params)
 
+        # Text extraction operations (Excel LEFT/RIGHT/MID style)
+        elif operation_id == 'text_extract_first':
+            return self._call_mapped_method(self.extract_first_chars, df, params)
+        elif operation_id == 'text_extract_last':
+            return self._call_mapped_method(self.extract_last_chars, df, params)
+        elif operation_id == 'text_extract_middle':
+            return self._call_mapped_method(self.extract_middle_chars, df, params)
+
+        # Text prefix/suffix operations
+        elif operation_id == 'text_add_prefix':
+            return self._call_mapped_method(self.add_prefix, df, params)
+        elif operation_id == 'text_add_suffix':
+            return self._call_mapped_method(self.add_suffix, df, params)
+
+        # Replace values operation
+        elif operation_id == 'replace_values':
+            return self._call_mapped_method(self.replace_values, df, params)
+
         # Math transformations
         elif operation_id == 'math_round':
             return self._call_mapped_method(self.round_val, df, params)
@@ -252,6 +281,10 @@ class DataProcessor:
             return self._call_mapped_method(self.log10_val, df, params)
         elif operation_id == 'math_exp':
             return self._call_mapped_method(self.exp_val, df, params)
+        elif operation_id == 'math_modulo':
+            return self._call_mapped_method(self.modulo, df, params)
+        elif operation_id == 'math_power':
+            return self._call_mapped_method(self.power, df, params)
 
         # Trigonometric transformations
         elif operation_id == 'trig_sin':
@@ -302,6 +335,8 @@ class DataProcessor:
             return self._call_mapped_method(self.percent_rank_transform, df, params)
         elif operation_id == 'stat_rank':
             return self._call_mapped_method(self.rank_transform, df, params)
+        elif operation_id == 'standardize_minmax':
+            return self._call_mapped_method(self.minmax_normalize, df, params)
 
         # ML transformations
         elif operation_id == 'ml_anomaly_iforest':
@@ -429,7 +464,7 @@ class DataProcessor:
     def extract_text(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
         """Extract alphabetic text"""
         return df.with_columns(
-            pl.col(column).str.replace(r"\d+", "", literal=False).str.strip().alias(output_col)
+            pl.col(column).str.replace_all(r"\d+", "", literal=True).str.strip_chars().alias(output_col)
         )
 
     def reverse_text(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
@@ -606,7 +641,7 @@ class DataProcessor:
         today = datetime.now()
         dates = self._ensure_datetime(df, column)
         return df.with_columns(
-            (pl.lit(today).cast(pl.Datetime()) - dates.cast(pl.Datetime())).dt.days().abs().alias(output_col)
+            (pl.lit(today).cast(pl.Datetime()) - dates.cast(pl.Datetime())).dt.total_days().abs().alias(output_col)
         )
 
     def age_years(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
@@ -615,7 +650,7 @@ class DataProcessor:
         dates = self._ensure_datetime(df, column)
         today = datetime.now()
         temp_df = df.with_columns(
-            (pl.lit(today).cast(pl.Datetime()) - dates.cast(pl.Datetime())).dt.days().abs().alias(days_col)
+            (pl.lit(today).cast(pl.Datetime()) - dates.cast(pl.Datetime())).dt.total_days().abs().alias(days_col)
         )
         return temp_df.with_columns(
             (pl.col(days_col) / 365.25).cast(pl.Int64).alias(output_col)
@@ -634,17 +669,10 @@ class DataProcessor:
         return df.with_columns(((year % 4 == 0) & ((year % 100 != 0) | (year % 400 == 0))).alias(output_col))
 
     def days_in_month(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
-        """Get days in month"""
+        """Get days in month using native polars method"""
         dates = self._ensure_datetime(df, column)
         return df.with_columns(
-            pl.when(dates.dt.month().is_in([1, 3, 5, 7, 8, 10, 12]))
-            .then(31)
-            .when(dates.dt.month().is_in([4, 6, 9, 11]))
-            .then(30)
-            .when(dates.dt.month() == 2)
-            .then(pl.when((dates.dt.year() % 4 == 0) & ((dates.dt.year() % 100 != 0) | (dates.dt.year() % 400 == 0))).then(29).otherwise(28))
-            .otherwise(0)
-            .alias(output_col)
+            dates.dt.days_in_month().alias(output_col)
         )
 
     # ============================================================================
@@ -1302,6 +1330,112 @@ class DataProcessor:
         return df.sort(column, descending=not ascending)
 
 
+
+    # =========================================================================
+    # TEXT EXTRACTION OPERATIONS (Excel LEFT/RIGHT/MID style)
+    # =========================================================================
+
+    def extract_first_chars(self, df: pl.DataFrame, column: str, num_chars: int = 1, output_col: str = None) -> pl.DataFrame:
+        """Extract first N characters from text (Excel LEFT function)"""
+        output_col = output_col or f"{column}_left"
+        return df.with_columns(
+            pl.col(column).str.slice(offset=0, length=num_chars).alias(output_col)
+        )
+
+    def extract_last_chars(self, df: pl.DataFrame, column: str, num_chars: int = 1, output_col: str = None) -> pl.DataFrame:
+        """Extract last N characters from text (Excel RIGHT function)"""
+        output_col = output_col or f"{column}_right"
+        return df.with_columns(
+            pl.col(column).str.slice(offset=-num_chars).alias(output_col)
+        )
+
+    def extract_middle_chars(self, df: pl.DataFrame, column: str, start_pos: int = 1, num_chars: int = 1, output_col: str = None) -> pl.DataFrame:
+        """Extract characters from the middle of text (Excel MID function)"""
+        output_col = output_col or f"{column}_mid"
+        offset = max(0, start_pos - 1)
+        return df.with_columns(
+            pl.col(column).str.slice(offset=offset, length=num_chars).alias(output_col)
+        )
+
+    # =========================================================================
+    # MATH OPERATIONS - MODULO & POWER
+    # =========================================================================
+
+    def modulo(self, df: pl.DataFrame, column: str, divisor: int, output_col: str = None) -> pl.DataFrame:
+        """Calculate remainder after division"""
+        output_col = output_col or f"{column}_mod"
+        col_dtype = df[column].dtype
+
+        # Check if column is date/datetime type - modulo not applicable
+        if col_dtype in [pl.Date, pl.Datetime]:
+            # Return original column with warning indicator
+            return df.with_columns(
+                pl.lit(None, dtype=pl.Int64).alias(output_col)
+            )
+
+        return df.with_columns(
+            (pl.col(column) % divisor).alias(output_col)
+        )
+
+    def power(self, df: pl.DataFrame, column: str, exponent: int, output_col: str = None) -> pl.DataFrame:
+        """Raise value to a specified power"""
+        output_col = output_col or f"{column}_power"
+        return df.with_columns(
+            (pl.col(column) ** exponent).alias(output_col)
+        )
+
+    # =========================================================================
+    # PREFIX/SUFFIX OPERATIONS
+    # =========================================================================
+
+    def add_prefix(self, df: pl.DataFrame, column: str, prefix: str, output_col: str = None) -> pl.DataFrame:
+        """Add prefix to text"""
+        output_col = output_col or f"{column}_prefixed"
+        return df.with_columns(
+            (pl.lit(prefix) + pl.col(column)).alias(output_col)
+        )
+
+    def add_suffix(self, df: pl.DataFrame, column: str, suffix: str, output_col: str = None) -> pl.DataFrame:
+        """Add suffix to text"""
+        output_col = output_col or f"{column}_suffixed"
+        return df.with_columns(
+            (pl.col(column) + pl.lit(suffix)).alias(output_col)
+        )
+
+    # =========================================================================
+    # REPLACE VALUES OPERATION
+    # =========================================================================
+
+    def replace_values(self, df: pl.DataFrame, column: str, find_value: str, replace_value: str,
+                       case_sensitive: bool = True, output_col: str = None) -> pl.DataFrame:
+        """Find and replace values in a column"""
+        output_col = output_col or f"{column}_replaced"
+        if case_sensitive:
+            return df.with_columns(
+                pl.col(column).str.replace(find_value, replace_value).alias(output_col)
+            )
+        else:
+            return df.with_columns(
+                pl.col(column).str.replace(find_value, replace_value, literal=False).alias(output_col)
+            )
+
+    # =========================================================================
+    # STANDARDIZATION OPERATIONS
+    # =========================================================================
+
+    def minmax_normalize(self, df: pl.DataFrame, column: str, output_col: str = None) -> pl.DataFrame:
+        """Scale values to range 0-1 using min-max normalization"""
+        output_col = output_col or f"{column}_minmax"
+        col_min = df[column].min()
+        col_max = df[column].max()
+        col_range = col_max - col_min
+        if col_range == 0:
+            return df.with_columns(
+                pl.lit(0.5).alias(output_col)
+            )
+        return df.with_columns(
+            ((pl.col(column) - col_min) / col_range).alias(output_col)
+        )
 class TransformationStep:
     """Represents a single transformation step in the pipeline."""
 
@@ -1624,7 +1758,7 @@ class LegacyDataProcessor:
     def text_extract_text(self, df: pl.DataFrame, column: str) -> pl.DataFrame:
         """Extract alphabetic text"""
         return df.with_columns(
-            pl.col(column).str.replace(r"\d+", "", literal=False).str.strip().alias(f"{column}_text")
+            pl.col(column).str.replace_all(r"\d+", "", literal=True).str.strip_chars().alias(f"{column}_text")
         )
 
     def text_reverse(self, df: pl.DataFrame, column: str) -> pl.DataFrame:
@@ -1819,7 +1953,7 @@ class LegacyDataProcessor:
         else:
             dates = df[column]
         return df.with_columns(
-            (pl.lit(today).cast(pl.Datetime()) - dates.cast(pl.Datetime())).dt.days().abs().alias(f"{column}_age_days")
+            (pl.lit(today).cast(pl.Datetime()) - dates.cast(pl.Datetime())).dt.total_days().abs().alias(f"{column}_age_days")
         )
 
     def datetime_age_years(self, df: pl.DataFrame, column: str) -> pl.DataFrame:
@@ -1846,21 +1980,14 @@ class LegacyDataProcessor:
         return df.with_columns(((year % 4 == 0) & ((year % 100 != 0) | (year % 400 == 0))).alias(f"{column}_is_leap_year"))
 
     def datetime_days_in_month(self, df: pl.DataFrame, column: str) -> pl.DataFrame:
-        """Get days in month"""
+        """Get days in month using native polars method"""
         col = pl.col(column)
         if df[column].dtype == pl.Utf8:
             dates = col.str.to_datetime()
         else:
             dates = col
         return df.with_columns(
-            pl.when(dates.dt.month().is_in([1, 3, 5, 7, 8, 10, 12]))
-            .then(31)
-            .when(dates.dt.month().is_in([4, 6, 9, 11]))
-            .then(30)
-            .when(dates.dt.month() == 2)
-            .then(pl.when((dates.dt.year() % 4 == 0) & ((dates.dt.year() % 100 != 0) | (dates.dt.year() % 400 == 0))).then(29).otherwise(28))
-            .otherwise(0)
-            .alias(f"{column}_days_in_month")
+            dates.dt.days_in_month().alias(f"{column}_days_in_month")
         )
 
     # =========================================================================
