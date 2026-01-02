@@ -27,7 +27,9 @@ class BaseModal(QDialog):
 
     def __init__(self, title: str, dataframe: pl.DataFrame = None, parent=None,
                  selected_column: str = None):
-        super().__init__(parent)
+        # Use Qt.Window flag to make dialog independent from parent window
+        super().__init__(parent if parent else None)
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.setWindowTitle(title)
         self.setModal(True)
         self.dataframe = dataframe
@@ -585,43 +587,72 @@ class ElbowMethodChart(QWidget):
 class BenfordChart(QWidget):
     """
     Bar chart comparing expected distribution vs actual Benford
+    Supports 1, 2, or 3 digit analysis
     """
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.n_digits = 1
         self.expected = [30.1, 17.6, 12.5, 9.7, 7.9, 6.7, 5.8, 5.1, 4.6]
         self.actual = []
         self.deviations = []
+        self.digit_labels = [str(i) for i in range(1, 10)]
 
-    def set_data(self, actual: List[float], deviations: List[float]):
-        """Set actual values and deviations"""
-        self.actual = actual
-        self.deviations = deviations
+    def set_data(self, expected: list, actual: list, deviations: list = None):
+        """Set actual values and deviations
+
+        Args:
+            expected: List of expected percentages
+            actual: List of actual percentages
+            deviations: List of deviations (actual - expected)
+        """
+        self.expected = expected
+        self.actual = actual if actual else []
+        self.deviations = deviations if deviations else []
+
+        # Determine n_digits from data length
+        if len(expected) == 9:
+            self.n_digits = 1
+            self.digit_labels = [str(i) for i in range(1, 10)]
+        else:
+            self.n_digits = 2
+            self.digit_labels = [f"{i:02d}" for i in range(10, 10 + len(expected))]
+
         self.update()
 
     def paintEvent(self, event):
         """Draw the Benford comparison chart"""
-        from PySide6.QtGui import QPainter, QPen, QBrush, QColor
+        from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QFont
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
         if not self.actual:
-            painter.drawText(self.rect(), Qt.AlignCenter, "No data to display")
+            painter.drawText(self.rect(), Qt.AlignCenter, "Run analysis to see chart")
             return
 
         margin = 50
-        bar_width = 25
-        spacing = 15
-        chart_width = (bar_width * 2 + spacing) * 9
+        bar_width = max(15, 400 // len(self.expected))
+        spacing = max(5, bar_width // 3)
+        chart_width = (bar_width * 2 + spacing) * len(self.expected)
         chart_height = self.height() - 2 * margin
 
-        max_pct = max(max(self.expected), max(self.actual) if self.actual else 0) * 1.2
+        # Scale chart to fit
+        if chart_width > self.width() - 2 * margin:
+            # Need horizontal scrolling - draw what fits
+            visible_bars = min(len(self.expected), max(1, (self.width() - 2 * margin) // (bar_width * 2 + spacing)))
+            chart_width = (bar_width * 2 + spacing) * visible_bars
+        else:
+            visible_bars = len(self.expected)
+
+        max_pct = max(max(self.expected[:visible_bars]), max(self.actual[:visible_bars]) if self.actual else 0) * 1.2
 
         # Draw expected bars (gray)
-        for i, exp in enumerate(self.expected):
+        for i in range(visible_bars):
+            if i >= len(self.expected):
+                break
             x = margin + i * (bar_width * 2 + spacing)
-            bar_height = (exp / max_pct) * chart_height
+            bar_height = (self.expected[i] / max_pct) * chart_height
             painter.setBrush(QBrush(QColor(150, 150, 150)))
             painter.setPen(QPen(Qt.black, 1))
             painter.drawRect(int(x), int(self.height() - margin - bar_height),
@@ -629,11 +660,16 @@ class BenfordChart(QWidget):
 
         # Draw actual bars (blue, if data available)
         if self.actual:
-            for i, act in enumerate(self.actual):
+            for i in range(visible_bars):
+                if i >= len(self.actual):
+                    break
                 x = margin + i * (bar_width * 2 + spacing) + bar_width
-                bar_height = (act / max_pct) * chart_height
-                if self.deviations and self.deviations[i] > 0.05:
-                    painter.setBrush(QBrush(QColor(220, 53, 69)))  # Red for deviation
+                bar_height = (self.actual[i] / max_pct) * chart_height
+                dev = self.deviations[i] if i < len(self.deviations) else 0
+                if abs(dev) > 5:
+                    painter.setBrush(QBrush(QColor(220, 53, 69)))  # Red for high deviation
+                elif abs(dev) > 2:
+                    painter.setBrush(QBrush(QColor(255, 193, 7)))  # Yellow for moderate deviation
                 else:
                     painter.setBrush(QBrush(QColor(0, 123, 255)))  # Blue for normal
                 painter.setPen(QPen(Qt.black, 1))
@@ -641,20 +677,44 @@ class BenfordChart(QWidget):
                                bar_width, int(bar_height))
 
         # Draw X-axis labels
+        painter.setFont(QFont("Arial", 7))
+        for i in range(visible_bars):
+            if i >= len(self.digit_labels):
+                break
+            x = margin + i * (bar_width * 2 + spacing) + bar_width // 2
+            # Alternate label orientation for 2/3 digit analysis
+            if self.n_digits > 1:
+                painter.save()
+                painter.translate(int(x), int(self.height() - margin + 15))
+                painter.rotate(-45)
+                painter.drawText(-15, 0, self.digit_labels[i])
+                painter.restore()
+            else:
+                painter.drawText(int(x - 5), int(self.height() - margin + 15), self.digit_labels[i])
+
+        # Draw Y-axis
+        painter.setPen(QPen(Qt.black, 1))
+        painter.drawLine(margin, margin, margin, self.height() - margin)  # Y-axis
+        painter.drawLine(margin, self.height() - margin, self.width() - margin, self.height() - margin)  # X-axis
+
+        # Draw Y-axis labels
         painter.setFont(QFont("Arial", 8))
-        for i in range(9):
-            x = margin + i * (bar_width * 2 + spacing) + bar_width
-            painter.drawText(int(x), int(self.height() - margin + 15), str(i + 1))
+        for i in range(5):
+            pct = max_pct * i / 4
+            y = self.height() - margin - (pct / max_pct) * chart_height
+            painter.drawText(5, int(y + 4), f"{pct:.0f}%")
 
         # Draw legend
+        legend_y = 15
         painter.setBrush(QBrush(QColor(150, 150, 150)))
-        painter.drawRect(10, 10, 15, 15)
-        painter.drawText(30, 22, "Expected")
+        painter.drawRect(10, legend_y, 15, 15)
+        painter.setPen(QPen(Qt.black, 1))
+        painter.drawText(30, legend_y + 12, "Expected")
 
         if self.actual:
             painter.setBrush(QBrush(QColor(0, 123, 255)))
-            painter.drawRect(100, 10, 15, 15)
-            painter.drawText(120, 22, "Actual")
+            painter.drawRect(100, legend_y, 15, 15)
+            painter.drawText(120, legend_y + 12, "Actual")
 
 
 class TimeSeriesChart(QWidget):

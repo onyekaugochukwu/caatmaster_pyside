@@ -40,6 +40,8 @@ class MainWindow(QMainWindow):
         self.setup_ui()
         self.setup_backstage()
         self.create_statusbar()
+        # Hide window until login is complete
+        self.hide()
         self.show_login_dialog()
 
     def _apply_theme(self):
@@ -79,7 +81,13 @@ class MainWindow(QMainWindow):
     def setup_ui(self):
         """Set up the main window UI"""
         self.setWindowTitle("CaatMaster - Professional Audit Analytics Tool")
-        self.setMinimumSize(1200, 800)
+
+        # Calculate minimum size based on available screen geometry
+        screen_geometry = QApplication.instance().screenAt(self.pos()).availableGeometry()
+        min_width = max(800, int(screen_geometry.width() * 0.5))  # At least 50% of screen width
+        min_height = max(500, int(screen_geometry.height() * 0.6))  # At least 60% of screen height
+        self.setMinimumSize(min_width, min_height)
+
         self.setObjectName("MainWindow")
         self.setMenuBar(None)  # Remove traditional menu bar
 
@@ -99,7 +107,7 @@ class MainWindow(QMainWindow):
         # Create scroll area for middle content (sidebar + content area)
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setStyleSheet("""
             QScrollArea {
@@ -219,24 +227,27 @@ class MainWindow(QMainWindow):
 
     def toggle_backstage(self):
         """Toggle the backstage view"""
-        is_visible = self.backstage_view.isVisible()
-        self.backstage_view.setVisible(not is_visible)
-        self.backstage_view.setGeometry(0, 0, self.width(), self.height())
+        if hasattr(self, 'backstage_view'):
+            is_visible = self.backstage_view.isVisible()
+            self.backstage_view.setVisible(not is_visible)
+            self.backstage_view.setGeometry(0, 0, self.width(), self.height())
 
     def show_backstage(self):
         """Show the backstage view"""
-        self.backstage_view.setVisible(True)
-        self.backstage_view.setGeometry(0, 0, self.width(), self.height())
+        if hasattr(self, 'backstage_view'):
+            self.backstage_view.setVisible(True)
+            self.backstage_view.setGeometry(0, 0, self.width(), self.height())
 
     def hide_backstage(self):
         """Hide the backstage view"""
-        self.backstage_view.setVisible(False)
+        if hasattr(self, 'backstage_view'):
+            self.backstage_view.setVisible(False)
 
     def resizeEvent(self, event):
         """Handle window resize"""
         super().resizeEvent(event)
-        # Update backstage geometry
-        if self.backstage_view.isVisible():
+        # Update backstage geometry (check if attribute exists first)
+        if hasattr(self, 'backstage_view') and self.backstage_view.isVisible():
             self.backstage_view.setGeometry(0, 0, self.width(), self.height())
 
     def _on_settings(self):
@@ -380,10 +391,8 @@ class MainWindow(QMainWindow):
                 reports_view = self.views.get("reports")
 
                 if transform_view:
-                    transform_view.set_dataframe(df)
-                    # Also set the pipeline if dataset has one
-                    if dataset.transformation_pipeline:
-                        transform_view.pipeline = dataset.transformation_pipeline
+                    # Pass the dataset's pipeline if it exists to preserve transformations
+                    transform_view.set_dataframe(df, dataset.transformation_pipeline)
                 if sql_view:
                     sql_view.set_dataframe(df)
                 if viz_view:
@@ -640,12 +649,15 @@ class MainWindow(QMainWindow):
 
         column_name = selected_columns[0]
 
-        # Create the transformation dialog
+        # Create the transformation dialog - use transformed dataframe so new columns appear
         from gui.dialogs.transformation_dialog_factory import TransformationDialogFactory
+
+        # Get the current transformed dataframe from the pipeline
+        current_df = transform_view.pipeline.apply() if transform_view.pipeline else transform_view.original_dataframe
 
         dialog = TransformationDialogFactory.create_dialog(
             operation_id=operation_id,
-            dataframe=transform_view.original_dataframe,
+            dataframe=current_df,
             parent=self,
             initial_params={'column': column_name}
         )
@@ -1382,18 +1394,29 @@ class MainWindow(QMainWindow):
 
     def show_login_dialog(self):
         """Show login dialog if user not authenticated"""
-        if not self.auth_service.is_authenticated():
+        if self.auth_service.is_authenticated():
+            # User already logged in, show window maximized
+            user = self.auth_service.get_current_user()
+            self.statusBar().showMessage(f"Welcome back, {user.full_name}!")
+            self.update_auth_ui()
+            self.setWindowState(Qt.WindowMaximized)
+        else:
             from gui.dialogs.login_dialog import LoginDialog
 
             dialog = LoginDialog(self.auth_service, self)
             dialog.login_success.connect(self.handle_login_success)
             dialog.exec()
-            self.update_auth_ui()
+            # If dialog closed without login, check again
+            if not self.auth_service.is_authenticated():
+                # User cancelled login, exit app
+                QApplication.instance().quit()
 
     def handle_login_success(self, user):
         """Handle successful user login"""
         self.statusBar().showMessage(f"Welcome, {user.full_name}!")
         self.update_auth_ui()
+        # Show window maximized after successful login
+        self.setWindowState(Qt.WindowMaximized)
 
     def handle_logout(self):
         """Handle user logout"""

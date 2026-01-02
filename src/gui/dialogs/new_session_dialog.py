@@ -10,7 +10,8 @@ class NewSessionDialog(QDialog):
     """Dialog for creating a new analysis session"""
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(parent if parent else None)
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.session_data = {}
         self.setup_ui()
 

@@ -15,7 +15,8 @@ class GenericTransformationDialog(QDialog):
     """A dialog that dynamically builds a form for a transformation."""
 
     def __init__(self, operation_id: str, param_schema: Dict, dataframe=None, parent=None, initial_params: Dict = None):
-        super().__init__(parent)
+        super().__init__(parent if parent else None)
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.param_schema = param_schema
         self.operation_id = operation_id
         self.dataframe = dataframe

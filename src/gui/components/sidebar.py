@@ -420,7 +420,8 @@ class Sidebar(QFrame):
 
         # Datasets list
         self.datasets_list = QListWidget()
-        self.datasets_list.setMaximumHeight(150)
+        self.datasets_list.setMinimumHeight(100)
+        self.datasets_list.setMaximumHeight(300)
         self.datasets_list.setSelectionMode(QListWidget.SingleSelection)
         self.datasets_list.itemClicked.connect(self._on_datasetClicked)
         self.datasets_list.itemDoubleClicked.connect(self._on_datasetDoubleClicked)

@@ -12,7 +12,8 @@ class EditProjectDialog(QDialog):
     """Dialog for editing an existing project"""
 
     def __init__(self, project: Project, parent=None):
-        super().__init__(parent)
+        super().__init__(parent if parent else None)
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.project = project
         self.project_data = {}
         self.setup_ui()

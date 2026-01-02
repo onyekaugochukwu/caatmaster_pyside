@@ -288,8 +288,17 @@ class ReplaceValuesDialog(BaseModal):
                     elif params["case_sensitive"]:
                         result.append(val_str.replace(find_val, replace_val))
                     else:
-                        # Case insensitive replace
-                        result.append(val_str.lower().replace(find_val.lower(), replace_val))
+                        # Case insensitive replace - need to preserve original case
+                        # Find position of match and replace preserving case
+                        find_lower = find_val.lower()
+                        val_lower = val_str.lower()
+                        replace_lower = replace_val.lower()
+                        idx = val_lower.find(find_lower)
+                        if idx != -1:
+                            # Replace at the found position
+                            result.append(val_str[:idx] + replace_val + val_str[idx + len(find_val):])
+                        else:
+                            result.append(val_str)
                 replacement_count = sum(1 for v, r in zip(col_data, result) if str(v) != r)
             else:
                 # Bulk replace

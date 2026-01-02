@@ -74,6 +74,10 @@ class TransformView(QWidget):
         self.clear_btn.clicked.connect(self.clear_all_steps)
         btn_layout.addWidget(self.clear_btn)
 
+        self.export_btn = QPushButton("Export")
+        self.export_btn.clicked.connect(self.export_transformations)
+        btn_layout.addWidget(self.export_btn)
+
         steps_layout.addLayout(btn_layout)
         left_layout.addWidget(steps_group)
 
@@ -116,15 +120,29 @@ class TransformView(QWidget):
         preview_layout = QVBoxLayout(preview_widget)
         preview_layout.setContentsMargins(10, 10, 10, 10)
 
+        # Wrap data table in scroll area for proper horizontal scrolling
+        data_scroll = QScrollArea()
+        data_scroll.setWidgetResizable(True)
+        data_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        data_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        data_scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: white;
+            }
+        """)
+
         self.data_table = QTableWidget()
         self.data_table.setAlternatingRowColors(True)
         self.data_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.data_table.horizontalHeader().setStretchLastSection(True)
+        self.data_table.horizontalHeader().setStretchLastSection(False)
+        self.data_table.setHorizontalScrollMode(QTableWidget.ScrollPerPixel)
 
         self.data_table.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
         self.data_table.horizontalHeader().customContextMenuRequested.connect(self.show_header_context_menu)
 
-        preview_layout.addWidget(self.data_table)
+        data_scroll.setWidget(self.data_table)
+        preview_layout.addWidget(data_scroll)
 
         self.info_label = QLabel("Load data via the sidebar to begin transforming.")
         preview_layout.addWidget(self.info_label)
@@ -133,13 +151,30 @@ class TransformView(QWidget):
         main_layout.setStretch(1, 1)  # Make the right panel expand
 
     @Slot(pl.DataFrame)
-    def set_dataframe(self, df: pl.DataFrame):
-        """Initializes the view with a new DataFrame."""
+    def set_dataframe(self, df: pl.DataFrame, pipeline: TransformationPipeline = None):
+        """Initializes the view with a new DataFrame.
+
+        Args:
+            df: The DataFrame to display
+            pipeline: Optional existing transformation pipeline to restore
+        """
         self.original_dataframe = df.clone()
-        self.pipeline = TransformationPipeline(initial_df=self.original_dataframe)
+
+        # Restore existing pipeline if provided, otherwise create new one
+        if pipeline is not None:
+            self.pipeline = pipeline
+        else:
+            self.pipeline = TransformationPipeline(initial_df=self.original_dataframe)
 
         self.steps_list_widget.clear()
-        self.populate_table(self.pipeline.original_df)
+
+        # Restore steps list from pipeline
+        for step in self.pipeline.get_steps():
+            op_name = OPERATION_REGISTRY.get(step.operation_id, {}).get('display_name', step.operation_id)
+            step_text = f"{self.steps_list_widget.count() + 1}. {op_name}"
+            QListWidgetItem(step_text, self.steps_list_widget)
+
+        self.populate_table(self.pipeline.apply())  # Use apply() to show transformed data
         self.update_info()
 
     def show_header_context_menu(self, pos):
@@ -467,9 +502,11 @@ class TransformView(QWidget):
                     initial_params['output_col'] = self._format_column_name(naming_pattern, default_values)
 
         # Create dialog using the factory with selected_column for auto-selection
+        # Use the transformed dataframe so newly created columns appear in the dialog
+        current_df = self.pipeline.apply() if self.pipeline else self.original_dataframe
         dialog = TransformationDialogFactory.create_dialog(
             operation_id=operation_id,
-            dataframe=self.original_dataframe,
+            dataframe=current_df,
             parent=self,
             initial_params=initial_params,
             selected_column=column_name
@@ -682,3 +719,126 @@ class TransformView(QWidget):
                 self.step_preview_table.setItem(row_idx, col_idx, item)
 
         self.step_preview_table.resizeColumnsToContents()
+
+    def export_transformations(self):
+        """Export transformed data to file (CSV, JSON, or Parquet)."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox, QDialog, QVBoxLayout, QLabel, QRadioButton, QDialogButtonBox
+        from pathlib import Path
+        import json
+        import polars as pl
+
+        if not self.pipeline or self.pipeline.original_df is None:
+            QMessageBox.warning(self, "No Data", "No data to export.")
+            return
+
+        # Show format selection dialog
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Export Transformed Data")
+        dialog.setMinimumWidth(300)
+        layout = QVBoxLayout(dialog)
+
+        label = QLabel("Select export format:")
+        layout.addWidget(label)
+
+        csv_radio = QRadioButton("CSV (.csv)")
+        csv_radio.setChecked(True)
+        layout.addWidget(csv_radio)
+
+        json_radio = QRadioButton("JSON (.json)")
+        layout.addWidget(json_radio)
+
+        parquet_radio = QRadioButton("Parquet (.parquet)")
+        layout.addWidget(parquet_radio)
+
+        # Add metadata export option
+        steps_radio = QRadioButton("Transformation Steps Only (.json)")
+        layout.addWidget(steps_radio)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        # Determine format
+        if csv_radio.isChecked():
+            format = 'csv'
+            ext = '.csv'
+            filter_str = "CSV Files (*.csv)"
+        elif json_radio.isChecked():
+            format = 'json'
+            ext = '.json'
+            filter_str = "JSON Files (*.json)"
+        elif parquet_radio.isChecked():
+            format = 'parquet'
+            ext = '.parquet'
+            filter_str = "Parquet Files (*.parquet)"
+        else:
+            format = 'steps'
+            ext = '.json'
+            filter_str = "JSON Files (*.json)"
+
+        # Get file path from user
+        default_name = "transformed_data" if format != 'steps' else "transformation_steps"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Data",
+            str(Path.home() / "Documents" / default_name),
+            filter_str
+        )
+
+        if not file_path:
+            return
+
+        # Add extension if not present
+        if not file_path.endswith(ext):
+            file_path += ext
+
+        try:
+            if format == 'csv':
+                # Export transformed data as CSV
+                transformed_df = self.pipeline.apply()
+                transformed_df.write_csv(file_path)
+                msg = f"Data exported successfully.\nRows: {transformed_df.height:,}\nColumns: {transformed_df.width}"
+
+            elif format == 'json':
+                # Export transformed data as JSON
+                transformed_df = self.pipeline.apply()
+                transformed_df.write_json(file_path)
+                msg = f"Data exported successfully.\nRows: {transformed_df.height:,}\nColumns: {transformed_df.width}"
+
+            elif format == 'parquet':
+                # Export transformed data as Parquet
+                transformed_df = self.pipeline.apply()
+                transformed_df.write_parquet(file_path)
+                msg = f"Data exported successfully.\nRows: {transformed_df.height:,}\nColumns: {transformed_df.width}"
+
+            else:  # steps export
+                # Export transformation steps as JSON
+                steps_data = []
+                for i, step in enumerate(self.pipeline.get_steps()):
+                    step_info = {
+                        "step_number": i + 1,
+                        "operation_id": step.operation_id,
+                        "operation_name": OPERATION_REGISTRY.get(step.operation_id, {}).get('display_name', step.operation_id),
+                        "parameters": step.params,
+                        "timestamp": step.timestamp.isoformat() if step.timestamp else None,
+                        "created_columns": step.created_columns
+                    }
+                    steps_data.append(step_info)
+
+                export_data = {
+                    "transformation_steps": steps_data,
+                    "column_tracking": self.pipeline._column_tracking,
+                    "total_steps": len(steps_data)
+                }
+                with open(file_path, 'w') as f:
+                    json.dump(export_data, f, indent=2)
+                msg = f"Transformation steps exported.\nTotal steps: {len(steps_data)}"
+
+            QMessageBox.information(self, "Export Successful", msg)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export:\n{str(e)}")

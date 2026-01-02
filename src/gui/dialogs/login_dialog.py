@@ -17,7 +17,8 @@ class LoginDialog(QDialog):
     login_success = Signal(object)  # Signal emitted when login successful
 
     def __init__(self, auth_service, parent=None):
-        super().__init__(parent)
+        super().__init__(parent if parent else None)
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.auth_service = auth_service
         self.setup_ui()
 
@@ -149,7 +150,8 @@ class RegisterDialog(QDialog):
     """Dialog for user registration"""
 
     def __init__(self, auth_service, parent=None):
-        super().__init__(parent)
+        super().__init__(parent if parent else None)
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.auth_service = auth_service
         self._username = ""
         self._password = ""
@@ -341,7 +343,8 @@ class ChangePasswordDialog(QDialog):
     """Dialog for changing password"""
 
     def __init__(self, auth_service, user_id: int, parent=None):
-        super().__init__(parent)
+        super().__init__(parent if parent else None)
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.auth_service = auth_service
         self.user_id = user_id
         self.setup_ui()

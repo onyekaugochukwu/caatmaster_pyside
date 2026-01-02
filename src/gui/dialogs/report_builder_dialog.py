@@ -32,7 +32,8 @@ class ChartConfigDialog(QDialog):
     """Dialog for configuring chart sections"""
 
     def __init__(self, df_columns: list, numeric_cols: list, categorical_cols: list, parent=None):
-        super().__init__(parent)
+        super().__init__(parent if parent else None)
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.df_columns = df_columns
         self.numeric_cols = numeric_cols
         self.categorical_cols = categorical_cols
@@ -185,7 +186,8 @@ class ReportBuilderDialog(QDialog):
     """Dialog for building and generating reports"""
 
     def __init__(self, df, parent=None):
-        super().__init__(parent)
+        super().__init__(parent if parent else None)
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.df = df
         self.sections = []
         self.setup_ui()

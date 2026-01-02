@@ -2,7 +2,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QFileDialog, QTableWidget, QTableWidgetItem,
-    QHeaderView, QFrame, QLineEdit, QInputDialog
+    QHeaderView, QFrame, QLineEdit, QInputDialog, QScrollArea
 )
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QFont, QColor
@@ -34,7 +34,19 @@ class DataView(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Data table fills the entire view - Light mode
+        # Wrap data table in scroll area for proper horizontal scrolling
+        data_scroll = QScrollArea()
+        data_scroll.setWidgetResizable(True)
+        data_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        data_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        data_scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: white;
+            }
+        """)
+
+        # Data table - Light mode
         self.data_table = QTableWidget()
         self.data_table.setStyleSheet("""
             QTableWidget {
@@ -67,7 +79,11 @@ class DataView(QWidget):
         self.data_table.verticalHeader().setVisible(False)
         self.data_table.verticalHeader().setDefaultSectionSize(36)
         self.data_table.setSelectionBehavior(QTableWidget.SelectRows)
-        main_layout.addWidget(self.data_table, 1)
+        self.data_table.horizontalHeader().setStretchLastSection(False)
+        self.data_table.setHorizontalScrollMode(QTableWidget.ScrollPerPixel)
+
+        data_scroll.setWidget(self.data_table)
+        main_layout.addWidget(data_scroll, 1)
 
     def show_import_dialog(self):
         """Show file import dialog"""

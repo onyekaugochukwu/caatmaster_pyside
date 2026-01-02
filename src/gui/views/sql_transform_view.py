@@ -6,7 +6,7 @@ import duckdb
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QTextEdit, QTableWidget, QTableWidgetItem, QHeaderView,
-    QSplitter, QMessageBox, QGroupBox, QComboBox, QSplitter
+    QSplitter, QMessageBox, QGroupBox, QComboBox, QScrollArea
 )
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QFont, QSyntaxHighlighter, QTextCharFormat, QColor
@@ -288,15 +288,28 @@ class SQLTransformView(QWidget):
 
         results_layout.addLayout(results_header)
 
+        # Wrap results table in scroll area for proper horizontal scrolling
+        results_scroll = QScrollArea()
+        results_scroll.setWidgetResizable(True)
+        results_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        results_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        results_scroll.setStyleSheet("""
+            QScrollArea {
+                border: 1px solid #e5e7eb;
+                border-radius: 6px;
+                background-color: white;
+            }
+        """)
+
         # Results table
         self.results_table = QTableWidget()
         self.results_table.setAlternatingRowColors(True)
         self.results_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.results_table.horizontalHeader().setStretchLastSection(True)
+        self.results_table.horizontalHeader().setStretchLastSection(False)
+        self.results_table.setHorizontalScrollMode(QTableWidget.ScrollPerPixel)
         self.results_table.setStyleSheet("""
             QTableWidget {
-                border: 1px solid #e5e7eb;
-                border-radius: 6px;
+                border: none;
                 background-color: white;
             }
             QTableWidget::item {
@@ -307,7 +320,8 @@ class SQLTransformView(QWidget):
                 background-color: #dbeafe;
             }
         """)
-        results_layout.addWidget(self.results_table)
+        results_scroll.setWidget(self.results_table)
+        results_layout.addWidget(results_scroll)
 
         splitter.addWidget(results_widget)
 

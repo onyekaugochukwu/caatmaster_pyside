@@ -19,7 +19,8 @@ class TransformationDialog(QDialog):
     transformation_applied = Signal(str, dict)  # operation_id, parameters
 
     def __init__(self, columns: List[str], parent=None):
-        super().__init__(parent)
+        super().__init__(parent if parent else None)
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.columns = columns
         self.current_dataframe = None
         self.setup_ui()

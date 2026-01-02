@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
     QSplitter, QTextEdit, QComboBox, QTreeWidget, QTreeWidgetItem,
-    QMessageBox, QFileDialog, QProgressBar, QGroupBox
+    QMessageBox, QFileDialog, QProgressBar, QGroupBox, QScrollArea
 )
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QSyntaxHighlighter, QTextCharFormat, QColor, QFont, QTextDocument, QIcon
@@ -211,19 +211,34 @@ class QueryView(QWidget):
         results_label.setStyleSheet("font-weight: bold;")
         right_layout.addWidget(results_label)
 
+        # Wrap results table in scroll area for proper horizontal scrolling
+        results_scroll = QScrollArea()
+        results_scroll.setWidgetResizable(True)
+        results_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        results_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        results_scroll.setStyleSheet("""
+            QScrollArea {
+                border: 1px solid #e0e0e0;
+                background-color: white;
+            }
+        """)
+
         self.results_table = QTableWidget()
         self.results_table.setAlternatingRowColors(True)
-        self.results_table.horizontalHeader().setStretchLastSection(True)
+        self.results_table.horizontalHeader().setStretchLastSection(False)
+        self.results_table.setHorizontalScrollMode(QTableWidget.ScrollPerPixel)
         self.results_table.setStyleSheet("""
             QTableWidget {
                 gridline-color: #e0e0e0;
                 selection-background-color: #0078d4;
+                border: none;
             }
             QTableWidget::item {
                 padding: 5px;
             }
         """)
-        right_layout.addWidget(self.results_table)
+        results_scroll.setWidget(self.results_table)
+        right_layout.addWidget(results_scroll)
 
         # Results info
         self.results_info = QLabel("")

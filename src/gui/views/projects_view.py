@@ -31,7 +31,7 @@ class ProjectsView(QWidget):
         # Create a scroll area for the entire view
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(False)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setStyleSheet("""
             QScrollArea {

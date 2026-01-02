@@ -23,7 +23,8 @@ class MLTrainingDialog(QDialog):
     trainingComplete = Signal(str, dict)  # model_id, training_metrics
 
     def __init__(self, dataframe: pl.DataFrame, parent=None):
-        super().__init__(parent)
+        super().__init__(parent if parent else None)
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.dataframe = dataframe
         self.model_id = None
         self.training_metrics = {}
