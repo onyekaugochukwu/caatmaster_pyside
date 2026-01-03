@@ -505,18 +505,6 @@ OPERATION_REGISTRY = {
         },
         "creates_columns": []
     },
-    "column_change_dtype": {
-        "display_name": "Change Data Type",
-        "type": TransformationStepType.CALCULATE,
-        "category": "column",
-        "description": "Changes the data type of a column",
-        "parameter_schema": {
-            "column": {"type": "column", "required": True, "label": "Column"},
-            "new_dtype": {"type": "string", "required": True, "label": "New Type",
-                         "options": ["Int64", "Float64", "Utf8", "Boolean", "Date", "Datetime"]}
-        },
-        "creates_columns": []
-    },
 
     # =========================================================================
     # SPLIT OPERATIONS
@@ -1085,5 +1073,398 @@ OPERATION_REGISTRY = {
         },
         "creates_columns": True,
         "column_naming_pattern": "{column}_minmax"
+    },
+
+    # =========================================================================
+    # NEW: FUNCTIONS THAT CREATE COLUMNS OR TABLES
+    # =========================================================================
+
+    # -------------------------------------------------------------------------
+    # SPLIT COLUMNS BY DELIMITER
+    # -------------------------------------------------------------------------
+    "split_columns_by_delimiter": {
+        "display_name": "Split Columns by Delimiters",
+        "type": TransformationStepType.CALCULATE,
+        "category": "column",
+        "description": "Splits a column into multiple columns at a specified delimiter",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column to Split"},
+            "delimiter": {"type": "string", "required": False, "default": " ", "label": "Delimiter",
+                         "options": ["space", "comma", "tab", "period", "asterisk", "custom"]},
+            "custom_delimiter": {"type": "string", "required": False, "label": "Custom Delimiter"},
+            "max_splits": {"type": "int", "required": False, "default": -1, "label": "Max Splits (-1 for all)"}
+        },
+        "creates_columns": ["{column}_1", "{column}_2", "{column}_3"]
+    },
+
+    # -------------------------------------------------------------------------
+    # CUSTOM COLUMN FROM MATH
+    # -------------------------------------------------------------------------
+    "custom_column_from_math": {
+        "display_name": "Custom Column from Math",
+        "type": TransformationStepType.CALCULATE,
+        "category": "math",
+        "description": "Creates a custom column using mathematical operations",
+        "parameter_schema": {
+            "expression": {"type": "string", "required": True, "label": "Expression",
+                          "placeholder": "e.g., col('A') + col('B') * 2"},
+            "output_column": {"type": "string", "required": False, "default": "custom_result", "label": "Output Column"},
+            "columns": {"type": "list[column]", "required": True, "label": "Columns to Use"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+
+    # -------------------------------------------------------------------------
+    # SPLIT SHEET (Creates new tables based on unique values)
+    # -------------------------------------------------------------------------
+    "split_sheet": {
+        "display_name": "Split Sheet",
+        "type": TransformationStepType.FILTER,
+        "category": "table",
+        "description": "Splits the dataset into multiple tables based on unique values in a column",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column to Group By"},
+            "output_type": {"type": "string", "required": False, "default": "separate_tables",
+                           "options": ["separate_tables", "filter_column"], "label": "Output Type"},
+            "filter_value": {"type": "string", "required": False, "label": "Filter Value (for single output)"}
+        },
+        "creates_columns": False  # Creates new dataset/filter, not columns
+    },
+
+    # -------------------------------------------------------------------------
+    # CALCULATED COLUMNS (Formula-based)
+    # -------------------------------------------------------------------------
+    "calculated_columns": {
+        "display_name": "Calculated Columns",
+        "type": TransformationStepType.CALCULATE,
+        "category": "column",
+        "description": "Creates new columns using formulas or expressions",
+        "parameter_schema": {
+            "formula": {"type": "string", "required": True, "label": "Formula",
+                       "placeholder": "e.g., col('A') > col('B')"},
+            "output_column": {"type": "string", "required": True, "label": "Output Column"},
+            "formula_type": {"type": "string", "required": False, "default": "arithmetic",
+                            "options": ["arithmetic", "conditional", "comparison", "logical"], "label": "Formula Type"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+
+    # -------------------------------------------------------------------------
+    # CHOOSE COLUMNS (Select, Remove, Reorder)
+    # -------------------------------------------------------------------------
+    "choose_columns": {
+        "display_name": "Choose Columns",
+        "type": TransformationStepType.CALCULATE,
+        "category": "column",
+        "description": "Selects, removes, and reorders columns in the dataset",
+        "parameter_schema": {
+            "action": {"type": "string", "required": True, "options": ["keep", "remove", "reorder"], "label": "Action"},
+            "columns_to_keep": {"type": "list[column]", "required": False, "label": "Columns to Keep"},
+            "columns_to_remove": {"type": "list[column]", "required": False, "label": "Columns to Remove"},
+            "column_order": {"type": "list[column]", "required": False, "label": "New Column Order"}
+        },
+        "creates_columns": False  # Modifies structure, returns same columns
+    },
+
+    # -------------------------------------------------------------------------
+    # CHANGE DATA TYPE (Extended types)
+    # -------------------------------------------------------------------------
+    "change_dtype": {
+        "display_name": "Change Data Type",
+        "type": TransformationStepType.CALCULATE,
+        "category": "column",
+        "description": "Converts column data types to ensure compatibility with operations",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "new_dtype": {"type": "string", "required": True, "label": "New Type",
+                         "options": ["Int8", "Int16", "Int32", "Int64", "Float32", "Float64",
+                                    "Utf8", "Boolean", "Date", "Datetime", "Categorical"]},
+            "format_string": {"type": "string", "required": False, "label": "Format (for dates)"}
+        },
+        "creates_columns": []
+    },
+
+    # -------------------------------------------------------------------------
+    # RENAME COLUMNS (Bulk rename)
+    # -------------------------------------------------------------------------
+    "rename_columns": {
+        "display_name": "Rename Columns",
+        "type": TransformationStepType.CALCULATE,
+        "category": "column",
+        "description": "Renames one or more columns to improve clarity",
+        "parameter_schema": {
+            "renames": {"type": "list[dict]", "required": True, "label": "Renames",
+                       "schema": [{"old_name": "string", "new_name": "string"}]},
+            "prefix": {"type": "string", "required": False, "label": "Add Prefix"},
+            "suffix": {"type": "string", "required": False, "label": "Add Suffix"},
+            "lowercase": {"type": "bool", "required": False, "default": False, "label": "Convert to lowercase"},
+            "uppercase": {"type": "bool", "required": False, "default": False, "label": "Convert to uppercase"}
+        },
+        "creates_columns": []
+    },
+
+    # -------------------------------------------------------------------------
+    # SPLIT ALPHANUMERIC
+    # -------------------------------------------------------------------------
+    "split_alphanumeric": {
+        "display_name": "Split Alphanumeric",
+        "type": TransformationStepType.CALCULATE,
+        "category": "text",
+        "description": "Separates alphanumeric values into text and numeric components",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "output_text": {"type": "string", "required": False, "default": "{column}_text", "label": "Text Output Column"},
+            "output_number": {"type": "string", "required": False, "default": "{column}_number", "label": "Number Output Column"}
+        },
+        "creates_columns": ["{output_text}", "{output_number}"]
+    },
+
+    # -------------------------------------------------------------------------
+    # SELECT N ROWS
+    # -------------------------------------------------------------------------
+    "select_n_rows": {
+        "display_name": "Select N Rows",
+        "type": TransformationStepType.FILTER,
+        "category": "table",
+        "description": "Creates a new table with a specified number of rows",
+        "parameter_schema": {
+            "selection_type": {"type": "string", "required": True, "label": "Selection Type",
+                              "options": ["first", "last", "random", "every_nth"]},
+            "n": {"type": "int", "required": True, "label": "Number of Rows"},
+            "random_seed": {"type": "int", "required": False, "label": "Random Seed (for random)"},
+            "step": {"type": "int", "required": False, "default": 1, "label": "Step (for every_nth)"}
+        },
+        "creates_columns": False  # Returns subset of rows
+    },
+
+    # -------------------------------------------------------------------------
+    # TRANSPOSE (Rows to Columns)
+    # -------------------------------------------------------------------------
+    "transpose": {
+        "display_name": "Transpose",
+        "type": TransformationStepType.CALCULATE,
+        "category": "table",
+        "description": "Swaps rows and columns to convert column headers into row values",
+        "parameter_schema": {
+            "columns_to_transpose": {"type": "list[column]", "required": True, "label": "Columns to Transpose"},
+            "include_index": {"type": "bool", "required": False, "default": True, "label": "Include Index Column"},
+            "index_column": {"type": "string", "required": False, "default": "index", "label": "Index Column Name"}
+        },
+        "creates_columns": False  # Creates transposed table
+    },
+
+    # -------------------------------------------------------------------------
+    # COMBINE WORKSHEETS (Union/Append)
+    # -------------------------------------------------------------------------
+    "combine_sheets": {
+        "display_name": "Combine Worksheets",
+        "type": TransformationStepType.JOIN,
+        "category": "table",
+        "description": "Creates a unified dataset by appending multiple worksheets",
+        "parameter_schema": {
+            "source_datasets": {"type": "list[str]", "required": True, "label": "Source Datasets"},
+            "align_columns": {"type": "bool", "required": False, "default": True, "label": "Auto-align Columns"},
+            "fill_missing": {"type": "bool", "required": False, "default": False, "label": "Fill Missing with Null"}
+        },
+        "creates_columns": False  # Combines datasets
+    },
+
+    # -------------------------------------------------------------------------
+    # QUERY SHEET (Filter/Transform with formulas)
+    # -------------------------------------------------------------------------
+    "query_sheet": {
+        "display_name": "Query Sheet",
+        "type": TransformationStepType.FILTER,
+        "category": "table",
+        "description": "Creates a new filtered or transformed table using formulas",
+        "parameter_schema": {
+            "condition": {"type": "string", "required": True, "label": "Filter Condition",
+                         "placeholder": "e.g., col('Amount') > 1000"},
+            "sort_by": {"type": "list[column]", "required": False, "label": "Sort By"},
+            "sort_order": {"type": "string", "required": False, "default": "asc",
+                          "options": ["asc", "desc"], "label": "Sort Order"},
+            "select_columns": {"type": "list[column]", "required": False, "label": "Select Columns (leave empty for all)"}
+        },
+        "creates_columns": False  # Creates filtered view
+    },
+
+    # =========================================================================
+    # NEW: FUNCTIONS THAT CREATE SUMMARY REPORTS
+    # =========================================================================
+
+    # -------------------------------------------------------------------------
+    # GROUP SUMMARY
+    # -------------------------------------------------------------------------
+    "group_summary": {
+        "display_name": "Group Summary",
+        "type": TransformationStepType.AGGREGATE,
+        "category": "statistics",
+        "description": "Creates aggregated summary reports by grouping data",
+        "parameter_schema": {
+            "group_columns": {"type": "list[column]", "required": True, "label": "Group By Columns"},
+            "value_column": {"type": "column", "required": True, "label": "Value Column"},
+            "aggregations": {"type": "list[str]", "required": False,
+                            "options": ["sum", "mean", "count", "min", "max", "std", "median", "first", "last"],
+                            "default": ["sum", "count"], "label": "Aggregations"}
+        },
+        "creates_columns": False  # Creates summary table
+    },
+
+    # -------------------------------------------------------------------------
+    # TOP/BOTTOM ITEMS
+    # -------------------------------------------------------------------------
+    "top_bottom": {
+        "display_name": "Top/Bottom Items",
+        "type": TransformationStepType.FILTER,
+        "category": "statistics",
+        "description": "Shows ranked top or bottom N records based on a metric",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column to Rank"},
+            "value_column": {"type": "column", "required": True, "label": "Value Column"},
+            "n": {"type": "int", "required": True, "label": "Number of Items"},
+            "rank_type": {"type": "string", "required": False, "default": "top",
+                         "options": ["top", "bottom"], "label": "Rank Type"},
+            "tie_break": {"type": "string", "required": False, "default": "keep_all",
+                         "options": ["keep_all", "random", "first", "last"], "label": "Tie Break"}
+        },
+        "creates_columns": False  # Creates ranked summary
+    },
+
+    # -------------------------------------------------------------------------
+    # STRATIFICATION
+    # -------------------------------------------------------------------------
+    "stratification": {
+        "display_name": "Stratification",
+        "type": TransformationStepType.AGGREGATE,
+        "category": "statistics",
+        "description": "Generates stratified views by dividing values into ranges",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column to Stratify"},
+            "strata": {"type": "list[float]", "required": True, "label": "Strata Boundaries",
+                      "placeholder": "e.g., 0, 100, 500, 1000, inf"},
+            "value_column": {"type": "column", "required": False, "label": "Value Column (optional)"},
+            "include_counts": {"type": "bool", "required": False, "default": True, "label": "Include Counts"}
+        },
+        "creates_columns": False  # Creates stratified summary
+    },
+
+    # -------------------------------------------------------------------------
+    # SAMPLING
+    # -------------------------------------------------------------------------
+    "sampling": {
+        "display_name": "Sampling",
+        "type": TransformationStepType.FILTER,
+        "category": "statistics",
+        "description": "Creates a sample-based analytical view without changing original data",
+        "parameter_schema": {
+            "method": {"type": "string", "required": True, "label": "Sampling Method",
+                      "options": ["random", "stratified", "systematic", "cluster"]},
+            "sample_size": {"type": "int", "required": False, "label": "Sample Size (or percentage if < 1)"},
+            "percentage": {"type": "float", "required": False, "label": "Sample Percentage (0-100)"},
+            "stratify_column": {"type": "column", "required": False, "label": "Stratify Column (for stratified)"},
+            "random_seed": {"type": "int", "required": False, "label": "Random Seed"},
+            "output_type": {"type": "string", "required": False, "default": "sample_view",
+                           "options": ["sample_view", "sample_table"], "label": "Output Type"}
+        },
+        "creates_columns": False  # Creates sample view
+    },
+
+    # -------------------------------------------------------------------------
+    # CROSS-TABULATION
+    # -------------------------------------------------------------------------
+    "cross_tabulation": {
+        "display_name": "Cross-Tabulation",
+        "type": TransformationStepType.AGGREGATE,
+        "category": "statistics",
+        "description": "Generates contingency tables for categorical variables",
+        "parameter_schema": {
+            "rows": {"type": "column", "required": True, "label": "Row Variable"},
+            "columns": {"type": "column", "required": True, "label": "Column Variable"},
+            "values": {"type": "column", "required": False, "label": "Value Column (optional)"},
+            "agg_function": {"type": "string", "required": False, "default": "count",
+                            "options": ["count", "sum", "mean", "min", "max"], "label": "Aggregation"},
+            "show_percentages": {"type": "bool", "required": False, "default": False, "label": "Show Percentages"},
+            "percentages_by": {"type": "string", "required": False, "default": "total",
+                              "options": ["total", "row", "column"], "label": "Percentages By"}
+        },
+        "creates_columns": False  # Creates cross-tab table
+    },
+
+    # -------------------------------------------------------------------------
+    # TREND ANALYSIS
+    # -------------------------------------------------------------------------
+    "trend_analysis": {
+        "display_name": "Trend Analysis",
+        "type": TransformationStepType.AGGREGATE,
+        "category": "statistics",
+        "description": "Generates time-based analytical summaries showing trends",
+        "parameter_schema": {
+            "date_column": {"type": "column", "required": True, "label": "Date/Time Column"},
+            "value_column": {"type": "column", "required": True, "label": "Value Column"},
+            "period": {"type": "string", "required": False, "default": "month",
+                      "options": ["day", "week", "month", "quarter", "year"], "label": "Period"},
+            "aggregations": {"type": "list[str]", "required": False,
+                            "options": ["sum", "mean", "count", "min", "max"],
+                            "default": ["sum", "mean"], "label": "Aggregations"},
+            "include_trendline": {"type": "bool", "required": False, "default": False, "label": "Include Trend Line"},
+            "trend_type": {"type": "string", "required": False, "default": "linear",
+                          "options": ["linear", "exponential", "moving_average"], "label": "Trend Type"}
+        },
+        "creates_columns": False  # Creates trend summary table
+    },
+
+    # -------------------------------------------------------------------------
+    # JOIN DATASETS
+    # -------------------------------------------------------------------------
+    "join_datasets": {
+        "display_name": "Join Datasets",
+        "type": TransformationStepType.CALCULATE,
+        "category": "table",
+        "description": "Join two datasets using various join types (left, right, inner, outer, cross)",
+        "parameter_schema": {
+            "right_dataset": {"type": "string", "required": True, "label": "Right Dataset Name"},
+            "left_key": {"type": "column", "required": True, "label": "Left Join Key"},
+            "right_key": {"type": "string", "required": True, "label": "Right Join Key"},
+            "join_type": {"type": "string", "required": False, "default": "left_join",
+                         "options": ["left_join", "right_join", "inner_join", "outer_join", "cross_join"],
+                         "label": "Join Type"},
+            "suffix": {"type": "string", "required": False, "default": "_right", "label": "Column Suffix"}
+        },
+        "creates_columns": True
+    },
+
+    # -------------------------------------------------------------------------
+    # APPEND DATASETS
+    # -------------------------------------------------------------------------
+    "append_datasets": {
+        "display_name": "Append Datasets",
+        "type": TransformationStepType.CALCULATE,
+        "category": "table",
+        "description": "Append/stack multiple datasets vertically",
+        "parameter_schema": {
+            "source_datasets": {"type": "list[string]", "required": True, "label": "Dataset Names",
+                              "placeholder": "dataset1, dataset2, ..."},
+            "align_columns": {"type": "bool", "required": False, "default": True, "label": "Auto-align Columns"},
+            "fill_missing": {"type": "bool", "required": False, "default": True, "label": "Fill Missing with Null"}
+        },
+        "creates_columns": True
+    },
+
+    # -------------------------------------------------------------------------
+    # SPLIT SHEET
+    # -------------------------------------------------------------------------
+    "split_sheet": {
+        "display_name": "Split Sheet",
+        "type": TransformationStepType.CALCULATE,
+        "category": "table",
+        "description": "Split a dataset into multiple datasets based on unique values in a column",
+        "parameter_schema": {
+            "column": {"type": "string", "required": True, "label": "Split By Column",
+                      "placeholder": "Select a column to split by"},
+            "datasets": {"type": "list", "required": False, "label": "Split Datasets",
+                        "description": "List of {name, dataframe} tuples for each split"}
+        },
+        "creates_columns": False,
+        "returns_multiple_datasets": True  # Special flag for operations that create multiple datasets
     },
 }

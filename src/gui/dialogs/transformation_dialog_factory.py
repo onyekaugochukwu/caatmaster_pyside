@@ -23,6 +23,17 @@ from .prefix_suffix_dialog import PrefixSuffixDialog
 from .replace_values_dialog import ReplaceValuesDialog
 from .group_stats_dialog import GroupStatsDialog
 from .ai_dialogs import AIExplainDialog, AISentimentDialog, AIEntityExtractionDialog
+from .column_dialogs import RenameColumnsDialog, ChooseColumnsDialog, ChangeDataTypeDialog
+from .table_dialogs import (
+    SplitSheetDialog, TransposeDialog, CombineSheetsDialog,
+    QuerySheetDialog, SelectNRowsDialog, JoinDatasetsDialog,
+    AppendDatasetsDialog
+)
+from .summary_dialogs import (
+    GroupSummaryDialog, TopBottomDialog, StratificationDialog,
+    SamplingDialog, CrossTabulationDialog, TrendAnalysisDialog
+)
+from .split_columns_dialog import SplitColumnsDialog
 
 # Import polars for type hints
 import polars as pl
@@ -91,6 +102,29 @@ class TransformationDialogFactory:
 
         # ML Training operations
         'ml_train': MLTrainingDialog,
+
+        # Column operations
+        'split_columns_by_delimiter': SplitColumnsDialog,
+        'rename_columns': RenameColumnsDialog,
+        'choose_columns': ChooseColumnsDialog,
+        'change_dtype': ChangeDataTypeDialog,
+
+        # Table operations
+        # Note: split_sheet is NOT here - it creates multiple datasets and is triggered from sidebar
+        'transpose': TransposeDialog,
+        'combine_sheets': CombineSheetsDialog,
+        'query_sheet': QuerySheetDialog,
+        'select_n_rows': SelectNRowsDialog,
+        'join_datasets': JoinDatasetsDialog,
+        'append_datasets': AppendDatasetsDialog,
+
+        # Summary report operations
+        'group_summary': GroupSummaryDialog,
+        'top_bottom': TopBottomDialog,
+        'stratification': StratificationDialog,
+        'sampling': SamplingDialog,
+        'cross_tabulation': CrossTabulationDialog,
+        'trend_analysis': TrendAnalysisDialog,
     }
 
     @staticmethod

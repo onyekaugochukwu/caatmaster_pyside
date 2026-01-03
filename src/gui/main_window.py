@@ -3,6 +3,8 @@ Main Application Window for CaatMaster
 Modern UI inspired by data_workspace_app.py
 """
 import sys
+import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -152,6 +154,10 @@ class MainWindow(QMainWindow):
         self.sidebar = Sidebar()
         self.sidebar.navigation_requested.connect(self.on_navigation_requested)
         self.sidebar.dataset_selected.connect(self.on_dataset_selected)
+        self.sidebar.dataset_rename_requested.connect(self.on_dataset_rename_requested)
+        self.sidebar.dataset_duplicate_requested.connect(self.on_dataset_duplicate_requested)
+        self.sidebar.dataset_delete_requested.connect(self.on_dataset_delete_requested)
+        self.sidebar.dataset_split_sheet_requested.connect(self.on_dataset_split_sheet_requested)
         self.sidebar.upload_requested.connect(self.on_upload_requested)
         self.sidebar.project_edit_requested.connect(self.edit_current_project)
         self.sidebar.project_delete_requested.connect(self.delete_current_project)
@@ -403,6 +409,143 @@ class MainWindow(QMainWindow):
                     reports_view.set_dataframe(df)
 
                 self.statusBar().showMessage(f"Selected dataset: {dataset.name}")
+
+    @Slot(str)
+    def on_dataset_rename_requested(self, dataset_id):
+        """Handle dataset rename request"""
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+        if not self.current_project:
+            return
+
+        dataset = self.current_project.datasets.get(dataset_id)
+        if not dataset:
+            return
+
+        new_name, ok = QInputDialog.getText(
+            self, "Rename Dataset", "Enter new name:",
+            text=dataset.name
+        )
+
+        if ok and new_name and new_name.strip():
+            dataset.name = new_name.strip()
+            # Update sidebar
+            self.sidebar.set_project(self.current_project)
+            self.statusBar().showMessage(f"Dataset renamed to: {new_name}")
+
+    @Slot(str)
+    def on_dataset_duplicate_requested(self, dataset_id):
+        """Handle dataset duplicate request"""
+        if not self.current_project:
+            return
+
+        dataset = self.current_project.datasets.get(dataset_id)
+        if not dataset:
+            return
+
+        # Create a copy of the dataset
+        new_dataset = dataset.duplicate()
+        new_dataset.name = f"{dataset.name} (copy)"
+        self.current_project.add_dataset(new_dataset)
+        self.sidebar.set_project(self.current_project)
+        self.statusBar().showMessage(f"Dataset duplicated: {new_dataset.name}")
+
+    @Slot(str)
+    def on_dataset_delete_requested(self, dataset_id):
+        """Handle dataset delete request"""
+        from PySide6.QtWidgets import QMessageBox
+
+        if not self.current_project:
+            return
+
+        dataset = self.current_project.datasets.get(dataset_id)
+        if not dataset:
+            return
+
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self, "Delete Dataset",
+            f"Are you sure you want to delete '{dataset.name}'?\n\nThis action cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            del self.current_project.datasets[dataset_id]
+
+            # Clear current dataset if it was the deleted one
+            if self.current_dataset and self.current_dataset.id == dataset_id:
+                self.current_dataset = None
+                self._clear_data_view()
+
+            self.sidebar.set_project(self.current_project)
+            self.statusBar().showMessage(f"Dataset deleted: {dataset.name}")
+
+    def _clear_data_view(self):
+        """Clear the data view (table, steps, info) when no dataset is selected."""
+        transform_view = self.views.get("transform")
+        if transform_view:
+            # Clear the table
+            transform_view.populate_table(None)
+            # Clear the steps list
+            transform_view.steps_list_widget.clear()
+            # Update the info label
+            transform_view.info_label.setText("No data loaded. Select or import a dataset to begin.")
+            transform_view.pipeline = None
+            transform_view.original_dataframe = None
+
+    @Slot(str)
+    def on_dataset_split_sheet_requested(self, dataset_id):
+        """Handle split sheet request - opens dialog to split dataset by column values"""
+        if not self.current_project:
+            return
+
+        dataset = self.current_project.datasets.get(dataset_id)
+        if not dataset:
+            return
+
+        # Get the current dataframe
+        current_df = dataset.get_current_dataframe()
+        if current_df is None or current_df.is_empty():
+            QMessageBox.warning(self, "No Data", "The dataset is empty.")
+            return
+
+        # Open the split sheet dialog from table_dialogs
+        from gui.dialogs.table_dialogs import SplitSheetDialog
+        dialog = SplitSheetDialog(current_df, self)
+        if dialog.exec():
+            # Get the split datasets
+            split_datasets = dialog.get_split_datasets()
+            if not split_datasets:
+                return
+
+            # Create new datasets from the split
+            for name, df in split_datasets:
+                # Create a new Dataset object
+                from core.project_manager import Dataset
+                new_dataset = Dataset(
+                    id=str(uuid.uuid4()),
+                    name=name,
+                    dataframe=df
+                )
+
+                # Set metadata
+                new_dataset.metadata = dataset.metadata.copy()
+                new_dataset.metadata["created_at"] = datetime.now().isoformat()
+                new_dataset.metadata["version"] = "1.0"
+                new_dataset.metadata["row_count"] = len(df)
+                new_dataset.metadata["column_count"] = len(df.columns)
+                new_dataset.metadata["columns"] = list(df.columns)
+
+                # Add to project
+                self.current_project.add_dataset(new_dataset)
+
+            # Update the sidebar
+            self.sidebar.set_project(self.current_project)
+
+            # Update status
+            num_splits = len(split_datasets)
+            self.statusBar().showMessage(f"Split dataset into {num_splits} new datasets")
 
     @Slot(object)
     def _on_pipeline_changed(self, pipeline):
@@ -763,6 +906,7 @@ class MainWindow(QMainWindow):
     def _on_steps_panel(self):
         """Toggle steps panel."""
         self.content_stack.setCurrentWidget(self.views["transform"])
+        self.sidebar.set_active_button("transform")
         self.statusBar().showMessage("Steps panel is visible in Transform view")
 
     def _check_data_loaded(self) -> bool:

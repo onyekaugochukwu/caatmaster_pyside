@@ -403,8 +403,6 @@ class DataProcessor:
         # Column operations
         elif operation_id == 'column_rename':
             return self._call_mapped_method(self.rename_col, df, params)
-        elif operation_id == 'column_change_dtype':
-            return self._call_mapped_method(self.change_data_type, df, params)
 
         # Split operations
         elif operation_id == 'split_comma':
@@ -417,6 +415,42 @@ class DataProcessor:
             return self._call_mapped_method(self.split_column, df, params, delimiter='|')
         elif operation_id == 'split_custom':
             return self._call_mapped_method(self.split_column, df, params)
+
+        # New column/table operations
+        elif operation_id == 'split_columns_by_delimiter':
+            return self._call_mapped_method(self.split_columns_by_delimiter, df, params)
+        elif operation_id == 'custom_column_from_math':
+            return self._call_mapped_method(self.custom_column_from_math, df, params)
+        elif operation_id == 'calculated_columns':
+            return self._call_mapped_method(self.calculated_columns, df, params)
+        elif operation_id == 'choose_columns':
+            return self._call_mapped_method(self.choose_columns, df, params)
+        elif operation_id == 'change_dtype':
+            return self._call_mapped_method(self.change_data_type_extended, df, params)
+        elif operation_id == 'rename_columns':
+            return self._call_mapped_method(self.rename_columns_bulk, df, params)
+        elif operation_id == 'split_alphanumeric':
+            return self._call_mapped_method(self.split_alphanumeric, df, params)
+        elif operation_id == 'transpose':
+            return self._call_mapped_method(self.transpose_table, df, params)
+        elif operation_id == 'join_datasets':
+            return self._call_mapped_method(self.join_datasets, df, params)
+        elif operation_id == 'append_datasets':
+            return self._call_mapped_method(self.append_datasets, df, params)
+
+        # Aggregate operations (summary reports)
+        elif operation_id == 'group_summary':
+            return self._call_mapped_method(self.group_summary, df, params)
+        elif operation_id == 'stratification':
+            return self._call_mapped_method(self.stratification, df, params)
+        elif operation_id == 'cross_tabulation':
+            return self._call_mapped_method(self.cross_tabulation, df, params)
+        elif operation_id == 'trend_analysis':
+            return self._call_mapped_method(self.trend_analysis, df, params)
+        elif operation_id == 'top_bottom':
+            return self._call_mapped_method(self.top_bottom_items, df, params)
+        elif operation_id == 'sampling':
+            return self._call_mapped_method(self.sampling, df, params)
 
         # Pivot operations
         elif op_type == TransformationStepType.PIVOT:
@@ -1273,6 +1307,391 @@ class DataProcessor:
             )
         ).unnest(column)
 
+    def split_columns_by_delimiter(self, df: pl.DataFrame, column: str, delimiter: str = ' ', custom_delimiter: str = None, max_splits: int = -1, output_prefix: str = None) -> pl.DataFrame:
+        """Split column by delimiter into multiple columns"""
+        # Map delimiter options to actual characters
+        delimiter_map = {
+            'space': ' ',
+            'comma': ',',
+            'tab': '\t',
+            'period': '.',
+            'asterisk': '*'
+        }
+        actual_delimiter = delimiter_map.get(delimiter, delimiter)
+        if delimiter == 'custom' and custom_delimiter:
+            actual_delimiter = custom_delimiter
+
+        # Use provided prefix or default to column name
+        prefix = output_prefix or f"{column}_"
+
+        # Determine number of output columns
+        if max_splits > 0:
+            num_cols = max_splits + 1
+        else:
+            # Estimate based on first few rows
+            sample = df[column].head(10).to_list()
+            max_parts = max((str(v).count(actual_delimiter) for v in sample if v), default=0) + 1
+            num_cols = min(max(max_parts, 2), 10)  # Between 2 and 10 columns
+
+        output_cols = [f"{prefix}{i+1}" for i in range(num_cols)]
+
+        # Split and create columns
+        if max_splits > 0:
+            # Limit splits
+            result = df.with_columns(
+                pl.col(column).str.splitn(actual_delimiter, max_splits + 1).alias("_split_parts")
+            )
+        else:
+            result = df.with_columns(
+                pl.col(column).str.split(actual_delimiter).alias("_split_parts")
+            )
+
+        # Get actual number of parts for each row
+        result = result.with_columns(
+            pl.col("_split_parts").list.len().alias("_num_parts")
+        )
+
+        # Create output columns, handling varying lengths
+        for i in range(num_cols):
+            col_name = f"{column}_{i+1}"
+            result = result.with_columns(
+                pl.when(pl.col("_num_parts") > i)
+                .then(pl.col("_split_parts").list.get(i))
+                .otherwise(pl.lit(None))
+                .alias(col_name)
+            )
+
+        # Clean up and return
+        return result.drop("_split_parts", "_num_parts")
+
+    def custom_column_from_math(self, df: pl.DataFrame, expression: str, output_column: str = "custom_result", columns: List[str] = None) -> pl.DataFrame:
+        """Create custom column using mathematical expression"""
+        # For safety, use polars expressions
+        try:
+            # Replace column names with pl.col() calls
+            expr = expression
+            for col in columns or []:
+                expr = expr.replace(f"col('{col}')", f"pl.col('{col}')")
+
+            # Create the expression
+            result_expr = eval(expr)
+            return df.with_columns(result_expr.alias(output_column))
+        except Exception as e:
+            raise ValueError(f"Invalid expression: {e}")
+
+    def calculated_columns(self, df: pl.DataFrame, formula: str, output_column: str, formula_type: str = "arithmetic") -> pl.DataFrame:
+        """Create calculated column using formula"""
+        try:
+            return df.with_columns(eval(formula).alias(output_column))
+        except Exception as e:
+            raise ValueError(f"Invalid formula: {e}")
+
+    def choose_columns(self, df: pl.DataFrame, action: str, columns_to_keep: List[str] = None, columns_to_remove: List[str] = None, column_order: List[str] = None) -> pl.DataFrame:
+        """Select, remove, or reorder columns"""
+        if action == "keep":
+            if columns_to_keep:
+                return df.select(columns_to_keep)
+        elif action == "remove":
+            if columns_to_remove:
+                return df.drop(columns_to_remove)
+        elif action == "reorder":
+            if column_order:
+                return df.select(column_order)
+        return df
+
+    def change_data_type_extended(self, df: pl.DataFrame, column: str, new_dtype: str, format_string: str = None) -> pl.DataFrame:
+        """Change column data type with extended type support"""
+        dtype_map = {
+            "Int8": pl.Int8, "Int16": pl.Int16, "Int32": pl.Int32, "Int64": pl.Int64,
+            "Float32": pl.Float32, "Float64": pl.Float64,
+            "Utf8": pl.Utf8, "Boolean": pl.Boolean,
+            "Date": pl.Date, "Datetime": pl.Datetime, "Categorical": pl.Categorical
+        }
+        target_type = dtype_map.get(new_dtype)
+        if not target_type:
+            raise ValueError(f"Unsupported data type: {new_dtype}")
+
+        if new_dtype in ["Date", "Datetime"] and format_string:
+            return df.with_columns(
+                pl.col(column).str.to_date(format_string) if new_dtype == "Date"
+                else pl.col(column).str.to_datetime(format_string)
+            )
+        return df.with_columns(pl.col(column).cast(target_type))
+
+    def rename_columns_bulk(self, df: pl.DataFrame, renames: List[dict] = None, prefix: str = None, suffix: str = None, lowercase: bool = False, uppercase: bool = False) -> pl.DataFrame:
+        """Bulk rename columns"""
+        result_df = df.clone()
+
+        # Apply individual renames
+        if renames:
+            rename_map = {r["old_name"]: r["new_name"] for r in renames}
+            result_df = result_df.rename(rename_map)
+
+        # Apply prefix/suffix
+        if prefix or suffix:
+            new_cols = {}
+            for col in result_df.columns:
+                new_name = ""
+                if prefix:
+                    new_name += prefix
+                new_name += col
+                if suffix:
+                    new_name += suffix
+                new_cols[col] = new_name
+            result_df = result_df.rename(new_cols)
+
+        # Apply case conversion
+        if lowercase:
+            new_cols = {col: col.lower() for col in result_df.columns}
+            result_df = result_df.rename(new_cols)
+        elif uppercase:
+            new_cols = {col: col.upper() for col in result_df.columns}
+            result_df = result_df.rename(new_cols)
+
+        return result_df
+
+    def split_alphanumeric(self, df: pl.DataFrame, column: str, output_text: str = None, output_number: str = None) -> pl.DataFrame:
+        """Split alphanumeric values into text and numeric parts"""
+        output_text = output_text or f"{column}_text"
+        output_number = output_number or f"{column}_number"
+
+        return df.with_columns(
+            pl.col(column).str.extract(r"^([a-zA-Z\s]*)", group=1).alias(output_text),
+            pl.col(column).str.extract(r"(\d+\.?\d*)$", group=1).alias(output_number)
+        )
+
+    def transpose_table(self, df: pl.DataFrame, columns_to_transpose: List[str], include_index: bool = True, index_column: str = "index") -> pl.DataFrame:
+        """Transpose rows to columns"""
+        if include_index:
+            return df.select(columns_to_transpose).transpose(
+                include_header=True,
+                header_name=index_column
+            )
+        return df.select(columns_to_transpose).transpose(include_header=False)
+
+    def join_datasets(self, df: pl.DataFrame, right_dataset: str, left_key: str, right_key: str, join_type: str = "left", suffix: str = "_right") -> pl.DataFrame:
+        """Join two datasets by a key column"""
+        # Get the right dataset from the project datasets
+        right_df = self.get_dataset(right_dataset)
+        if right_df is None:
+            raise ValueError(f"Dataset '{right_dataset}' not found")
+
+        # Map join type to polars join strategy
+        join_map = {
+            "left_join": "left",
+            "right_join": "outer",
+            "inner_join": "inner",
+            "outer_join": "outer",
+            "cross_join": "cross"
+        }
+
+        strategy = join_map.get(join_type, "left")
+
+        # Perform the join
+        if strategy == "left":
+            return df.join(right_df, left_on=left_key, right_on=right_key, how=strategy, suffix=suffix)
+        elif strategy == "right":
+            return df.join(right_df, left_on=left_key, right_on=right_key, how="outer", suffix=suffix)
+        elif strategy == "inner":
+            return df.join(right_df, left_on=left_key, right_on=right_key, how=strategy, suffix=suffix)
+        elif strategy == "outer":
+            return df.join(right_df, left_on=left_key, right_on=right_key, how=strategy, suffix=suffix)
+        elif strategy == "cross":
+            return df.join(right_df, how=strategy, suffix=suffix)
+
+        return df
+
+    def append_datasets(self, df: pl.DataFrame, source_datasets: List[str], align_columns: bool = True, fill_missing: bool = True) -> pl.DataFrame:
+        """Append/stack multiple datasets vertically"""
+        result = df.clone()
+
+        for dataset_name in source_datasets:
+            other_df = self.get_dataset(dataset_name)
+            if other_df is None:
+                continue
+
+            if align_columns:
+                # Ensure both dataframes have the same columns
+                all_cols = list(set(result.columns) | set(other_df.columns))
+                if fill_missing:
+                    # Add missing columns with null values
+                    for col in all_cols:
+                        if col not in result.columns:
+                            result = result.with_columns(pl.lit(None).alias(col))
+                        if col not in other_df.columns:
+                            other_df = other_df.with_columns(pl.lit(None).alias(col))
+                    # Reorder columns to match
+                    result = result.select(all_cols)
+                    other_df = other_df.select(all_cols)
+
+            result = pl.concat([result, other_df], how="vertical")
+
+        return result
+
+    def split_sheet(self, df: pl.DataFrame, column: str) -> List[tuple]:
+        """
+        Split a dataframe into multiple dataframes based on unique values in a column.
+
+        Args:
+            df: The source Polars DataFrame
+            column: The column name to split by
+
+        Returns:
+            List of tuples: [(dataset_name, dataframe), ...]
+        """
+        if column not in df.columns:
+            raise ValueError(f"Column '{column}' not found in dataframe")
+
+        # Get unique values and sort them
+        unique_values = df[column].unique().to_list()
+        unique_values.sort()
+
+        result = []
+        for value in unique_values:
+            # Filter dataframe for this value
+            filtered_df = df.filter(pl.col(column) == value)
+            # Create dataset name (sanitize the value for use as name)
+            safe_name = str(value).strip()
+            result.append((safe_name, filtered_df))
+
+        return result
+
+    def group_summary(self, df: pl.DataFrame, group_columns: List[str], value_column: str, aggregations: List[str] = None) -> pl.DataFrame:
+        """Create group summary with aggregations"""
+        agg_map = {
+            "sum": pl.sum, "mean": pl.mean, "count": pl.count,
+            "min": pl.min, "max": pl.max, "std": pl.std,
+            "median": pl.median, "first": pl.first, "last": pl.last
+        }
+
+        aggs = []
+        for agg in aggregations or ["sum", "count"]:
+            if agg in agg_map:
+                aggs.append(agg_map[agg](value_column).alias(f"{value_column}_{agg}"))
+
+        return df.group_by(group_columns).agg(*aggs)
+
+    def stratification(self, df: pl.DataFrame, column: str, strata: List[float], value_column: str = None, include_counts: bool = True) -> pl.DataFrame:
+        """Create stratified summary by value ranges"""
+        # Create strata labels
+        labels = []
+        for i in range(len(strata) - 1):
+            labels.append(f"{strata[i]}-{strata[i+1]}")
+
+        # Create strata column
+        result = df.with_columns(
+            pl.cut(pl.col(column), bins=strata, labels=labels).alias("_stratum")
+        )
+
+        # Create summary
+        if value_column:
+            agg_map = {"sum": pl.sum, "mean": pl.mean, "count": pl.count, "min": pl.min, "max": pl.max}
+            aggs = [agg_map["sum"](value_column).alias(f"{value_column}_sum") for _ in [1]] if "sum" in agg_map else []
+
+            return result.group_by("_stratum").agg(
+                pl.col(value_column).sum().alias(f"{value_column}_sum"),
+                pl.col(value_column).mean().alias(f"{value_column}_mean"),
+                pl.col(value_column).count().alias("count")
+            )
+        return result.group_by("_stratum").agg(pl.count().alias("count"))
+
+    def cross_tabulation(self, df: pl.DataFrame, rows: str, columns: str, values: str = None, agg_function: str = "count", show_percentages: bool = False, percentages_by: str = "total") -> pl.DataFrame:
+        """Create cross-tabulation (contingency table)"""
+        if values:
+            agg_map = {"sum": "sum", "mean": "mean", "min": "min", "max": "max", "count": "count"}
+            agg = agg_map.get(agg_function, "count")
+            result = df.pivot(values=values, index=rows, columns=columns, aggregate_function=agg)
+        else:
+            result = df.pivot(index=rows, columns=columns, aggregate_function="count")
+
+        if show_percentages:
+            # Calculate percentages based on totals
+            for col in result.columns:
+                if col != rows:
+                    total = result[col].sum()
+                    result = result.with_columns(
+                        (pl.col(col) / total * 100).alias(f"{col}_pct")
+                    )
+
+        return result
+
+    def trend_analysis(self, df: pl.DataFrame, date_column: str, value_column: str, period: str = "month", aggregations: List[str] = None, include_trendline: bool = False, trend_type: str = "linear") -> pl.DataFrame:
+        """Create time-based trend analysis"""
+        period_map = {"day": "day", "week": "week", "month": "month", "quarter": "quarter", "year": "year"}
+
+        # Group by period
+        grouper = getattr(pl.col(date_column).dt, period_map.get(period, "month"))
+
+        agg_map = {"sum": pl.sum, "mean": pl.mean, "count": pl.count, "min": pl.min, "max": pl.max}
+        aggs = [agg_map.get(a, pl.sum)(value_column).alias(f"{value_column}_{a}") for a in (aggregations or ["sum", "mean"])]
+
+        result = df.group_by(grouper.alias("_period")).agg(*aggs).sort("_period")
+
+        if include_trendline:
+            # Simple linear trend calculation
+            result = result.with_columns(
+                (pl.col(f"{value_column}_{aggregations[0] if aggregations else 'sum'}").rank() * 0.1).alias("trend_value")
+            )
+
+        return result.rename({"_period": date_column})
+
+    def top_bottom_items(self, df: pl.DataFrame, column: str, value_column: str, n: int, rank_type: str = "top", tie_break: str = "keep_all") -> pl.DataFrame:
+        """Get top or bottom N items"""
+        sorted_df = df.sort(value_column, descending=(rank_type == "top"))
+
+        if tie_break == "keep_all":
+            # Get all items that would be in top N (including ties)
+            if rank_type == "top":
+                threshold = sorted_df[value_column][min(n-1, len(sorted_df)-1)] if n <= len(sorted_df) else sorted_df[value_column][-1]
+                return sorted_df.filter(pl.col(value_column) >= threshold)
+            else:
+                threshold = sorted_df[value_column][min(n-1, len(sorted_df)-1)] if n <= len(sorted_df) else sorted_df[value_column][-1]
+                return sorted_df.filter(pl.col(value_column) <= threshold)
+        else:
+            return sorted_df.head(n)
+
+    def sampling(self, df: pl.DataFrame, method: str = "random", sample_size: int = None, percentage: float = None, stratify_column: str = None, random_seed: int = None, output_type: str = "sample_view") -> pl.DataFrame:
+        """Create sample of data"""
+        import numpy as np
+
+        n = sample_size or int(len(df) * (percentage or 10) / 100)
+
+        if method == "random":
+            if random_seed:
+                np.random.seed(random_seed)
+            indices = np.random.choice(len(df), size=min(n, len(df)), replace=False)
+            return df[indices]
+
+        elif method == "stratified":
+            if stratify_column:
+                # Sample proportionally from each stratum
+                strata = df.group_by(stratify_column).agg(pl.col(0).count().alias("count"))
+                total = strata["count"].sum()
+                samples = []
+                for _, row in strata.iterrows():
+                    stratum_size = int(n * row["count"] / total) or 1
+                    stratum_df = df.filter(pl.col(stratify_column) == row[stratify_column])
+                    if random_seed:
+                        np.random.seed(random_seed + row["count"])
+                    indices = np.random.choice(len(stratum_df), size=min(stratum_size, len(stratum_df)), replace=False)
+                    samples.append(stratum_df[indices])
+                return pl.concat(samples) if samples else df.head(0)
+
+        elif method == "systematic":
+            step = max(1, len(df) // n)
+            start = np.random.randint(0, step) if random_seed else 0
+            return df[start::step]
+
+        elif method == "cluster":
+            # Simple cluster sampling - sample every kth group
+            if stratify_column:
+                unique_vals = df[stratify_column].unique().to_list()
+                n_clusters = max(1, len(unique_vals) // 4)
+                selected = np.random.choice(unique_vals, size=n_clusters, replace=False) if random_seed is None else unique_vals[:n_clusters]
+                return df.filter(pl.col(stratify_column).is_in(selected))
+
+        return df.head(n)
+
     # ============================================================================
     # PIVOT/UNPIVOT IMPLEMENTATIONS
     # ============================================================================
@@ -2018,16 +2437,6 @@ class LegacyDataProcessor:
     def rename_column(self, df: pl.DataFrame, old_name: str, new_name: str) -> pl.DataFrame:
         """Rename column"""
         return df.rename({old_name: new_name})
-
-    def change_dtype(self, df: pl.DataFrame, column: str, new_dtype: str) -> pl.DataFrame:
-        """Change column data type"""
-        type_map = {
-            'Int64': pl.Int64, 'Float64': pl.Float64, 'Utf8': pl.Utf8,
-            'Boolean': pl.Boolean, 'Date': pl.Date, 'Datetime': pl.Datetime
-        }
-        if new_dtype not in type_map:
-            raise ValueError(f"Unsupported type: {new_dtype}")
-        return df.with_columns(pl.col(column).cast(type_map[new_dtype], strict=False))
 
     # =========================================================================
     # SPLIT OPERATIONS

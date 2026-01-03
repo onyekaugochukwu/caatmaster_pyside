@@ -54,31 +54,100 @@ class TransformView(QWidget):
 
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(10)
 
-        # Steps section
+        # Toolbar with action buttons
+        toolbar = QWidget()
+        toolbar.setObjectName("Toolbar")
+        toolbar.setStyleSheet("""
+            QWidget#Toolbar {
+                background-color: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 6px;
+                padding: 8px;
+            }
+        """)
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(10, 5, 10, 5)
+        toolbar_layout.setSpacing(8)
+
+        # Undo button
+        self.undo_btn = QPushButton("⟲ Undo")
+        self.undo_btn.setFixedHeight(28)
+        self.undo_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f1f5f9;
+                color: #334155;
+                border: 1px solid #cbd5e1;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #e2e8f0;
+            }
+        """)
+        self.undo_btn.clicked.connect(self.undo_last_step)
+        toolbar_layout.addWidget(self.undo_btn)
+
+        # Clear button
+        self.clear_btn = QPushButton("Clear All")
+        self.clear_btn.setFixedHeight(28)
+        self.clear_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #fee2e2;
+                color: #991b1b;
+                border: 1px solid #fecaca;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #fecaca;
+            }
+        """)
+        self.clear_btn.clicked.connect(self.clear_all_steps)
+        toolbar_layout.addWidget(self.clear_btn)
+
+        # Export button
+        self.export_btn = QPushButton("Export")
+        self.export_btn.setFixedHeight(28)
+        self.export_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f1f5f9;
+                color: #334155;
+                border: 1px solid #cbd5e1;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #e2e8f0;
+            }
+        """)
+        self.export_btn.clicked.connect(self.export_transformations)
+        toolbar_layout.addWidget(self.export_btn)
+
+        left_layout.addWidget(toolbar)
+
+        # Applied Steps section - always visible
         steps_group = QGroupBox("Applied Steps")
+        steps_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+        """)
         steps_layout = QVBoxLayout(steps_group)
 
         self.steps_list_widget = QListWidget()
         self.steps_list_widget.setObjectName("StepsList")
         self.steps_list_widget.itemSelectionChanged.connect(self.on_step_selected)
         steps_layout.addWidget(self.steps_list_widget)
-
-        # Add undo/redo buttons
-        btn_layout = QHBoxLayout()
-        self.undo_btn = QPushButton("Undo")
-        self.undo_btn.clicked.connect(self.undo_last_step)
-        btn_layout.addWidget(self.undo_btn)
-
-        self.clear_btn = QPushButton("Clear")
-        self.clear_btn.clicked.connect(self.clear_all_steps)
-        btn_layout.addWidget(self.clear_btn)
-
-        self.export_btn = QPushButton("Export")
-        self.export_btn.clicked.connect(self.export_transformations)
-        btn_layout.addWidget(self.export_btn)
-
-        steps_layout.addLayout(btn_layout)
         left_layout.addWidget(steps_group)
 
         # Step Inspector section
@@ -199,7 +268,9 @@ class TransformView(QWidget):
             'text': 'Text',
             'math': 'Math',
             'datetime': 'Date & Time',
-            'statistical': 'Statistics',
+            'column': 'Column',
+            'table': 'Table',
+            'statistics': 'Statistics',
             'audit': 'Audit',
             'ml': 'Machine Learning',
             'ai': 'AI',
@@ -223,6 +294,12 @@ class TransformView(QWidget):
             # For math category, create sub-submenus for Basic, Trig, etc.
             elif category_key == 'math':
                 self._add_math_submenu(category_menu, grouped_ops[category_key], column_name)
+            # For column category (new column/table operations)
+            elif category_key == 'column':
+                self._add_column_submenu(category_menu, grouped_ops[category_key], column_name)
+            # For table category (split, combine, etc.)
+            elif category_key == 'table':
+                self._add_table_submenu(category_menu, grouped_ops[category_key], column_name)
             else:
                 # For other categories, just list operations directly
                 for op_id, op_data in sorted(grouped_ops[category_key], key=lambda x: x[1]['display_name']):
@@ -356,6 +433,134 @@ class TransformView(QWidget):
             trig_menu = parent_menu.addMenu("Trigonometric")
             for op_id, op_data in sorted(trig_ops, key=lambda x: x[1]['display_name']):
                 action = trig_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Other operations
+        for op_id, op_data in sorted(other_ops, key=lambda x: x[1]['display_name']):
+            action = parent_menu.addAction(op_data['display_name'])
+            action.triggered.connect(
+                lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+            )
+
+    def _add_column_submenu(self, parent_menu, operations, column_name):
+        """Add column operations (split, rename, dtype, etc.) with submenus"""
+        # Group column operations by function type
+        split_ops = []
+        rename_ops = []
+        dtype_ops = []
+        structure_ops = []  # choose_columns, calculated_columns
+        other_ops = []
+
+        for op_id, op_data in operations:
+            if 'split' in op_id.lower() or 'split' in op_data['display_name'].lower():
+                split_ops.append((op_id, op_data))
+            elif 'rename' in op_id.lower():
+                rename_ops.append((op_id, op_data))
+            elif 'dtype' in op_id.lower() or 'change' in op_id.lower():
+                dtype_ops.append((op_id, op_data))
+            elif 'choose' in op_id.lower() or 'calculated' in op_id.lower():
+                structure_ops.append((op_id, op_data))
+            else:
+                other_ops.append((op_id, op_data))
+
+        # Split submenu
+        if split_ops:
+            split_menu = parent_menu.addMenu("Split")
+            for op_id, op_data in sorted(split_ops, key=lambda x: x[1]['display_name']):
+                action = split_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Rename submenu
+        if rename_ops:
+            rename_menu = parent_menu.addMenu("Rename")
+            for op_id, op_data in sorted(rename_ops, key=lambda x: x[1]['display_name']):
+                action = rename_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Data Type submenu
+        if dtype_ops:
+            dtype_menu = parent_menu.addMenu("Data Type")
+            for op_id, op_data in sorted(dtype_ops, key=lambda x: x[1]['display_name']):
+                action = dtype_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Structure submenu (Choose Columns, Calculated Columns)
+        if structure_ops:
+            struct_menu = parent_menu.addMenu("Structure")
+            for op_id, op_data in sorted(structure_ops, key=lambda x: x[1]['display_name']):
+                action = struct_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Other operations
+        for op_id, op_data in sorted(other_ops, key=lambda x: x[1]['display_name']):
+            action = parent_menu.addAction(op_data['display_name'])
+            action.triggered.connect(
+                lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+            )
+
+    def _add_table_submenu(self, parent_menu, operations, column_name):
+        """Add table operations (split, combine, transpose, etc.)"""
+        # Group table operations by function type
+        split_ops = []  # split_sheet
+        combine_ops = []  # combine_sheets, append_datasets
+        join_ops = []  # join_datasets
+        transform_ops = []  # transpose, select_n_rows, query_sheet
+        other_ops = []
+
+        for op_id, op_data in operations:
+            if 'split' in op_id.lower() and 'sheet' in op_data['display_name'].lower():
+                split_ops.append((op_id, op_data))
+            elif 'combine' in op_id.lower() or 'union' in op_id.lower() or 'append' in op_id.lower():
+                combine_ops.append((op_id, op_data))
+            elif 'join' in op_id.lower():
+                join_ops.append((op_id, op_data))
+            elif 'transpose' in op_id.lower() or 'select' in op_id.lower() or 'query' in op_id.lower():
+                transform_ops.append((op_id, op_data))
+            else:
+                other_ops.append((op_id, op_data))
+
+        # Split submenu
+        if split_ops:
+            split_menu = parent_menu.addMenu("Split")
+            for op_id, op_data in sorted(split_ops, key=lambda x: x[1]['display_name']):
+                action = split_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Join submenu
+        if join_ops:
+            join_menu = parent_menu.addMenu("Join")
+            for op_id, op_data in sorted(join_ops, key=lambda x: x[1]['display_name']):
+                action = join_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Combine submenu
+        if combine_ops:
+            combine_menu = parent_menu.addMenu("Combine")
+            for op_id, op_data in sorted(combine_ops, key=lambda x: x[1]['display_name']):
+                action = combine_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Transform submenu
+        if transform_ops:
+            transform_menu = parent_menu.addMenu("Transform")
+            for op_id, op_data in sorted(transform_ops, key=lambda x: x[1]['display_name']):
+                action = transform_menu.addAction(op_data['display_name'])
                 action.triggered.connect(
                     lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
                 )

@@ -39,6 +39,45 @@ class Dataset:
             return self.transformation_pipeline.apply()
         return self.original_dataframe
 
+    def duplicate(self, new_name: str = None) -> 'Dataset':
+        """Create a duplicate of this dataset with a new name."""
+        # Copy the dataframe
+        new_dataframe = self.original_dataframe.clone() if self.original_dataframe is not None else None
+
+        # Create new dataset with new ID
+        new_dataset = Dataset(
+            id=str(uuid.uuid4()),
+            name=new_name or f"{self.name} (Copy)",
+            dataframe=new_dataframe
+        )
+
+        # Copy metadata
+        new_dataset.metadata = self.metadata.copy()
+        new_dataset.metadata["created_at"] = datetime.now().isoformat()
+        new_dataset.metadata["version"] = "1.0"
+
+        # Copy transformation pipeline if present
+        if self.transformation_pipeline:
+            from .data_processor import TransformationPipeline, TransformationStep
+
+            new_pipeline = TransformationPipeline(new_dataframe)
+            # Copy each step
+            for step in self.transformation_pipeline.get_steps():
+                new_step = TransformationStep(
+                    operation_id=step.operation_id,
+                    params=step.params.copy(),
+                    step_number=step.step_number
+                )
+                new_step.created_columns = step.created_columns.copy() if step.created_columns else []
+                new_step.timestamp = step.timestamp
+                new_pipeline.steps.append(new_step)
+
+            # Copy column tracking
+            new_pipeline._column_tracking = self.transformation_pipeline._column_tracking.copy()
+            new_dataset.set_pipeline(new_pipeline)
+
+        return new_dataset
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize dataset to dictionary."""
         # Get current dataframe state

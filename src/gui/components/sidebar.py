@@ -4,11 +4,11 @@ Clean, professional navigation with dataset management
 """
 
 from PySide6.QtCore import Qt, Signal, QSize
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QAction
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QPushButton, QToolButton, QListWidget, QListWidgetItem,
-    QScrollArea, QMenu, QSizePolicy
+    QScrollArea, QMenu, QSizePolicy, QGraphicsDropShadowEffect
 )
 
 
@@ -108,6 +108,10 @@ class Sidebar(QFrame):
     # Navigation signals
     navigation_requested = Signal(str)  # view_name
     dataset_selected = Signal(str)  # dataset_id
+    dataset_rename_requested = Signal(str)  # dataset_id
+    dataset_duplicate_requested = Signal(str)  # dataset_id
+    dataset_delete_requested = Signal(str)  # dataset_id
+    dataset_split_sheet_requested = Signal(str)  # dataset_id
     upload_requested = Signal()  # Request to upload dataset
     project_edit_requested = Signal()  # Request to edit current project
     project_delete_requested = Signal()  # Request to delete current project
@@ -178,18 +182,89 @@ class Sidebar(QFrame):
             self.datasets_list.setCurrentRow(0)
 
     def _on_datasetClicked(self, item):
-        """Handle dataset item click"""
+        """Handle dataset item click (left click only)"""
         if item:
             dataset_id = item.data(Qt.UserRole)
             self.current_dataset_id = dataset_id
             self.dataset_selected.emit(dataset_id)
 
+    def _on_datasetContextMenu(self, pos):
+        """Handle right-click context menu for dataset items"""
+        from PySide6.QtGui import QAction
+        from PySide6.QtWidgets import QMenu
+
+        item = self.datasets_list.itemAt(pos)
+        if not item:
+            return
+
+        dataset_id = item.data(Qt.UserRole)
+        dataset_name = item.text()
+
+        menu = QMenu(self)
+
+        # Dataset info
+        info_action = QAction(f"📊 {dataset_name}", self)
+        info_action.setEnabled(False)
+        menu.addAction(info_action)
+        menu.addSeparator()
+
+        # View data action
+        view_action = QAction("View Data", self)
+        view_action.triggered.connect(lambda: self.dataset_selected.emit(dataset_id))
+        menu.addAction(view_action)
+
+        # Rename action
+        rename_action = QAction("✏️ Rename", self)
+        rename_action.triggered.connect(lambda: self.dataset_rename_requested.emit(dataset_id))
+        menu.addAction(rename_action)
+
+        # Duplicate action
+        duplicate_action = QAction("📋 Duplicate", self)
+        duplicate_action.triggered.connect(lambda: self.dataset_duplicate_requested.emit(dataset_id))
+        menu.addAction(duplicate_action)
+
+        # Split Sheet action
+        split_action = QAction("✂️ Split Sheet", self)
+        split_action.triggered.connect(lambda: self.dataset_split_sheet_requested.emit(dataset_id))
+        menu.addAction(split_action)
+
+        menu.addSeparator()
+
+        # Delete action - styled differently
+        delete_action = QAction("🗑️ Delete", self)
+        delete_action.triggered.connect(lambda: self.dataset_delete_requested.emit(dataset_id))
+        menu.addAction(delete_action)
+
+        # Style the menu with white text for dark background
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #1f2937;
+                border: 1px solid #374151;
+                padding: 5px;
+                color: #ffffff;
+                font-size: 13px;
+            }
+            QMenu::item {
+                color: #ffffff;
+                padding: 8px 20px;
+            }
+            QMenu::item:selected {
+                background-color: #3b82f6;
+            }
+            QMenu::item:last {
+                color: #ef4444;
+            }
+        """)
+
+        # Show menu at cursor position
+        menu.exec_(self.mapToGlobal(pos))
+
     def _on_datasetDoubleClicked(self, item):
-        """Handle dataset item double click - navigate to data view"""
+        """Handle dataset item double click - navigate to transform view"""
         if item:
             dataset_id = item.data(Qt.UserRole)
             self.dataset_selected.emit(dataset_id)
-            self.navigation_requested.emit("data")
+            self.navigation_requested.emit("transform")
 
     def _setup_ui(self):
         """Setup the sidebar UI"""
@@ -423,6 +498,8 @@ class Sidebar(QFrame):
         self.datasets_list.setMinimumHeight(100)
         self.datasets_list.setMaximumHeight(300)
         self.datasets_list.setSelectionMode(QListWidget.SingleSelection)
+        self.datasets_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.datasets_list.customContextMenuRequested.connect(self._on_datasetContextMenu)
         self.datasets_list.itemClicked.connect(self._on_datasetClicked)
         self.datasets_list.itemDoubleClicked.connect(self._on_datasetDoubleClicked)
         scroll_layout.addWidget(self.datasets_list)
@@ -529,6 +606,7 @@ class Sidebar(QFrame):
         # Set active button
         button_map = {
             "data": self.data_workspace_btn,
+            "transform": self.data_workspace_btn,  # Share Data button highlight
             "sql": self.sql_workspace_btn,
         }
 

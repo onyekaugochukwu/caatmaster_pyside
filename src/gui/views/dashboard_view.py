@@ -448,7 +448,7 @@ class DashboardView(QWidget):
                 self.header_subtitle.setText("Dashboard")
         else:
             self.header_title.setText("Dashboard")
-            self.header_subtitle.setText("SOX Compliance Audit")
+            self.header_subtitle.setText("Overview")
 
     def update_stats(self, projects_count: int = 0, datasets_count: int = 0,
                     analyses_count: int = 0, sessions_count: int = 0):
@@ -555,7 +555,7 @@ class DashboardView(QWidget):
         """)
         left_layout.addWidget(self.header_title)
 
-        self.header_subtitle = QLabel("SOX Compliance Audit")
+        self.header_subtitle = QLabel("Overview")
         self.header_subtitle.setStyleSheet("""
             QLabel {
                 font-size: 14px;
