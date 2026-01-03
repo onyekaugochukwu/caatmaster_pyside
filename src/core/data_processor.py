@@ -1469,62 +1469,95 @@ class DataProcessor:
             )
         return df.select(columns_to_transpose).transpose(include_header=False)
 
-    def join_datasets(self, df: pl.DataFrame, right_dataset: str, left_key: str, right_key: str, join_type: str = "left", suffix: str = "_right") -> pl.DataFrame:
+    def join_datasets(self, left_df: pl.DataFrame, right_df: pl.DataFrame, left_key: str, right_key: str, join_type: str = "left", suffix: str = "_right") -> pl.DataFrame:
         """Join two datasets by a key column"""
-        # Get the right dataset from the project datasets
-        right_df = self.get_dataset(right_dataset)
+        if left_df is None:
+            raise ValueError("Left dataframe is None")
         if right_df is None:
-            raise ValueError(f"Dataset '{right_dataset}' not found")
+            raise ValueError("Right dataframe is None")
 
         # Map join type to polars join strategy
         join_map = {
-            "left_join": "left",
-            "right_join": "outer",
-            "inner_join": "inner",
-            "outer_join": "outer",
-            "cross_join": "cross"
+            "left": "left",
+            "right": "outer",
+            "inner": "inner",
+            "outer": "outer",
+            "cross": "cross"
         }
 
         strategy = join_map.get(join_type, "left")
 
         # Perform the join
         if strategy == "left":
-            return df.join(right_df, left_on=left_key, right_on=right_key, how=strategy, suffix=suffix)
+            return left_df.join(right_df, left_on=left_key, right_on=right_key, how=strategy, suffix=suffix)
         elif strategy == "right":
-            return df.join(right_df, left_on=left_key, right_on=right_key, how="outer", suffix=suffix)
+            return left_df.join(right_df, left_on=left_key, right_on=right_key, how="outer", suffix=suffix)
         elif strategy == "inner":
-            return df.join(right_df, left_on=left_key, right_on=right_key, how=strategy, suffix=suffix)
+            return left_df.join(right_df, left_on=left_key, right_on=right_key, how=strategy, suffix=suffix)
         elif strategy == "outer":
-            return df.join(right_df, left_on=left_key, right_on=right_key, how=strategy, suffix=suffix)
+            return left_df.join(right_df, left_on=left_key, right_on=right_key, how=strategy, suffix=suffix)
         elif strategy == "cross":
-            return df.join(right_df, how=strategy, suffix=suffix)
+            return left_df.join(right_df, how=strategy, suffix=suffix)
 
-        return df
+        return left_df
 
-    def append_datasets(self, df: pl.DataFrame, source_datasets: List[str], align_columns: bool = True, fill_missing: bool = True) -> pl.DataFrame:
+    def append_datasets(self, dataframes: List[pl.DataFrame], align_columns: bool = True, fill_missing: bool = True) -> pl.DataFrame:
         """Append/stack multiple datasets vertically"""
-        result = df.clone()
+        if not dataframes:
+            raise ValueError("No dataframes provided")
 
-        for dataset_name in source_datasets:
-            other_df = self.get_dataset(dataset_name)
-            if other_df is None:
-                continue
+        if len(dataframes) == 1:
+            return dataframes[0].clone()
 
-            if align_columns:
-                # Ensure both dataframes have the same columns
-                all_cols = list(set(result.columns) | set(other_df.columns))
-                if fill_missing:
-                    # Add missing columns with null values
-                    for col in all_cols:
-                        if col not in result.columns:
-                            result = result.with_columns(pl.lit(None).alias(col))
-                        if col not in other_df.columns:
-                            other_df = other_df.with_columns(pl.lit(None).alias(col))
-                    # Reorder columns to match
-                    result = result.select(all_cols)
-                    other_df = other_df.select(all_cols)
+        # Clone all dataframes first to avoid modifying originals
+        clones = [df.clone() for df in dataframes]
 
-            result = pl.concat([result, other_df], how="vertical")
+        if align_columns:
+            # Get all unique columns from all dataframes
+            all_cols_set = set()
+            for df in clones:
+                all_cols_set.update(df.columns)
+            # Sort columns for consistent ordering
+            all_cols = sorted(all_cols_set)
+
+            # Determine target dtype for each column (use first dataframe's dtype)
+            column_dtypes = {}
+            for col in all_cols:
+                for df in clones:
+                    if col in df.columns:
+                        column_dtypes[col] = df[col].dtype
+                        break
+                if col not in column_dtypes:
+                    column_dtypes[col] = pl.String
+
+            # For each dataframe, add missing columns and cast to match target dtypes
+            for i, df in enumerate(clones):
+                new_cols = []
+                for col in all_cols:
+                    if col not in df.columns:
+                        # Add missing column with nulls of correct dtype
+                        new_cols.append(pl.lit(None, dtype=column_dtypes[col]).alias(col))
+                    else:
+                        # Cast existing column to target dtype
+                        target_dtype = column_dtypes[col]
+                        if df[col].dtype != target_dtype:
+                            try:
+                                new_cols.append(pl.col(col).cast(target_dtype))
+                            except:
+                                # If cast fails, use null column
+                                new_cols.append(pl.lit(None, dtype=target_dtype).alias(col))
+                        else:
+                            new_cols.append(pl.col(col))
+                # Add all new columns at once
+                df = df.with_columns(new_cols)
+                # Select columns in the same order for all dataframes
+                df = df.select(all_cols)
+                clones[i] = df
+
+        # Use polars vstack which requires matching schemas
+        result = clones[0]
+        for df in clones[1:]:
+            result = result.vstack(df, in_place=False)
 
         return result
 

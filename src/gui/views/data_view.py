@@ -98,7 +98,7 @@ class DataView(QWidget):
             )
             return
 
-        file_path, _ = QFileDialog.getOpenFileName(
+        file_path, selected_filter = QFileDialog.getOpenFileName(
             self,
             "Import Data",
             "",
@@ -106,7 +106,46 @@ class DataView(QWidget):
         )
 
         if file_path:
-            self.load_data(file_path)
+            sheet_name = None
+
+            # Check if Excel file and has multiple sheets
+            if file_path.endswith(('.xlsx', '.xls')):
+                from core.data_processor import LegacyDataProcessor
+                if self.data_processor is None:
+                    self.data_processor = LegacyDataProcessor()
+
+                try:
+                    sheets = self.data_processor.get_excel_sheets(file_path)
+                    if len(sheets) > 1:
+                        # Show sheet selection dialog
+                        from PySide6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QVBoxLayout, QLabel
+
+                        dialog = QDialog(self)
+                        dialog.setWindowTitle("Select Worksheet")
+                        dialog.setMinimumWidth(300)
+                        layout = QVBoxLayout(dialog)
+
+                        layout.addWidget(QLabel(f"Select a worksheet from '{file_path.split('/')[-1]}':"))
+
+                        sheet_combo = QComboBox()
+                        sheet_combo.addItems(sheets)
+                        layout.addWidget(sheet_combo)
+
+                        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+                        buttons.accepted.connect(dialog.accept)
+                        buttons.rejected.connect(dialog.reject)
+                        layout.addWidget(buttons)
+
+                        if dialog.exec() == QDialog.Accepted:
+                            sheet_name = sheet_combo.currentText()
+                        else:
+                            return  # User cancelled
+                except Exception as e:
+                    from PySide6.QtWidgets import QMessageBox
+                    QMessageBox.warning(self, "Warning", f"Could not read Excel sheets: {str(e)}\nLoading first sheet.")
+                    sheet_name = None
+
+            self.load_data(file_path, sheet_name)
 
     def load_data(self, file_path: str, sheet_name: str = None):
         """Load data from file"""

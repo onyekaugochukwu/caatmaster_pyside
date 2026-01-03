@@ -2,6 +2,7 @@
 Sidebar for CaatMaster - Inspired by data_workspace_app.py design
 Clean, professional navigation with dataset management
 """
+from typing import List
 
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QFont, QAction
@@ -112,6 +113,8 @@ class Sidebar(QFrame):
     dataset_duplicate_requested = Signal(str)  # dataset_id
     dataset_delete_requested = Signal(str)  # dataset_id
     dataset_split_sheet_requested = Signal(str)  # dataset_id
+    join_datasets_requested = Signal(str)  # source_dataset_id
+    append_datasets_requested = Signal(str)  # source_dataset_id
     upload_requested = Signal()  # Request to upload dataset
     project_edit_requested = Signal()  # Request to edit current project
     project_delete_requested = Signal()  # Request to delete current project
@@ -547,12 +550,22 @@ class Sidebar(QFrame):
         self.export_review_btn.clicked.connect(lambda: self.navigation_requested.emit("export_review"))
         scroll_layout.addWidget(self.export_review_btn)
 
+        # Join Datasets button
+        self.join_datasets_btn = SidebarButton("Join Datasets", "🔗")
+        self.join_datasets_btn.clicked.connect(self._on_join_datasets_clicked)
+        scroll_layout.addWidget(self.join_datasets_btn)
+
+        # Append Datasets button
+        self.append_datasets_btn = SidebarButton("Append Datasets", "📋")
+        self.append_datasets_btn.clicked.connect(self._on_append_datasets_clicked)
+        scroll_layout.addWidget(self.append_datasets_btn)
+
         # Add some spacing
         scroll_layout.addSpacing(16)
 
         # Bottom buttons (now INSIDE scroll area for full scrollability)
         # Back to Projects button
-        self.back_btn = QPushButton("← Back to Projects")
+        self.back_btn = QPushButton("Projects")
         self.back_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
@@ -631,3 +644,27 @@ class Sidebar(QFrame):
         self.datasets_list.setCurrentItem(item)
         self.current_dataset_id = dataset.id
         self.dataset_selected.emit(dataset.id)
+
+    def _on_join_datasets_clicked(self):
+        """Handle Join Datasets button click"""
+        # Use currently selected dataset if available
+        if self.current_dataset_id:
+            self.join_datasets_requested.emit(self.current_dataset_id)
+        else:
+            # No dataset selected - emit signal with None to prompt selection
+            self.join_datasets_requested.emit(None)
+
+    def _on_append_datasets_clicked(self):
+        """Handle Append Datasets button click"""
+        # Use currently selected dataset if available
+        if self.current_dataset_id:
+            self.append_datasets_requested.emit(self.current_dataset_id)
+        else:
+            # No dataset selected - emit signal with None to prompt selection
+            self.append_datasets_requested.emit(None)
+
+    def get_dataset_names(self) -> List[str]:
+        """Get list of dataset names in the current project"""
+        if not self.current_project:
+            return []
+        return [ds.name for ds in self.current_project.list_datasets()]

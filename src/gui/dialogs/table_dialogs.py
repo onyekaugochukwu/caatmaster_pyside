@@ -324,15 +324,51 @@ class TransposeDialog(BaseModal):
 class JoinDatasetsDialog(BaseModal):
     """Dialog for joining two datasets using various join types"""
 
-    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None):
+    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None,
+                 available_datasets: List[str] = None, source_dataset_name: str = None):
         self.original_df = dataframe
         self.selected_column = selected_column
+        self.available_datasets = available_datasets or []
+        self.source_dataset_name = source_dataset_name or "Current Dataset"
         super().__init__("Join Datasets", dataframe, parent, selected_column=selected_column)
-        self.setMinimumSize(650, 500)
+        self.setMinimumSize(700, 600)
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
+        # Main layout with scroll area
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Create scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                background-color: transparent;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background-color: #e0e0e0;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #a0a0a0;
+                border-radius: 5px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #808080;
+            }
+        """)
+
+        # Content widget for scroll area
+        content = QWidget()
+        content.setStyleSheet("background-color: transparent;")
+        layout = QVBoxLayout(content)
         layout.setSpacing(15)
+        layout.setContentsMargins(15, 15, 15, 15)
 
         # Join type selection
         join_group = QGroupBox("Join Type")
@@ -340,49 +376,60 @@ class JoinDatasetsDialog(BaseModal):
 
         self.join_type_group = QButtonGroup()
         join_types = [
-            ("Left Join", "Keep all rows from left dataset, matching right rows"),
-            ("Right Join", "Keep all rows from right dataset, matching left rows"),
-            ("Inner Join", "Keep only rows that match in both datasets"),
-            ("Outer Join", "Keep all rows from both datasets"),
-            ("Cross Join", "Cartesian product of both datasets")
+            ("left", "Left Join", "Keep all rows from left dataset, matching right rows"),
+            ("right", "Right Join", "Keep all rows from right dataset, matching left rows"),
+            ("inner", "Inner Join", "Keep only rows that match in both datasets"),
+            ("outer", "Outer Join", "Keep all rows from both datasets"),
+            ("cross", "Cross Join", "Cartesian product of both datasets")
         ]
 
         self.join_radios = {}
-        for i, (join_name, description) in enumerate(join_types):
+        for join_id, join_name, description in join_types:
             radio = QRadioButton(f"{join_name}")
             radio.setToolTip(description)
-            if i == 0:
+            if join_id == "left":
                 radio.setChecked(True)
             self.join_type_group.addButton(radio)
-            self.join_radios[join_name.lower().replace(" ", "_")] = radio
+            self.join_radios[join_id] = radio
             join_layout.addWidget(radio)
 
         layout.addWidget(join_group)
 
         # Left dataset (current)
-        left_group = QGroupBox("Left Dataset (Current)")
+        left_group = QGroupBox(f"Left Dataset ({self.source_dataset_name})")
         left_layout = QFormLayout(left_group)
+        left_layout.setLabelAlignment(Qt.AlignRight)
+        left_layout.setFormAlignment(Qt.AlignLeft)
 
         self.left_key_combo = QComboBox()
         self.left_key_combo.addItems(self.original_df.columns)
+        self.left_key_combo.setMinimumWidth(200)
         if self.selected_column:
             self.left_key_combo.setCurrentText(self.selected_column)
         left_layout.addRow("Join Key:", self.left_key_combo)
 
         layout.addWidget(left_group)
 
-        # Right dataset selection (simplified - enter dataset name)
+        # Right dataset selection - dropdown to select from available datasets
         right_group = QGroupBox("Right Dataset")
         right_layout = QFormLayout(right_group)
+        right_layout.setLabelAlignment(Qt.AlignRight)
+        right_layout.setFormAlignment(Qt.AlignLeft)
 
-        self.right_dataset_edit = QLineEdit()
-        self.right_dataset_edit.setPlaceholderText("Enter dataset name from your project")
-        right_layout.addRow("Dataset Name:", self.right_dataset_edit)
+        self.right_dataset_combo = QComboBox()
+        self.right_dataset_combo.setEditable(False)
+        self.right_dataset_combo.setMinimumWidth(200)
+        # Filter out the source dataset from available datasets
+        other_datasets = [ds for ds in self.available_datasets if ds != self.source_dataset_name]
+        self.right_dataset_combo.addItems(other_datasets)
+        if other_datasets:
+            self.right_dataset_combo.setCurrentIndex(0)
+        right_layout.addRow("Dataset:", self.right_dataset_combo)
 
         self.right_key_combo = QComboBox()
-        self.right_key_combo.setEditable(True)
+        self.right_key_combo.setEditable(False)
+        self.right_key_combo.setMinimumWidth(200)
         self.right_key_combo.addItems(self.original_df.columns)
-        self.right_key_combo.setPlaceholderText("Enter or select column name")
         right_layout.addRow("Join Key:", self.right_key_combo)
 
         layout.addWidget(right_group)
@@ -394,6 +441,7 @@ class JoinDatasetsDialog(BaseModal):
         self.suffix_edit = QLineEdit()
         self.suffix_edit.setPlaceholderText("_right")
         self.suffix_edit.setText("_right")
+        self.suffix_edit.setMinimumWidth(200)
         suffix_layout = QHBoxLayout()
         suffix_layout.addWidget(QLabel("Suffix for right columns:"))
         suffix_layout.addWidget(self.suffix_edit)
@@ -403,17 +451,21 @@ class JoinDatasetsDialog(BaseModal):
         layout.addWidget(options_group)
 
         # Preview
-        preview_group = QGroupBox("Preview (Left Dataset)")
+        preview_group = QGroupBox("Preview (First 10 rows)")
         preview_layout = QVBoxLayout(preview_group)
 
-        self.preview_table = PreviewTable(max_rows=5)
+        self.preview_table = PreviewTable(max_rows=10)
         preview_layout.addWidget(self.preview_table)
 
         layout.addWidget(preview_group)
 
-        # Button row
+        # Set content and add scroll area
+        scroll.setWidget(content)
+        main_layout.addWidget(scroll)
+
+        # Button row (outside scroll area)
         btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
+        btn_layout.setContentsMargins(15, 10, 15, 10)
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self.reject)
@@ -436,28 +488,28 @@ class JoinDatasetsDialog(BaseModal):
         self.apply_btn.clicked.connect(self._apply_join)
         btn_layout.addWidget(self.apply_btn)
 
-        layout.addLayout(btn_layout)
+        main_layout.addLayout(btn_layout)
 
         # Load preview
-        self.preview_table.load_dataframe(self.original_df.head(5))
+        self.preview_table.load_dataframe(self.original_df.head(10))
 
     def _apply_join(self):
         """Validate and accept join"""
-        dataset_name = self.right_dataset_edit.text().strip()
+        dataset_name = self.right_dataset_combo.currentText()
         if not dataset_name:
-            QMessageBox.warning(self, "Warning", "Please enter the dataset name to join with.")
+            QMessageBox.warning(self, "Warning", "Please select a dataset to join with.")
             return
 
-        right_key = self.right_key_combo.currentText().strip()
+        right_key = self.right_key_combo.currentText()
         if not right_key:
-            QMessageBox.warning(self, "Warning", "Please enter or select the right join key.")
+            QMessageBox.warning(self, "Warning", "Please select the right join key.")
             return
 
         # Determine join type
         join_type = "left"
-        for name, radio in self.join_radios.items():
+        for join_id, radio in self.join_radios.items():
             if radio.isChecked():
-                join_type = name
+                join_type = join_id
                 break
 
         self.current_params = {
@@ -476,58 +528,180 @@ class JoinDatasetsDialog(BaseModal):
 class AppendDatasetsDialog(BaseModal):
     """Dialog for appending/stacking datasets vertically"""
 
-    def __init__(self, dataframe: pl.DataFrame, parent=None):
+    def __init__(self, dataframe: pl.DataFrame, parent=None,
+                 available_datasets: List[str] = None, source_dataset_name: str = None,
+                 dataset_columns: Dict[str, List[str]] = None):
         self.original_df = dataframe
+        self.available_datasets = available_datasets or []
+        self.source_dataset_name = source_dataset_name or "Current Dataset"
+        self.dataset_columns = dataset_columns or {}  # Map dataset name -> columns
         super().__init__("Append Datasets", dataframe, parent)
-        self.setMinimumSize(550, 350)
+        self.setMinimumSize(700, 650)
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
+        # Main layout with scroll area
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Create scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                background-color: transparent;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background-color: #e0e0e0;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #a0a0a0;
+                border-radius: 5px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #808080;
+            }
+        """)
+
+        # Content widget for scroll area
+        content = QWidget()
+        content.setStyleSheet("background-color: transparent;")
+        layout = QVBoxLayout(content)
         layout.setSpacing(15)
+        layout.setContentsMargins(15, 15, 15, 15)
 
-        # Source datasets
-        source_group = QGroupBox("Datasets to Append")
-        source_layout = QFormLayout(source_group)
+        # Source dataset info
+        info_group = QGroupBox("Source Dataset (First)")
+        info_layout = QVBoxLayout(info_group)
 
-        self.datasets_edit = QLineEdit()
-        self.datasets_edit.setPlaceholderText("dataset1, dataset2, ...")
-        source_layout.addRow("Dataset Names:", self.datasets_edit)
+        self.source_label = QLabel(f"{self.source_dataset_name}: {len(self.original_df)} rows, {len(self.original_df.columns)} columns")
+        self.source_label.setStyleSheet("""
+            QLabel {
+                background-color: #e8f4fd;
+                padding: 12px;
+                border-radius: 4px;
+                font-weight: bold;
+                border: 1px solid #0078d4;
+            }
+        """)
+        info_layout.addWidget(self.source_label)
 
-        layout.addWidget(source_group)
+        source_cols = self.original_df.columns
+        self.source_columns_label = QLabel(f"Columns ({len(source_cols)}): {', '.join(source_cols[:10])}" +
+                                           ("..." if len(source_cols) > 10 else ""))
+        self.source_columns_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.source_columns_label.setWordWrap(True)
+        info_layout.addWidget(self.source_columns_label)
+
+        layout.addWidget(info_group)
+
+        # Datasets to append
+        append_group = QGroupBox("Datasets to Append (Second and onwards)")
+        append_layout = QVBoxLayout(append_group)
+
+        # Filter out the source dataset from available datasets
+        other_datasets = [ds for ds in self.available_datasets if ds != self.source_dataset_name]
+
+        if other_datasets:
+            self.datasets_list = QListWidget()
+            self.datasets_list.setSelectionMode(QAbstractItemView.MultiSelection)
+            self.datasets_list.setMinimumHeight(120)
+            self.datasets_list.itemChanged.connect(self._update_schema_info)
+            for ds_name in other_datasets:
+                item = QListWidgetItem(ds_name)
+                item.setCheckState(Qt.Unchecked)
+                self.datasets_list.addItem(item)
+            append_layout.addWidget(self.datasets_list)
+
+            self.no_datasets_label = QLabel()
+        else:
+            self.datasets_list = QListWidget()
+            self.datasets_list.setMinimumHeight(60)
+            append_layout.addWidget(self.datasets_list)
+            self.no_datasets_label = QLabel("No other datasets available in the project")
+            self.no_datasets_label.setStyleSheet("color: #666; font-size: 11px;")
+            append_layout.addWidget(self.no_datasets_label)
+
+        layout.addWidget(append_group)
+
+        # Schema comparison info
+        schema_group = QGroupBox("Schema Comparison")
+        schema_layout = QVBoxLayout(schema_group)
+
+        self.schema_info_label = QLabel("Select datasets to see schema comparison")
+        self.schema_info_label.setStyleSheet("color: #666; font-size: 12px;")
+        self.schema_info_label.setWordWrap(True)
+        schema_layout.addWidget(self.schema_info_label)
+
+        self.common_cols_label = QLabel("")
+        self.common_cols_label.setStyleSheet("color: #059669; font-size: 11px;")
+        self.common_cols_label.setWordWrap(True)
+        schema_layout.addWidget(self.common_cols_label)
+
+        self.unique_cols_label = QLabel("")
+        self.unique_cols_label.setStyleSheet("color: #f59e0b; font-size: 11px;")
+        self.unique_cols_label.setWordWrap(True)
+        schema_layout.addWidget(self.unique_cols_label)
+
+        layout.addWidget(schema_group)
 
         # Options
         options_group = QGroupBox("Options")
         options_layout = QVBoxLayout(options_group)
 
-        self.align_check = QCheckBox("Auto-align columns by name")
-        self.align_check.setChecked(True)
-        options_layout.addWidget(self.align_check)
+        # Warning checkbox
+        self.warn_check = QCheckBox("Warn if schemas differ")
+        self.warn_check.setChecked(True)
+        options_layout.addWidget(self.warn_check)
 
-        self.fill_check = QCheckBox("Fill missing columns with null")
-        self.fill_check.setChecked(True)
-        options_layout.addWidget(self.fill_check)
+        # Behavior info
+        self.behavior_label = QLabel(
+            "Missing columns will be filled with null values."
+        )
+        self.behavior_label.setStyleSheet("""
+            QLabel {
+                color: #0078d4;
+                font-size: 11px;
+                padding: 8px;
+                background-color: #e8f4fd;
+                border-radius: 4px;
+            }
+        """)
+        self.behavior_label.setWordWrap(True)
+        options_layout.addWidget(self.behavior_label)
 
         layout.addWidget(options_group)
 
-        # Preview
-        preview_group = QGroupBox("Current Dataset Preview")
-        preview_layout = QVBoxLayout(preview_group)
+        # Result preview
+        result_group = QGroupBox("Expected Result")
+        result_layout = QVBoxLayout(result_group)
 
-        self.preview_label = QLabel(f"Current dataset: {len(self.original_df)} rows, {len(self.original_df.columns)} columns")
-        self.preview_label.setStyleSheet("""
+        self.result_preview = QLabel("Select datasets to see preview")
+        self.result_preview.setStyleSheet("""
             QLabel {
                 background-color: #f5f5f5;
                 padding: 10px;
                 border-radius: 4px;
+                font-size: 12px;
             }
         """)
-        preview_layout.addWidget(self.preview_label)
+        self.result_preview.setWordWrap(True)
+        result_layout.addWidget(self.result_preview)
 
-        layout.addWidget(preview_group)
+        layout.addWidget(result_group)
 
-        # Button row
+        # Set content and add scroll area
+        scroll.setWidget(content)
+        main_layout.addWidget(scroll)
+
+        # Button row (outside scroll area)
         btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
+        btn_layout.setContentsMargins(15, 10, 15, 10)
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self.reject)
@@ -550,24 +724,124 @@ class AppendDatasetsDialog(BaseModal):
         self.apply_btn.clicked.connect(self._apply_append)
         btn_layout.addWidget(self.apply_btn)
 
-        layout.addLayout(btn_layout)
+        main_layout.addLayout(btn_layout)
+
+    def _get_selected_datasets(self) -> List[str]:
+        """Get list of selected dataset names"""
+        selected = []
+        for i in range(self.datasets_list.count()):
+            item = self.datasets_list.item(i)
+            if item.checkState() == Qt.Checked:
+                selected.append(item.text())
+        return selected
+
+    def _update_schema_info(self):
+        """Update schema comparison information"""
+        selected_datasets = self._get_selected_datasets()
+
+        if not selected_datasets:
+            self.schema_info_label.setText("Select datasets to see schema comparison")
+            self.common_cols_label.setText("")
+            self.unique_cols_label.setText("")
+            self.result_preview.setText("Select datasets to see preview")
+            return
+
+        # Collect all columns
+        all_columns = set(self.original_df.columns)
+        for ds_name in selected_datasets:
+            if ds_name in self.dataset_columns:
+                all_columns.update(self.dataset_columns[ds_name])
+
+        # Find common columns
+        common_cols = set(self.original_df.columns)
+        for ds_name in selected_datasets:
+            if ds_name in self.dataset_columns:
+                common_cols = common_cols & set(self.dataset_columns[ds_name])
+
+        # Find unique columns per dataset
+        source_cols = set(self.original_df.columns)
+
+        if selected_datasets:
+            if common_cols:
+                self.common_cols_label.setText(
+                    f"Common columns ({len(common_cols)}): {', '.join(sorted(common_cols)[:8])}"
+                    + ("..." if len(common_cols) > 8 else "")
+                )
+            else:
+                self.common_cols_label.setText("No common columns found - all columns will be null")
+
+            # Show unique columns info
+            unique_info = []
+            for ds_name in selected_datasets[:3]:  # Show up to 3
+                if ds_name in self.dataset_columns:
+                    ds_unique = set(self.dataset_columns[ds_name]) - common_cols
+                    if ds_unique:
+                        unique_info.append(f"{ds_name}: {len(ds_unique)} unique")
+            if len(selected_datasets) > 3:
+                unique_info.append(f"+ {len(selected_datasets) - 3} more")
+
+            if unique_info:
+                self.unique_cols_label.setText("Unique columns: " + ", ".join(unique_info))
+            else:
+                self.unique_cols_label.setText("")
+        else:
+            self.common_cols_label.setText("")
+            self.unique_cols_label.setText("")
+
+        # Update result preview
+        total_rows = len(self.original_df)
+        selected_rows_info = []
+        for ds_name in selected_datasets:
+            if ds_name in self.dataset_columns:
+                # We don't have row counts, just show dataset names
+                selected_rows_info.append(ds_name)
+
+        result_text = f"Source: {self.source_dataset_name} ({len(self.original_df):,} rows)\n"
+        result_text += f"Appending {len(selected_datasets)} dataset(s): {', '.join(selected_datasets[:3])}"
+        if len(selected_datasets) > 3:
+            result_text += f" + {len(selected_datasets) - 3} more"
+        result_text += f"\nResult: {len(all_columns)} columns, ~{total_rows + len(selected_datasets) * 100} estimated rows"
+        result_text += "\nMissing columns will be filled with nulls"
+
+        self.result_preview.setText(result_text)
 
     def _apply_append(self):
         """Validate and accept append"""
-        datasets_text = self.datasets_edit.text().strip()
-        if not datasets_text:
-            QMessageBox.warning(self, "Warning", "Please enter dataset names.")
+        selected_datasets = self._get_selected_datasets()
+        if not selected_datasets:
+            QMessageBox.warning(self, "Warning", "Please select at least one dataset to append.")
             return
 
-        datasets = [d.strip() for d in datasets_text.split(",") if d.strip()]
-        if not datasets:
-            QMessageBox.warning(self, "Warning", "Please enter valid dataset names.")
-            return
+        # Check for schema differences if warning is enabled
+        if self.warn_check.isChecked():
+            all_columns = set(self.original_df.columns)
+            for ds_name in selected_datasets:
+                if ds_name in self.dataset_columns:
+                    all_columns.update(self.dataset_columns[ds_name])
+
+            common_cols = set(self.original_df.columns)
+            for ds_name in selected_datasets:
+                if ds_name in self.dataset_columns:
+                    common_cols = common_cols & set(self.dataset_columns[ds_name])
+
+            if common_cols != all_columns:
+                # Schemas differ - show warning but allow proceeding
+                reply = QMessageBox.question(
+                    self, "Schema Differences Detected",
+                    f"The selected datasets have different columns.\n\n"
+                    f"Common columns: {len(common_cols)}\n"
+                    f"Total unique columns: {len(all_columns)}\n\n"
+                    f"Missing columns will be filled with null values.\n\n"
+                    f"Do you want to proceed?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                if reply != QMessageBox.Yes:
+                    return
 
         self.current_params = {
-            "source_datasets": datasets,
-            "align_columns": self.align_check.isChecked(),
-            "fill_missing": self.fill_check.isChecked()
+            "source_datasets": selected_datasets,
+            "warn_if_schemas_differ": self.warn_check.isChecked()
         }
         self.accept()
 

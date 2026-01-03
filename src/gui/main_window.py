@@ -158,6 +158,8 @@ class MainWindow(QMainWindow):
         self.sidebar.dataset_duplicate_requested.connect(self.on_dataset_duplicate_requested)
         self.sidebar.dataset_delete_requested.connect(self.on_dataset_delete_requested)
         self.sidebar.dataset_split_sheet_requested.connect(self.on_dataset_split_sheet_requested)
+        self.sidebar.join_datasets_requested.connect(self.on_join_datasets_requested)
+        self.sidebar.append_datasets_requested.connect(self.on_append_datasets_requested)
         self.sidebar.upload_requested.connect(self.on_upload_requested)
         self.sidebar.project_edit_requested.connect(self.edit_current_project)
         self.sidebar.project_delete_requested.connect(self.delete_current_project)
@@ -546,6 +548,192 @@ class MainWindow(QMainWindow):
             # Update status
             num_splits = len(split_datasets)
             self.statusBar().showMessage(f"Split dataset into {num_splits} new datasets")
+
+    @Slot(str)
+    def on_join_datasets_requested(self, source_dataset_id):
+        """Handle join datasets request from sidebar"""
+        if not self.current_project:
+            return
+
+        # Get source dataset
+        source_dataset = None
+        if source_dataset_id:
+            source_dataset = self.current_project.datasets.get(source_dataset_id)
+
+        if not source_dataset:
+            QMessageBox.warning(self, "No Dataset", "Please select a dataset first.")
+            return
+
+        # Get current dataframe
+        current_df = source_dataset.get_current_dataframe()
+        if current_df is None or current_df.is_empty():
+            QMessageBox.warning(self, "No Data", "The dataset is empty.")
+            return
+
+        # Get list of available datasets
+        dataset_names = self.sidebar.get_dataset_names()
+
+        if len(dataset_names) < 2:
+            QMessageBox.warning(self, "Not Enough Datasets",
+                              "You need at least 2 datasets to perform a join.")
+            return
+
+        # Open the join dialog
+        from gui.dialogs.table_dialogs import JoinDatasetsDialog
+        dialog = JoinDatasetsDialog(
+            current_df,
+            self,
+            available_datasets=dataset_names,
+            source_dataset_name=source_dataset.name
+        )
+
+        if dialog.exec():
+            params = dialog.get_parameters()
+            right_dataset_name = params["right_dataset"]
+
+            # Find the right dataset
+            right_dataset = None
+            for ds in self.current_project.list_datasets():
+                if ds.name == right_dataset_name:
+                    right_dataset = ds
+                    break
+
+            if not right_dataset:
+                QMessageBox.warning(self, "Dataset Not Found",
+                                  f"Could not find dataset: {right_dataset_name}")
+                return
+
+            # Perform the join
+            right_df = right_dataset.get_current_dataframe()
+            join_type = params["join_type"]
+            left_key = params["left_key"]
+            right_key = params["right_key"]
+            suffix = params["suffix"]
+
+            try:
+                from core.data_processor import DataProcessor
+                processor = DataProcessor()
+
+                joined_df = processor.join_datasets(
+                    current_df, right_df, left_key, right_key, join_type, suffix
+                )
+
+                # Create new dataset for the joined result
+                new_dataset = Dataset(
+                    id=str(uuid.uuid4()),
+                    name=f"{source_dataset.name} + {right_dataset.name}",
+                    dataframe=joined_df
+                )
+
+                new_dataset.metadata = source_dataset.metadata.copy()
+                new_dataset.metadata["created_at"] = datetime.now().isoformat()
+                new_dataset.metadata["version"] = "1.0"
+                new_dataset.metadata["row_count"] = len(joined_df)
+                new_dataset.metadata["column_count"] = len(joined_df.columns)
+                new_dataset.metadata["columns"] = list(joined_df.columns)
+
+                # Add to project
+                self.current_project.add_dataset(new_dataset)
+                self.sidebar.set_project(self.current_project)
+                self.statusBar().showMessage(f"Joined datasets: {new_dataset.name} ({len(joined_df):,} rows)")
+
+            except Exception as e:
+                QMessageBox.critical(self, "Join Failed", f"Failed to join datasets: {str(e)}")
+
+    @Slot(str)
+    def on_append_datasets_requested(self, source_dataset_id):
+        """Handle append datasets request from sidebar"""
+        if not self.current_project:
+            return
+
+        # Get source dataset
+        source_dataset = None
+        if source_dataset_id:
+            source_dataset = self.current_project.datasets.get(source_dataset_id)
+
+        if not source_dataset:
+            QMessageBox.warning(self, "No Dataset", "Please select a dataset first.")
+            return
+
+        # Get current dataframe
+        current_df = source_dataset.get_current_dataframe()
+        if current_df is None or current_df.is_empty():
+            QMessageBox.warning(self, "No Data", "The dataset is empty.")
+            return
+
+        # Get list of available datasets
+        dataset_names = self.sidebar.get_dataset_names()
+
+        if len(dataset_names) < 2:
+            QMessageBox.warning(self, "Not Enough Datasets",
+                              "You need at least 2 datasets to perform an append.")
+            return
+
+        # Build dataset columns map for schema comparison
+        dataset_columns = {}
+        for ds in self.current_project.list_datasets():
+            df = ds.get_current_dataframe()
+            if df is not None:
+                dataset_columns[ds.name] = list(df.columns)
+
+        # Open the append dialog
+        from gui.dialogs.table_dialogs import AppendDatasetsDialog
+        dialog = AppendDatasetsDialog(
+            current_df,
+            self,
+            available_datasets=dataset_names,
+            source_dataset_name=source_dataset.name,
+            dataset_columns=dataset_columns
+        )
+
+        if dialog.exec():
+            params = dialog.get_parameters()
+            selected_datasets = params["source_datasets"]
+
+            # Collect all dataframes
+            dataframes = [current_df]
+
+            for ds_name in selected_datasets:
+                for ds in self.current_project.list_datasets():
+                    if ds.name == ds_name:
+                        df = ds.get_current_dataframe()
+                        if df is not None:
+                            dataframes.append(df)
+                        break
+
+            if len(dataframes) < 2:
+                QMessageBox.warning(self, "No Data", "No valid datasets to append.")
+                return
+
+            # Perform the append
+            try:
+                from core.data_processor import DataProcessor
+                processor = DataProcessor()
+
+                # Append with automatic column alignment (nulls for missing columns)
+                appended_df = processor.append_datasets(dataframes, align_columns=True, fill_missing=True)
+
+                # Create new dataset for the appended result
+                new_dataset = Dataset(
+                    id=str(uuid.uuid4()),
+                    name=f"{source_dataset.name} (Appended)",
+                    dataframe=appended_df
+                )
+
+                new_dataset.metadata = source_dataset.metadata.copy()
+                new_dataset.metadata["created_at"] = datetime.now().isoformat()
+                new_dataset.metadata["version"] = "1.0"
+                new_dataset.metadata["row_count"] = len(appended_df)
+                new_dataset.metadata["column_count"] = len(appended_df.columns)
+                new_dataset.metadata["columns"] = list(appended_df.columns)
+
+                # Add to project
+                self.current_project.add_dataset(new_dataset)
+                self.sidebar.set_project(self.current_project)
+                self.statusBar().showMessage(f"Appended datasets: {new_dataset.name} ({len(appended_df):,} rows)")
+
+            except Exception as e:
+                QMessageBox.critical(self, "Append Failed", f"Failed to append datasets: {str(e)}")
 
     @Slot(object)
     def _on_pipeline_changed(self, pipeline):
