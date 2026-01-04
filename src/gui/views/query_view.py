@@ -5,12 +5,14 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
     QSplitter, QTextEdit, QComboBox, QTreeWidget, QTreeWidgetItem,
-    QMessageBox, QFileDialog, QProgressBar, QGroupBox, QScrollArea
+    QMessageBox, QFileDialog, QProgressBar, QGroupBox, QScrollArea,
+    QListWidget, QListWidgetItem, QCheckBox, QCompleter
 )
-from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QSyntaxHighlighter, QTextCharFormat, QColor, QFont, QTextDocument, QIcon
+from PySide6.QtCore import Qt, Signal, Slot, QStringListModel
+from PySide6.QtGui import QSyntaxHighlighter, QTextCharFormat, QColor, QFont, QTextDocument, QIcon, QTextCursor
 from pathlib import Path
 import re
+from core.project_manager import Project, Dataset
 
 
 class SQLHighlighter(QSyntaxHighlighter):
@@ -72,6 +74,71 @@ class SQLHighlighter(QSyntaxHighlighter):
             self.setFormat(match.start(), match.end() - match.start(), self.number_format)
 
 
+class CompletingTextEdit(QTextEdit):
+    """QTextEdit with QCompleter support for SQL keywords and table/column names."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.completer = None
+        self.completer_popup = None
+
+    def setCompleter(self, completer):
+        """Set the completer for this text edit."""
+        if self.completer:
+            self.completer.activated.disconnect(self.insertCompletion)
+
+        self.completer = completer
+        if completer:
+            completer.setWidget(self)
+            completer.activated.connect(self.insertCompletion)
+
+
+    def insertCompletion(self, completion):
+        """Insert completion into text at cursor position."""
+        if not self.completer:
+            return
+
+        tc = self.textCursor()
+        extra = len(completion) - len(self.completer.completionPrefix())
+        tc.movePosition(QTextCursor.Left)
+        tc.movePosition(QTextCursor.EndOfWord)
+        tc.insertText(completion[-extra:])
+        self.setTextCursor(tc)
+
+    def textUnderCursor(self):
+        """Get text under cursor for completion prefix."""
+        tc = self.textCursor()
+        tc.select(QTextCursor.WordUnderCursor)
+        return tc.selectedText()
+
+    def keyPressEvent(self, event):
+        """Handle key press events for completer."""
+        if self.completer and self.completer.popup().isVisible():
+            key = event.key()
+            if key in (Qt.Key_Enter, Qt.Key_Return, Qt.Key_Escape,
+                      Qt.Key_Tab, Qt.Key_Backtab):
+                event.ignore()
+                return
+
+        # Let parent handle the key press
+        super().keyPressEvent(event)
+
+        if not self.completer:
+            return
+
+        completion_prefix = self.textUnderCursor()
+        if completion_prefix != self.completer.completionPrefix():
+            self.completer.setCompletionPrefix(completion_prefix)
+            if len(completion_prefix) >= 2:  # Show completer after 2 chars
+                popup = self.completer.popup()
+                cursor_rect = self.cursorRect()
+                cursor_rect.setWidth(popup.sizeHintForColumn(0)
+                                   + popup.verticalScrollBar().sizeHint().width())
+                self.completer.complete(cursor_rect)
+            else:
+                self.completer.popup().hide()
+
+
 class QueryView(QWidget):
     """SQL query editor and execution view"""
 
@@ -81,6 +148,9 @@ class QueryView(QWidget):
         super().__init__(parent)
         self.current_dataframe = None
         self.sql_service = None
+        self.current_project = None
+        self.dataset_widgets = {}  # dataset id -> QListWidgetItem
+        self.completer = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -103,6 +173,16 @@ class QueryView(QWidget):
         header_layout.addWidget(self.table_combo)
 
         main_layout.addLayout(header_layout)
+
+        # Dataset selector
+        dataset_selector_layout = QHBoxLayout()
+        dataset_selector_layout.addWidget(QLabel("Datasets:"))
+        self.dataset_list = QListWidget()
+        self.dataset_list.setMaximumHeight(80)
+        self.dataset_list.setSelectionMode(QListWidget.NoSelection)
+        self.dataset_list.itemChanged.connect(self.on_dataset_selection_changed)
+        dataset_selector_layout.addWidget(self.dataset_list)
+        main_layout.addLayout(dataset_selector_layout)
 
         # Create horizontal splitter
         h_splitter = QSplitter(Qt.Horizontal)
@@ -153,7 +233,7 @@ class QueryView(QWidget):
         editor_label.setStyleSheet("font-weight: bold;")
         right_layout.addWidget(editor_label)
 
-        self.query_editor = QTextEdit()
+        self.query_editor = CompletingTextEdit()
         self.query_editor.setMinimumHeight(200)
         self.query_editor.setMaximumHeight(300)
         self.query_editor.setPlaceholderText(
@@ -162,6 +242,17 @@ class QueryView(QWidget):
         # Apply syntax highlighting
         self.highlighter = SQLHighlighter(self.query_editor.document())
         self.query_editor.setFont(QFont("Courier", 10))
+
+        # Setup auto-completer
+        self.completer = QCompleter(self)
+        self.completer.setModelSorting(QCompleter.CaseInsensitivelySortedModel)
+        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.completer.setWrapAround(False)
+        self.completer.setCompletionMode(QCompleter.PopupCompletion)
+        # Use custom CompletingTextEdit that supports QCompleter
+        self.query_editor.setCompleter(self.completer)
+        self._update_completer_model()
+
         right_layout.addWidget(self.query_editor)
 
         # Action buttons
@@ -251,6 +342,119 @@ class QueryView(QWidget):
 
         main_layout.addWidget(h_splitter)
 
+    def set_project(self, project: Project):
+        """Set the current project and update dataset selector."""
+        self.current_project = project
+        self._update_dataset_selector()
+
+    def _update_dataset_selector(self):
+        """Update the dataset list with datasets from current project."""
+        self.dataset_list.clear()
+        self.dataset_widgets.clear()
+
+        if not self.current_project:
+            return
+
+        for dataset in self.current_project.list_datasets():
+            item = QListWidgetItem(dataset.name)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Unchecked)
+            item.setData(Qt.UserRole, dataset.id)
+            self.dataset_list.addItem(item)
+            self.dataset_widgets[dataset.id] = item
+
+    def on_dataset_selection_changed(self, item):
+        """Handle dataset selection change."""
+        if not item:
+            return
+        dataset_id = item.data(Qt.UserRole)
+        dataset = self.current_project.get_dataset(dataset_id) if self.current_project else None
+        if dataset:
+            if item.checkState() == Qt.Checked:
+                # Register dataset as table
+                df = dataset.get_current_dataframe()
+                if df is not None:
+                    table_name = self._sanitize_table_name(dataset.name)
+                    self._register_dataset_table(table_name, df)
+            else:
+                # Unregister table
+                table_name = self._sanitize_table_name(dataset.name)
+                self._unregister_table(table_name)
+            # Update table combo and schema browser
+            self._update_table_combo()
+
+    def _sanitize_table_name(self, name: str) -> str:
+        """Sanitize dataset name for use as SQL table name."""
+        # Replace spaces and special characters with underscores
+        import re
+        sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+        # Ensure it starts with a letter or underscore
+        if sanitized and not sanitized[0].isalpha() and sanitized[0] != '_':
+            sanitized = '_' + sanitized
+        return sanitized.lower()
+
+    def _register_dataset_table(self, table_name: str, df):
+        """Register a dataset as a table in SQL service."""
+        if self.sql_service is None:
+            from services.sql_query_service import SQLQueryService
+            self.sql_service = SQLQueryService()
+        self.sql_service.register_dataframe(table_name, df)
+
+    def _unregister_table(self, table_name: str):
+        """Unregister a table from SQL service."""
+        if self.sql_service:
+            self.sql_service.unregister_table(table_name)
+
+    def _update_table_combo(self):
+        """Update table combo box with registered tables."""
+        self.table_combo.clear()
+        if self.sql_service and self.sql_service.registered_tables:
+            self.table_combo.addItems(list(self.sql_service.registered_tables.keys()))
+        else:
+            self.table_combo.setPlaceholderText("No tables loaded")
+        # Update completer if exists
+        self._update_completer_model()
+
+    def _update_completer_model(self):
+        """Update completer model with SQL keywords, table names, and column names."""
+        if not self.completer:
+            return
+
+        completions = []
+
+        # SQL keywords
+        sql_keywords = [
+            'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'LIKE',
+            'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'ON', 'AS',
+            'GROUP', 'BY', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET',
+            'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER',
+            'UNION', 'INTERSECT', 'EXCEPT', 'DISTINCT', 'CASE', 'WHEN',
+            'THEN', 'ELSE', 'END', 'NULL', 'IS', 'BETWEEN', 'EXISTS',
+            'AVG', 'COUNT', 'SUM', 'MIN', 'MAX', 'CAST', 'COALESCE'
+        ]
+        completions.extend(sql_keywords)
+
+        # Table names
+        if self.sql_service and self.sql_service.registered_tables:
+            completions.extend(self.sql_service.registered_tables.keys())
+
+        # Column names from registered tables (requires schema access)
+        # For simplicity, we'll skip column names for now
+        # Could be added later using sql_service.get_table_schema
+
+        # Remove duplicates while preserving case (convert to lower for comparison)
+        seen = set()
+        unique_completions = []
+        for item in completions:
+            key = item.lower()
+            if key not in seen:
+                seen.add(key)
+                unique_completions.append(item)
+
+        # Create and set model
+        model = QStringListModel(unique_completions, self.completer)
+        self.completer.setModel(model)
+
     def set_dataframe(self, df):
         """Set the current data for SQL queries"""
         self.current_dataframe = df
@@ -265,7 +469,7 @@ class QueryView(QWidget):
         self.sql_service.register_dataframe(table_name, df)
 
         # Update UI
-        self.update_table_combo(table_name)
+        self._update_table_combo()
         self.update_schema_browser(table_name)
 
     def update_table_combo(self, active_table: str):

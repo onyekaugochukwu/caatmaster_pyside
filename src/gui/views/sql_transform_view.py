@@ -2,17 +2,23 @@
 SQL Transform View with DuckDB
 Provides full SQL interface for data transformations with custom functions.
 """
-import duckdb
+try:
+    import duckdb
+except ImportError:
+    duckdb = None
+    print("Warning: duckdb not installed. SQL functionality will be limited.")
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QTextEdit, QTableWidget, QTableWidgetItem, QHeaderView,
-    QSplitter, QMessageBox, QGroupBox, QComboBox, QScrollArea
+    QSplitter, QMessageBox, QGroupBox, QComboBox, QScrollArea,
+    QListWidget, QListWidgetItem, QCheckBox, QCompleter
 )
-from PySide6.QtCore import Qt, Signal, Slot
-from PySide6.QtGui import QFont, QSyntaxHighlighter, QTextCharFormat, QColor
+from PySide6.QtCore import Qt, Signal, Slot, QStringListModel
+from PySide6.QtGui import QFont, QSyntaxHighlighter, QTextCharFormat, QColor, QTextCursor
 import polars as pl
 import pandas as pd
 import re
+from core.project_manager import Project, Dataset
 
 
 class SQLSyntaxHighlighter(QSyntaxHighlighter):
@@ -105,6 +111,71 @@ class SQLSyntaxHighlighter(QSyntaxHighlighter):
                 self.setFormat(match.start(), match.end() - match.start(), self.function_format)
 
 
+class CompletingTextEdit(QTextEdit):
+    """QTextEdit with QCompleter support for SQL keywords and table/column names."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.completer = None
+        self.completer_popup = None
+
+    def setCompleter(self, completer):
+        """Set the completer for this text edit."""
+        if self.completer:
+            self.completer.activated.disconnect(self.insertCompletion)
+
+        self.completer = completer
+        if completer:
+            completer.setWidget(self)
+            completer.activated.connect(self.insertCompletion)
+
+
+    def insertCompletion(self, completion):
+        """Insert completion into text at cursor position."""
+        if not self.completer:
+            return
+
+        tc = self.textCursor()
+        extra = len(completion) - len(self.completer.completionPrefix())
+        tc.movePosition(QTextCursor.Left)
+        tc.movePosition(QTextCursor.EndOfWord)
+        tc.insertText(completion[-extra:])
+        self.setTextCursor(tc)
+
+    def textUnderCursor(self):
+        """Get text under cursor for completion prefix."""
+        tc = self.textCursor()
+        tc.select(QTextCursor.WordUnderCursor)
+        return tc.selectedText()
+
+    def keyPressEvent(self, event):
+        """Handle key press events for completer."""
+        if self.completer and self.completer.popup().isVisible():
+            key = event.key()
+            if key in (Qt.Key_Enter, Qt.Key_Return, Qt.Key_Escape,
+                      Qt.Key_Tab, Qt.Key_Backtab):
+                event.ignore()
+                return
+
+        # Let parent handle the key press
+        super().keyPressEvent(event)
+
+        if not self.completer:
+            return
+
+        completion_prefix = self.textUnderCursor()
+        if completion_prefix != self.completer.completionPrefix():
+            self.completer.setCompletionPrefix(completion_prefix)
+            if len(completion_prefix) >= 2:  # Show completer after 2 chars
+                popup = self.completer.popup()
+                cursor_rect = self.cursorRect()
+                cursor_rect.setWidth(popup.sizeHintForColumn(0)
+                                   + popup.verticalScrollBar().sizeHint().width())
+                self.completer.complete(cursor_rect)
+            else:
+                self.completer.popup().hide()
+
+
 class SQLTransformView(QWidget):
     """SQL interface for data transformations using DuckDB."""
 
@@ -115,6 +186,9 @@ class SQLTransformView(QWidget):
         self.current_dataframe = None
         self.duckdb_conn = None
         self.registered_tables = {}
+        self.current_project = None
+        self.dataset_widgets = {}  # dataset id -> QListWidgetItem
+        self.completer = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -183,21 +257,6 @@ class SQLTransformView(QWidget):
 
         toolbar_layout.addStretch()
 
-        # Table selector
-        self.table_combo = QComboBox()
-        self.table_combo.setStyleSheet("""
-            QComboBox {
-                min-width: 150px;
-                padding: 6px 12px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-            }
-        """)
-        self.table_combo.setPlaceholderText("No tables loaded")
-        self.table_combo.currentTextChanged.connect(self.on_table_selected)
-        toolbar_layout.addWidget(QLabel("Table:"))
-        toolbar_layout.addWidget(self.table_combo)
-
         # Saved queries dropdown
         self.saved_queries_combo = QComboBox()
         self.saved_queries_combo.setStyleSheet("""
@@ -224,8 +283,18 @@ class SQLTransformView(QWidget):
 
         editor_layout.addLayout(toolbar_layout)
 
+        # Dataset selector
+        dataset_selector_layout = QHBoxLayout()
+        dataset_selector_layout.addWidget(QLabel("Datasets:"))
+        self.dataset_list = QListWidget()
+        self.dataset_list.setMaximumHeight(80)
+        self.dataset_list.setSelectionMode(QListWidget.NoSelection)
+        self.dataset_list.itemChanged.connect(self.on_dataset_selection_changed)
+        dataset_selector_layout.addWidget(self.dataset_list)
+        editor_layout.addLayout(dataset_selector_layout)
+
         # Query editor with syntax highlighting - Light mode
-        self.query_editor = QTextEdit()
+        self.query_editor = CompletingTextEdit()
         self.query_editor.setFont(QFont("Consolas", 10))
         self.query_editor.setMinimumHeight(120)
         self.query_editor.setStyleSheet("""
@@ -240,6 +309,16 @@ class SQLTransformView(QWidget):
 
         # Apply syntax highlighting
         self.highlighter = SQLSyntaxHighlighter(self.query_editor.document())
+
+        # Setup auto-completer
+        self.completer = QCompleter(self)
+        self.completer.setModelSorting(QCompleter.CaseInsensitivelySortedModel)
+        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.completer.setWrapAround(False)
+        self.completer.setCompletionMode(QCompleter.PopupCompletion)
+        # Use custom CompletingTextEdit that supports QCompleter
+        self.query_editor.setCompleter(self.completer)
+        self._update_completer_model()
 
         editor_layout.addWidget(self.query_editor)
 
@@ -354,32 +433,160 @@ class SQLTransformView(QWidget):
         splitter.setSizes([200, 350, 100])
         main_layout.addWidget(splitter)
 
+    def set_project(self, project: Project):
+        """Set the current project and update dataset selector."""
+        self.current_project = project
+        self._update_dataset_selector()
+
+    def _update_dataset_selector(self):
+        """Update the dataset list with datasets from current project."""
+        self.dataset_list.clear()
+        self.dataset_widgets.clear()
+        self.registered_tables.clear()
+
+        if not self.current_project:
+            return
+
+        # Ensure DuckDB connection exists
+        if self.duckdb_conn is None:
+            self.duckdb_conn = duckdb.connect(database=':memory:')
+
+        # Automatically register all datasets as tables
+        for dataset in self.current_project.list_datasets():
+            item = QListWidgetItem(dataset.name)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked)  # Auto-check to auto-register
+            item.setData(Qt.UserRole, dataset.id)
+            self.dataset_list.addItem(item)
+            self.dataset_widgets[dataset.id] = item
+
+            # Auto-register the dataset as a table
+            df = dataset.get_current_dataframe()
+            if df is not None:
+                table_name = self._sanitize_table_name(dataset.name)
+                self._register_dataset_table(table_name, df)
+
+        # Update the completer with all registered tables
+        self._update_completer_model()
+
+    @Slot(QListWidgetItem)
+    def on_dataset_selection_changed(self, item):
+        """Handle dataset selection change."""
+        if not item:
+            return
+        dataset_id = item.data(Qt.UserRole)
+        dataset = self.current_project.get_dataset(dataset_id) if self.current_project else None
+        if dataset:
+            if item.checkState() == Qt.Checked:
+                # Register dataset as table
+                df = dataset.get_current_dataframe()
+                if df is not None:
+                    table_name = self._sanitize_table_name(dataset.name)
+                    self._register_dataset_table(table_name, df)
+            else:
+                # Unregister table
+                table_name = self._sanitize_table_name(dataset.name)
+                self._unregister_table(table_name)
+            # Update completer
+            self._update_completer_model()
+
+    def _sanitize_table_name(self, name: str) -> str:
+        """Sanitize dataset name for use as SQL table name - preserves case and most characters."""
+        import re
+        # Replace spaces and special characters (except underscore) with underscores
+        sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+        # Ensure it starts with a letter or underscore
+        if sanitized and not sanitized[0].isalpha() and sanitized[0] != '_':
+            sanitized = '_' + sanitized
+        return sanitized
+
+    def _register_dataset_table(self, table_name: str, df: pl.DataFrame):
+        """Register a dataset as a table in DuckDB."""
+        if self.duckdb_conn is None:
+            self.duckdb_conn = duckdb.connect(database=':memory:')
+        self.duckdb_conn.register(table_name, df)
+        self.registered_tables[table_name] = df
+
+    def _unregister_table(self, table_name: str):
+        """Unregister a table from DuckDB."""
+        if table_name in self.registered_tables:
+            del self.registered_tables[table_name]
+        # Note: DuckDB doesn't have unregister; we could close and recreate connection
+        # For simplicity, we'll just remove from dict and not query it.
+
+    def _update_completer_model(self):
+        """Update completer model with SQL keywords, table names, and column names."""
+        if not self.completer:
+            return
+
+        completions = []
+
+        # SQL keywords
+        sql_keywords = [
+            'SELECT', 'FROM', 'WHERE', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL',
+            'ON', 'GROUP', 'BY', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET', 'UNION',
+            'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP', 'AS', 'AND',
+            'OR', 'NOT', 'IN', 'IS', 'NULL', 'BETWEEN', 'LIKE', 'CASE', 'WHEN',
+            'THEN', 'ELSE', 'END', 'DISTINCT', 'INTO', 'VALUES', 'SET', 'WHERE'
+        ]
+        completions.extend(sql_keywords)
+
+        # Table names
+        completions.extend(self.registered_tables.keys())
+
+        # Column names from registered tables
+        for table_name, df in self.registered_tables.items():
+            completions.extend(df.columns)
+
+        # Remove duplicates while preserving case (convert to lower for comparison)
+        seen = set()
+        unique_completions = []
+        for item in completions:
+            key = item.lower()
+            if key not in seen:
+                seen.add(key)
+                unique_completions.append(item)
+
+        # Create and set model
+        model = QStringListModel(unique_completions, self.completer)
+        self.completer.setModel(model)
+
     @Slot(pl.DataFrame)
-    def set_dataframe(self, df: pl.DataFrame):
-        """Set the dataframe for SQL operations."""
+    def set_dataframe(self, df: pl.DataFrame, table_name: str = None):
+        """Set the dataframe for SQL operations.
+
+        Args:
+            df: The Polars DataFrame to register
+            table_name: Optional table name (defaults to 'data' if not provided)
+        """
         self.current_dataframe = df
 
-        # Register with DuckDB
-        self._register_dataframe(df)
+        # Use provided table name or default to 'data'
+        if table_name is None:
+            table_name = 'data'
 
-        # Update table selector
-        self.table_combo.clear()
-        self.table_combo.addItem("data")
-        self.table_combo.addItems(list(self.registered_tables.keys()))
+        # Sanitize the table name
+        sanitized_name = self._sanitize_table_name(table_name)
+
+        # Clear existing tables before registering new one (to avoid duplicates like 'data' and 'customer')
+        self.registered_tables.clear()
+
+        # Register with DuckDB
+        self._register_dataframe(df, sanitized_name)
 
         # Update schema info
         cols = df.columns
-        self.schema_label.setText(f"Table: data | Columns: {len(cols)} | Rows: {len(df):,}")
+        self.schema_label.setText(f"Table: {sanitized_name} | Columns: {len(cols)} | Rows: {len(df):,}")
         self.update_info(f"Data loaded: {len(df):,} rows × {len(cols)} columns")
 
-    def _register_dataframe(self, df: pl.DataFrame):
+    def _register_dataframe(self, df: pl.DataFrame, table_name: str):
         """Register a Polars DataFrame with DuckDB."""
         if self.duckdb_conn is None:
             self.duckdb_conn = duckdb.connect(database=':memory:')
 
-        # Register the Polars DataFrame directly with DuckDB
-        self.duckdb_conn.register('data', df)
-        self.registered_tables['data'] = df
+        # Register the Polars DataFrame directly with DuckDB using the provided table name
+        self.duckdb_conn.register(table_name, df)
+        self.registered_tables[table_name] = df
 
         # Register any columns for custom functions as DuckDB relations
         for col in df.columns:
@@ -390,8 +597,8 @@ class SQLTransformView(QWidget):
     @Slot()
     def execute_query(self):
         """Execute the current SQL query."""
-        if self.current_dataframe is None:
-            QMessageBox.warning(self, "No Data", "Please load data first.")
+        if not self.registered_tables:
+            QMessageBox.warning(self, "No Data", "Please select datasets first.")
             return
 
         query = self.query_editor.toPlainText().strip()
@@ -470,12 +677,6 @@ class SQLTransformView(QWidget):
             query = pattern.sub(keyword.upper(), query)
 
         self.query_editor.setPlainText(query)
-
-    @Slot(str)
-    def on_table_selected(self, table_name):
-        """Handle table selection."""
-        if table_name and table_name != "No tables loaded":
-            self.query_editor.insertPlainText(f"SELECT * FROM {table_name} LIMIT 100")
 
     @Slot(int)
     def load_saved_query(self, index):

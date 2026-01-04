@@ -1,11 +1,13 @@
-"""Dashboard View - Beautiful landing page design"""
+"""Dashboard View - Beautiful landing page design with accurate metrics"""
+from datetime import datetime
+import polars as pl
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QGridLayout, QScrollArea, QGraphicsDropShadowEffect
+    QFrame, QGridLayout, QScrollArea, QGraphicsDropShadowEffect,
+    QButtonGroup, QRadioButton
 )
-from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QFont, QColor, QPainter, QPen, QLinearGradient
-# ProjectService will be imported lazily when needed to avoid circular imports
+from PySide6.QtCore import Qt, QSize, Signal, Slot
+from PySide6.QtGui import QFont, QColor, QPainter, QLinearGradient
 
 
 class MetricCard(QFrame):
@@ -16,7 +18,7 @@ class MetricCard(QFrame):
             QFrame {
                 background-color: white;
                 border-radius: 12px;
-                border: 1px solid #e5e7eb;
+                border: none;
             }
         """)
 
@@ -73,7 +75,7 @@ class MetricCard(QFrame):
         title_label = QLabel(title)
         title_label.setStyleSheet("""
             QLabel {
-                color: #111827;
+                color: #6b7280;
                 font-size: 13px;
                 font-weight: 500;
             }
@@ -107,20 +109,28 @@ class MetricCard(QFrame):
 
 class DatasetCard(QFrame):
     """Card widget for displaying dataset information"""
-    def __init__(self, name, rows, columns, last_modified, parent=None):
+    datasetClicked = Signal(dict)  # Signal emitted when card is clicked, with dataset info
+
+    def __init__(self, dataset_info, parent=None):
         super().__init__(parent)
+        self._dataset_info = dataset_info
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet("""
             QFrame {
                 background-color: white;
                 border-radius: 10px;
-                border: 1px solid #e5e7eb;
+                border: none;
             }
             QFrame:hover {
-                border: 1px solid #3b82f6;
                 background-color: #f9fafb;
             }
         """)
+
+        # Extract values from dataset_info
+        dataset_name = dataset_info.get("name", "Unknown")
+        row_count = dataset_info.get("rows", 0)
+        col_count = dataset_info.get("columns", 0)
+        last_modified = dataset_info.get("modified", "Just now")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -132,7 +142,7 @@ class DatasetCard(QFrame):
         icon_label.setStyleSheet("font-size: 20px;")
         name_layout.addWidget(icon_label)
 
-        name_label = QLabel(name)
+        name_label = QLabel(dataset_name)
         name_label.setStyleSheet("""
             QLabel {
                 color: #111827;
@@ -146,7 +156,7 @@ class DatasetCard(QFrame):
         # Stats row
         stats_layout = QHBoxLayout()
 
-        rows_label = QLabel(f"{rows:,} rows")
+        rows_label = QLabel(f"{row_count:,} rows")
         rows_label.setStyleSheet("""
             QLabel {
                 color: #374151;
@@ -158,7 +168,7 @@ class DatasetCard(QFrame):
         """)
         stats_layout.addWidget(rows_label)
 
-        cols_label = QLabel(f"{columns} cols")
+        cols_label = QLabel(f"{col_count} cols")
         cols_label.setStyleSheet("""
             QLabel {
                 color: #374151;
@@ -191,10 +201,16 @@ class DatasetCard(QFrame):
         shadow.setColor(QColor(0, 0, 0, 10))
         self.setGraphicsEffect(shadow)
 
+    def mousePressEvent(self, event):
+        """Handle mouse click - emit signal with dataset info"""
+        if event.button() == Qt.LeftButton:
+            self.datasetClicked.emit(self._dataset_info)
+        super().mousePressEvent(event)
+
 
 class ActivityItem(QFrame):
     """Widget for displaying recent activity"""
-    def __init__(self, action, dataset, time, user="Cameron Diaz", parent=None):
+    def __init__(self, action, dataset, time, user="You", icon="📁", parent=None):
         super().__init__(parent)
         self.setStyleSheet("""
             QFrame {
@@ -208,26 +224,24 @@ class ActivityItem(QFrame):
         layout.setContentsMargins(0, 16, 0, 16)
         layout.setSpacing(16)
 
-        # User avatar (circle with initials)
-        avatar = QLabel("CD")
-        avatar.setFixedSize(40, 40)
-        avatar.setAlignment(Qt.AlignCenter)
-        avatar.setStyleSheet("""
+        # Activity icon
+        icon_label = QLabel(icon)
+        icon_label.setFixedSize(36, 36)
+        icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setStyleSheet("""
             QLabel {
-                background-color: #3b82f6;
-                color: white;
-                border-radius: 20px;
-                font-weight: 600;
-                font-size: 13px;
+                background-color: #eff6ff;
+                border-radius: 18px;
+                font-size: 16px;
             }
         """)
-        layout.addWidget(avatar)
+        layout.addWidget(icon_label)
 
         # Activity details
         details_layout = QVBoxLayout()
         details_layout.setSpacing(4)
 
-        action_label = QLabel(f"<b>{user}</b> {action}")
+        action_label = QLabel(f"<b>{action}</b>")
         action_label.setStyleSheet("""
             QLabel {
                 color: #111827;
@@ -251,8 +265,8 @@ class ActivityItem(QFrame):
         time_label = QLabel(time)
         time_label.setStyleSheet("""
             QLabel {
-                color: #6b7280;
-                font-size: 12px;
+                color: #9ca3af;
+                font-size: 11px;
             }
         """)
         layout.addWidget(time_label)
@@ -266,7 +280,7 @@ class ProgressBar(QWidget):
         self.max_value = max_value
         self.label_text = label
         self.color = color
-        self.setFixedHeight(60)
+        self.setFixedHeight(50)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -278,22 +292,22 @@ class ProgressBar(QWidget):
         font.setPixelSize(13)
         font.setWeight(QFont.Medium)
         painter.setFont(font)
-        painter.drawText(0, 0, self.width(), 20, Qt.AlignLeft, self.label_text)
+        painter.drawText(0, 0, self.width(), 18, Qt.AlignLeft, self.label_text)
 
         # Draw value
         percentage = int((self.value / self.max_value) * 100) if self.max_value > 0 else 0
         painter.setPen(QColor("#111827"))
-        font.setPixelSize(14)
+        font.setPixelSize(13)
         font.setWeight(QFont.Bold)
         painter.setFont(font)
-        painter.drawText(0, 0, self.width(), 20, Qt.AlignRight, f"{self.value}/{self.max_value} ({percentage}%)")
+        painter.drawText(0, 0, self.width(), 18, Qt.AlignRight, f"{percentage}%")
 
         # Draw background bar
-        bar_y = 28
-        bar_height = 12
+        bar_y = 24
+        bar_height = 8
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor("#f3f4f6"))
-        painter.drawRoundedRect(0, bar_y, self.width(), bar_height, 6, 6)
+        painter.drawRoundedRect(0, bar_y, self.width(), bar_height, 4, 4)
 
         # Draw progress bar
         progress_width = int((self.value / self.max_value) * self.width()) if self.max_value > 0 else 0
@@ -301,88 +315,191 @@ class ProgressBar(QWidget):
         gradient.setColorAt(0, QColor(self.color))
         gradient.setColorAt(1, QColor(self.color).lighter(110))
         painter.setBrush(gradient)
-        painter.drawRoundedRect(0, bar_y, progress_width, bar_height, 6, 6)
+        painter.drawRoundedRect(0, bar_y, max(progress_width, 0), bar_height, 4, 4)
 
 
 class DashboardView(QWidget):
-    """Main dashboard view with beautiful landing page design"""
+    """Main dashboard view with accurate metrics"""
+
+    # Signals
+    auditStatusChanged = Signal(str)  # When audit status changes
+    uploadRequested = Signal()  # When user wants to upload/import data
+    viewProjectsRequested = Signal()  # When user wants to view projects
+    datasetSelected = Signal(str)  # When a dataset is selected (emits dataset_id)
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.stat_labels = {}
         self.current_project = None
-        self.project_service = None
+        self.datasets = []
+        self.activities = []
+        self.stat_labels = {}
         self.setup_ui()
 
-    def _get_project_service(self):
-        """Get or create ProjectService instance (lazy import)"""
-        if self.project_service is None:
-            from services.project_service import ProjectService
-            self.project_service = ProjectService()
-        return self.project_service
+    def set_project(self, project):
+        """Set the current project and update display"""
+        self.current_project = project
+        self._update_from_project()
+        self._update_header()
 
-    def _load_real_data(self):
-        """Load real data from database instead of using hardcoded data"""
-        try:
-            service = self._get_project_service()
-            user_id = 1  # Default user ID for now
+    def refresh(self):
+        """Refresh dashboard data without changing project"""
+        # Always refresh - if no project, it will clear the display
+        self._update_from_project()
 
-            # Get all projects for the user
-            projects = service.get_projects(user_id)
+    def showEvent(self, event):
+        """Refresh dashboard when it becomes visible"""
+        super().showEvent(event)
+        self.refresh()
 
-            # Collect all datasets from all projects
-            all_datasets = []
-            all_activities = []
+    def _update_from_project(self):
+        """Update dashboard data from current project"""
+        if not self.current_project:
+            self.datasets = []
+            self.activities = []
+            self._refresh_metrics()
+            return
 
-            for project in projects:
-                # Get datasets for this project
-                datasets = service.get_project_datasets(project.id)
-                for dataset in datasets:
-                    # Format dataset info for display
-                    all_datasets.append({
-                        "name": dataset.name,
-                        "rows": dataset.row_count,
-                        "columns": dataset.column_count,
-                        "modified": self._format_timestamp(dataset.updated_at)
-                    })
+        # Get datasets from project
+        self.datasets = []
+        for dataset in self.current_project.list_datasets():
+            df = dataset.get_current_dataframe()
+            if df is not None:
+                self.datasets.append({
+                    "id": dataset.id,
+                    "name": dataset.name,
+                    "rows": len(df),
+                    "columns": len(df.columns),
+                    "modified": "Just now",
+                    "dataframe": df
+                })
 
-                # Get audit logs for this project
-                audit_logs = service.get_audit_logs(project.id, limit=10)
-                for log in audit_logs:
-                    # Format activity for display
-                    all_activities.append(self._format_activity(log))
+        # Refresh activities from the project's activity log
+        self._refresh_activities()
 
-            # If no datasets found, use empty lists
-            self.real_datasets = all_datasets
-            self.real_activities = all_activities
+        # Refresh metrics display
+        self._refresh_metrics()
 
-            # Calculate metrics
-            total_rows = sum(d["rows"] for d in all_datasets)
-            total_datasets = len(all_datasets)
-            self.real_metrics = {
-                "total_datasets": total_datasets,
-                "total_rows": total_rows,
-                "data_quality": self._calculate_data_quality(all_datasets),  # Placeholder
-                "last_audit": self._get_last_audit_time(all_activities)  # Placeholder
-            }
+        # Refresh datasets section
+        self._refresh_datasets()
 
-        except Exception as e:
-            print(f"Error loading real data for dashboard: {e}")
-            # Fall back to empty data
-            self.real_datasets = []
-            self.real_activities = []
-            self.real_metrics = {
-                "total_datasets": 0,
-                "total_rows": 0,
-                "data_quality": "0%",
-                "last_audit": "Never"
-            }
+    def _refresh_activities(self):
+        """Refresh activities from project activity log"""
+        self.activities = []
+
+        if not self.current_project:
+            return
+
+        # Get activities from project
+        activities = getattr(self.current_project, 'activities', []) or []
+
+        for activity in activities[-10:]:  # Last 10 activities
+            self.activities.append({
+                "action": activity.get("action", "Unknown action"),
+                "dataset": activity.get("dataset", ""),
+                "time": activity.get("time", "Just now"),
+                "icon": activity.get("icon", "📁")
+            })
+
+        # If no activities, add a placeholder
+        if not self.activities:
+            self.activities = [{
+                "action": "Started audit",
+                "dataset": self.current_project.name,
+                "time": "Just now",
+                "icon": "🚀"
+            }]
+
+    def _refresh_metrics(self):
+        """Calculate and update all metrics"""
+        if not self.current_project:
+            # Reset to empty values
+            self._update_metric_values(0, 0, "0%", "Never")
+            return
+
+        # Calculate total datasets
+        datasets_count = len(self.datasets)
+
+        # Calculate total records
+        total_records = sum(d.get("rows", 0) for d in self.datasets)
+
+        # Calculate data quality
+        quality_score = self._calculate_data_quality()
+
+        # Get last audit time
+        last_audit = self._get_last_audit_time()
+
+        self._update_metric_values(datasets_count, total_records, quality_score, last_audit)
+
+    def _update_metric_values(self, datasets, records, quality, last_audit):
+        """Update metric card values"""
+        if "Total Datasets" in self.stat_labels:
+            self.stat_labels["Total Datasets"].setText(str(datasets))
+
+        if "Total Records" in self.stat_labels:
+            self.stat_labels["Total Records"].setText(f"{records:,}")
+
+        if "Data Quality" in self.stat_labels:
+            self.stat_labels["Data Quality"].setText(quality)
+
+        if "Last Audit" in self.stat_labels:
+            self.stat_labels["Last Audit"].setText(last_audit)
+
+        # Also update audit progress section
+        self._update_audit_progress()
+
+    def _calculate_data_quality(self) -> str:
+        """Calculate data quality percentage based on null/NaN values"""
+        if not self.datasets:
+            return "0%"
+
+        total_datasets = len(self.datasets)
+        quality_scores = []
+
+        for dataset_info in self.datasets:
+            df = dataset_info.get("dataframe")
+            if df is None:
+                continue
+
+            # Calculate null percentage for this dataset
+            total_cells = len(df) * len(df.columns)
+            if total_cells == 0:
+                continue
+
+            # Count nulls
+            null_count = 0
+            for col in df.columns:
+                null_count += df[col].null_count()
+
+            # Count empty strings in string columns
+            for col in df.columns:
+                if df[col].dtype == pl.Utf8:
+                    null_count += (df[col].str.len_chars() == 0).sum()
+
+            null_percentage = (null_count / total_cells) * 100
+            quality_score = 100 - null_percentage
+            quality_scores.append(quality_score)
+
+        if not quality_scores:
+            return "0%"
+
+        avg_quality = sum(quality_scores) / len(quality_scores)
+        return f"{avg_quality:.1f}%"
+
+    def _get_last_audit_time(self) -> str:
+        """Get last audit time from activities"""
+        if not self.activities:
+            return "Never"
+
+        # Get the most recent activity time
+        for activity in self.activities:
+            time_str = activity.get("time", "")
+            if time_str and time_str != "Never":
+                return time_str
+
+        return "Just now"
 
     def _format_timestamp(self, timestamp):
         """Format datetime for display (e.g., '2 hours ago')"""
-        if not timestamp:
-            return "Unknown"
-        # Simplified formatting - in real implementation, use humanize
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
         if timestamp.tzinfo is None:
@@ -392,48 +509,11 @@ class DashboardView(QWidget):
             return f"{diff.days} days ago"
         hours = diff.seconds // 3600
         if hours > 0:
-            return f"{hours} hours ago"
+            return f"{hours}h ago"
         minutes = diff.seconds // 60
         if minutes > 0:
-            return f"{minutes} minutes ago"
+            return f"{minutes}m ago"
         return "Just now"
-
-    def _format_activity(self, audit_log):
-        """Format audit log entry for activity display"""
-        # Map action types to display text
-        action_map = {
-            "project_created": "created project",
-            "dataset_imported": "imported dataset",
-            "dataset_modified": "modified dataset",
-            "analysis_run": "ran analysis",
-            "report_generated": "generated report"
-        }
-        action = action_map.get(audit_log.action, audit_log.action)
-        # For now, use generic user - in real app, get user name
-        user = "User"
-        dataset_name = audit_log.details.get("dataset_name", "Unknown") if audit_log.details else "Unknown"
-        timestamp = self._format_timestamp(audit_log.timestamp)
-
-        return (action, dataset_name, timestamp, user)
-
-    def _calculate_data_quality(self, datasets):
-        """Calculate data quality percentage (placeholder)"""
-        if not datasets:
-            return "0%"
-        # Simple placeholder - in real app, calculate from column null counts
-        return "94.2%"
-
-    def _get_last_audit_time(self, activities):
-        """Get last audit time from activities (placeholder)"""
-        if not activities:
-            return "Never"
-        # Return most recent timestamp from activities
-        return "2 days ago"
-
-    def set_project(self, project):
-        """Set the current project and update display"""
-        self.current_project = project
-        self._update_header()
 
     def _update_header(self):
         """Update the header with project info"""
@@ -441,7 +521,7 @@ class DashboardView(QWidget):
             project_name = self.current_project.name if self.current_project.name else "Dashboard"
             self.header_title.setText(project_name)
 
-            client_name = self.current_project.client_name if self.current_project.client_name else ""
+            client_name = getattr(self.current_project, 'client_name', None) or ""
             if client_name:
                 self.header_subtitle.setText(f"Audit - {client_name}")
             else:
@@ -450,39 +530,136 @@ class DashboardView(QWidget):
             self.header_title.setText("Dashboard")
             self.header_subtitle.setText("Overview")
 
+    def _refresh_datasets(self):
+        """Refresh the datasets section with current datasets"""
+        # Clear existing dataset cards
+        for i in range(self.datasets_layout.count()):
+            item = self.datasets_layout.itemAt(i)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not self.datasets:
+            # Empty state
+            empty_label = QLabel("No datasets yet\nImport data to get started")
+            empty_label.setStyleSheet("""
+                QLabel {
+                    color: #6b7280;
+                    font-size: 13px;
+                    padding: 24px;
+                    text-align: center;
+                }
+            """)
+            empty_label.setAlignment(Qt.AlignCenter)
+            self.datasets_layout.addWidget(empty_label)
+        else:
+            # Add dataset cards (show up to 5 most recent)
+            for dataset in sorted(self.datasets, key=lambda x: x.get("modified", ""), reverse=True)[:5]:
+                card = DatasetCard(dataset)
+                # Connect card click to emit dataset selected signal
+                card.datasetClicked.connect(self._on_dataset_card_clicked)
+                self.datasets_layout.addWidget(card)
+
+    def _on_dataset_card_clicked(self, dataset_info):
+        """Handle dataset card click - emit dataset selected signal"""
+        dataset_id = dataset_info.get("id", "")
+        if dataset_id:
+            self.datasetSelected.emit(dataset_id)
+
+    def _update_audit_progress(self):
+        """Update audit progress based on project status and datasets"""
+        if not self.current_project:
+            return
+
+        # Clear existing progress bars
+        for i in range(self.progress_layout.count()):
+            item = self.progress_layout.itemAt(i)
+            if item.widget() and isinstance(item.widget(), ProgressBar):
+                item.widget().deleteLater()
+
+        # Calculate progress based on project status
+        project_status = getattr(self.current_project, 'status', 'planning')
+
+        if project_status == "completed":
+            # All phases complete
+            progress_items = [
+                ("Data Collection", 100, 100, "#10b981"),
+                ("Data Validation", 100, 100, "#10b981"),
+                ("Analysis Complete", 100, 100, "#10b981"),
+                ("Reports Generated", 100, 100, "#10b981"),
+            ]
+        else:
+            # Calculate progress based on datasets
+            total_datasets = len(self.datasets)
+            completed_datasets = sum(1 for d in self.datasets if d.get("rows", 0) > 0)
+
+            # Estimate progress
+            collection_pct = min(100, int((completed_datasets / max(1, total_datasets)) * 50))
+            validation_pct = min(100, int((completed_datasets / max(1, total_datasets)) * 75))
+            analysis_pct = min(100, int((completed_datasets / max(1, total_datasets)) * 100))
+            reports_pct = 0  # Only when audit is completed
+
+            progress_items = [
+                ("Data Collection", collection_pct, 100, "#3b82f6"),
+                ("Data Validation", validation_pct, 100, "#f59e0b"),
+                ("Analysis Complete", analysis_pct, 100, "#8b5cf6"),
+                ("Reports Generated", reports_pct, 100, "#6b7280"),
+            ]
+
+        for label, value, max_value, color in progress_items:
+            progress = ProgressBar(value, max_value, label, color)
+            self.progress_layout.addWidget(progress)
+
+    def _toggle_audit_status(self, status):
+        """Toggle audit completion status"""
+        if not self.current_project:
+            return
+
+        self.current_project.status = status
+        self._refresh_metrics()
+        self._update_audit_progress()
+        self.auditStatusChanged.emit(status)
+
+        # Update status button styles
+        self._update_status_button_styles(status)
+
+    def _update_status_button_styles(self, status):
+        """Update the visual style of status buttons"""
+        active_style = """
+            QPushButton {
+                background-color: #3b82f6;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: 600;
+            }
+        """
+        inactive_style = """
+            QPushButton {
+                background-color: #f3f4f6;
+                color: #6b7280;
+                border: 1px solid #e5e7eb;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: 500;
+            }
+        """
+
+        if status == "completed":
+            self.status_completed.setStyleSheet(active_style)
+            self.status_active.setStyleSheet(inactive_style)
+        else:
+            self.status_completed.setStyleSheet(inactive_style)
+            self.status_active.setStyleSheet(active_style)
+
     def update_stats(self, projects_count: int = 0, datasets_count: int = 0,
                     analyses_count: int = 0, sessions_count: int = 0):
-        """Update the dashboard statistics"""
-        # Update metric cards if they exist
-        metrics_map = {
-            "Projects": str(projects_count),
-            "Datasets": str(datasets_count),
-            "Analyses": str(analyses_count),
-            "Sessions": str(sessions_count)
-        }
-
-        for stat_name, value in metrics_map.items():
-            if stat_name in self.stat_labels:
-                self.stat_labels[stat_name].setText(value)
-
-        # Also update our dashboard metric cards if they exist
-        # Map the incoming counts to our metric cards
-        if "Total Datasets" in self.stat_labels:
-            self.stat_labels["Total Datasets"].setText(str(datasets_count))
-        # Note: Total Records, Data Quality, Last Audit are not updated here
-        # as they require additional data not provided in these counts
-
-    def showEvent(self, event):
-        """Reload real data when dashboard is shown"""
-        super().showEvent(event)
-        self._load_real_data()
-        # Note: UI doesn't dynamically update yet, need to implement proper refresh
-        # For now, data is loaded once at setup_ui()
+        """Update the dashboard statistics (legacy method for compatibility)"""
+        if self.current_project:
+            self._refresh_metrics()
 
     def setup_ui(self):
-        # Load real data from database
-        self._load_real_data()
-
+        """Set up the dashboard UI"""
         # Main layout
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(32, 24, 32, 24)
@@ -566,9 +743,47 @@ class DashboardView(QWidget):
 
         layout.addLayout(left_layout, 1)
 
-        # Right side - Actions
-        btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(12)
+        # Right side - Status toggle and Actions
+        right_layout = QHBoxLayout()
+        right_layout.setSpacing(12)
+
+        # Audit status toggle
+        status_label = QLabel("Audit Status:")
+        status_label.setStyleSheet("color: #6b7280; font-size: 13px; font-weight: 500;")
+        right_layout.addWidget(status_label)
+
+        self.status_active = QPushButton("In Progress")
+        self.status_active.setCheckable(True)
+        self.status_active.setChecked(True)
+        self.status_active.setStyleSheet("""
+            QPushButton {
+                background-color: #3b82f6;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: 600;
+            }
+        """)
+        self.status_active.clicked.connect(lambda: self._toggle_audit_status("active"))
+        right_layout.addWidget(self.status_active)
+
+        self.status_completed = QPushButton("Completed")
+        self.status_completed.setCheckable(True)
+        self.status_completed.setStyleSheet("""
+            QPushButton {
+                background-color: #f3f4f6;
+                color: #6b7280;
+                border: 1px solid #e5e7eb;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: 500;
+            }
+        """)
+        self.status_completed.clicked.connect(lambda: self._toggle_audit_status("completed"))
+        right_layout.addWidget(self.status_completed)
+
+        right_layout.addSpacing(20)
 
         # New Dataset button
         new_dataset_btn = QPushButton("+ New Dataset")
@@ -590,11 +805,12 @@ class DashboardView(QWidget):
             }
         """)
         new_dataset_btn.setCursor(Qt.PointingHandCursor)
-        btn_layout.addWidget(new_dataset_btn)
+        new_dataset_btn.clicked.connect(self.uploadRequested.emit)
+        right_layout.addWidget(new_dataset_btn)
 
-        # Open Workspace button
-        workspace_btn = QPushButton("Open Workspace →")
-        workspace_btn.setStyleSheet("""
+        # View Projects button (replaces "Open Workspace")
+        projects_btn = QPushButton("View Projects →")
+        projects_btn.setStyleSheet("""
             QPushButton {
                 background-color: white;
                 color: #374151;
@@ -609,10 +825,11 @@ class DashboardView(QWidget):
                 border-color: #9ca3af;
             }
         """)
-        workspace_btn.setCursor(Qt.PointingHandCursor)
-        btn_layout.addWidget(workspace_btn)
+        projects_btn.setCursor(Qt.PointingHandCursor)
+        projects_btn.clicked.connect(self.viewProjectsRequested.emit)
+        right_layout.addWidget(projects_btn)
 
-        layout.addLayout(btn_layout)
+        layout.addLayout(right_layout)
 
         return header
 
@@ -623,30 +840,32 @@ class DashboardView(QWidget):
         layout.setSpacing(20)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Use real datasets loaded from database
-        self.datasets = self.real_datasets
-
-        # Use real metrics loaded from database
+        # Create metric cards with initial values
         metrics = [
-            MetricCard("Total Datasets", str(self.real_metrics["total_datasets"]), "Active in workspace", "📊", "↑ 3 new"),
-            MetricCard("Total Records", f"{self.real_metrics['total_rows']:,}", "Across all datasets", "📈"),
-            MetricCard("Data Quality", self.real_metrics["data_quality"], "Completion rate", "✓", "↑ 2.1%"),
-            MetricCard("Last Audit", self.real_metrics["last_audit"], "Next: Dec 30, 2025", "📅"),
+            MetricCard("Total Datasets", "0", "Active in workspace", "📊"),
+            MetricCard("Total Records", "0", "Across all datasets", "📈"),
+            MetricCard("Data Quality", "0%", "Completion rate", "✓"),
+            MetricCard("Last Audit", "Never", "", "📅"),
         ]
 
         # Store references to value labels for updates
         metric_titles = ["Total Datasets", "Total Records", "Data Quality", "Last Audit"]
         for i, card in enumerate(metrics):
-            card.setMinimumHeight(180)
+            card.setMinimumHeight(160)
             layout.addWidget(card, 0, i)
             # Find the value label
             for child in card.findChildren(QLabel):
-                if child.text() == list(metric_titles)[i]:
+                if child.text() in metric_titles:
                     continue
-                if child.text() not in ["Total Datasets", "Total Records", "Data Quality", "Last Audit"]:
-                    if "↑" not in child.text() and "↓" not in child.text():
+                # Skip labels with icons or trends
+                if child.text() and not any(c in child.text() for c in ["📊", "📈", "✓", "📅", "↑", "↓"]):
+                    if "Just now" not in child.text() and "Never" not in child.text():
                         self.stat_labels[metric_titles[i]] = child
                         break
+                elif child.text() in ["0", "0%", "Never"]:
+                    # These are the value labels we want to track
+                    self.stat_labels[metric_titles[i]] = child
+                    break
 
         return widget
 
@@ -657,7 +876,7 @@ class DashboardView(QWidget):
             QFrame {
                 background-color: white;
                 border-radius: 12px;
-                border: 1px solid #e5e7eb;
+                border: none;
             }
         """)
 
@@ -696,29 +915,23 @@ class DashboardView(QWidget):
 
         layout.addLayout(header_layout)
 
-        # Dataset cards
-        if not self.datasets:
-            # Empty state
-            empty_label = QLabel("No datasets yet\nImport data to get started")
-            empty_label.setStyleSheet("""
-                QLabel {
-                    color: #6b7280;
-                    font-size: 13px;
-                    padding: 24px;
-                    text-align: center;
-                }
-            """)
-            empty_label.setAlignment(Qt.AlignCenter)
-            layout.addWidget(empty_label)
-        else:
-            for dataset in self.datasets:
-                card = DatasetCard(
-                    dataset["name"],
-                    dataset["rows"],
-                    dataset["columns"],
-                    dataset["modified"]
-                )
-                layout.addWidget(card)
+        # Dataset cards container layout
+        self.datasets_layout = QVBoxLayout()
+        self.datasets_layout.setSpacing(12)
+        layout.addLayout(self.datasets_layout)
+
+        # Initial empty state
+        empty_label = QLabel("No datasets yet\nImport data to get started")
+        empty_label.setStyleSheet("""
+            QLabel {
+                color: #6b7280;
+                font-size: 13px;
+                padding: 24px;
+                text-align: center;
+            }
+        """)
+        empty_label.setAlignment(Qt.AlignCenter)
+        self.datasets_layout.addWidget(empty_label)
 
         return container
 
@@ -729,7 +942,7 @@ class DashboardView(QWidget):
             QFrame {
                 background-color: white;
                 border-radius: 12px;
-                border: 1px solid #e5e7eb;
+                border: none;
             }
         """)
 
@@ -757,25 +970,21 @@ class DashboardView(QWidget):
         """)
         layout.addWidget(title)
 
-        # Activity items from real audit logs
-        activities = self.real_activities[:4]  # Show only 4 most recent
+        # Activity items
+        self.activity_items = []
+        for i in range(4):
+            item = ActivityItem(
+                "No activity yet",
+                "",
+                "",
+                icon="📋"
+            )
+            item.hide()
+            layout.addWidget(item)
+            self.activity_items.append(item)
 
-        if not activities:
-            # Show empty state
-            empty_label = QLabel("No recent activity")
-            empty_label.setStyleSheet("""
-                QLabel {
-                    color: #6b7280;
-                    font-size: 13px;
-                    padding: 16px;
-                    text-align: center;
-                }
-            """)
-            layout.addWidget(empty_label)
-        else:
-            for activity in activities:
-                item = ActivityItem(*activity)
-                layout.addWidget(item)
+        # Add stretch to fill space
+        layout.addStretch()
 
         return container
 
@@ -786,7 +995,7 @@ class DashboardView(QWidget):
             QFrame {
                 background-color: white;
                 border-radius: 12px;
-                border: 1px solid #e5e7eb;
+                border: none;
             }
         """)
 
@@ -813,16 +1022,69 @@ class DashboardView(QWidget):
         """)
         layout.addWidget(title)
 
-        # Progress bars
-        progress_items = [
-            ("Data Collection", 15, 15, "#10b981"),
-            ("Data Validation", 12, 15, "#3b82f6"),
-            ("Analysis Complete", 8, 15, "#f59e0b"),
-            ("Reports Generated", 3, 15, "#6b7280"),
-        ]
+        # Progress bars container
+        self.progress_layout = QVBoxLayout()
+        self.progress_layout.setSpacing(16)
+        layout.addLayout(self.progress_layout)
 
-        for label, value, max_value, color in progress_items:
-            progress = ProgressBar(value, max_value, label, color)
-            layout.addWidget(progress)
+        # Initial empty progress bars
+        for label in ["Data Collection", "Data Validation", "Analysis Complete", "Reports Generated"]:
+            progress = ProgressBar(0, 100, label, "#3b82f6")
+            self.progress_layout.addWidget(progress)
 
         return container
+
+    def add_activity(self, action: str, dataset_name: str = "", icon: str = "📁"):
+        """Add a new activity to the dashboard"""
+        from datetime import datetime
+
+        activity = {
+            "action": action,
+            "dataset": dataset_name,
+            "time": "Just now",
+            "icon": icon
+        }
+
+        # Add to beginning of list
+        self.activities.insert(0, activity)
+
+        # Keep only last 10 activities
+        self.activities = self.activities[:10]
+
+        # Update activity display
+        self._refresh_activities_display()
+
+    def _refresh_activities_display(self):
+        """Refresh the activity items display"""
+        # Hide all items first
+        for item in self.activity_items:
+            item.hide()
+
+        # Show activities (up to 4)
+        for i, activity in enumerate(self.activities[:4]):
+            if i < len(self.activity_items):
+                item = self.activity_items[i]
+                # Update the item content
+                for child in item.findChildren(QLabel):
+                    text = child.text()
+                    if "<b>" in text:
+                        child.setText(f"<b>{activity.get('action', 'Unknown')}</b>")
+                    elif "rows" not in text and "cols" not in text and "Modified" not in text:
+                        if child.text() and not any(c in child.text() for c in ["Just now", "Never"]):
+                            # This is the dataset label
+                            child.setText(activity.get("dataset", ""))
+                        elif child.text() in ["Just now", "Never", ""] or ":" in child.text():
+                            # This is the time label
+                            child.setText(activity.get("time", ""))
+
+                # Update icon
+                for child in item.findChildren(QLabel):
+                    if child.text() in ["📁", "📊", "📈", "✅", "🚀", "📋"]:
+                        child.setText(activity.get("icon", "📁"))
+                        break
+
+                item.show()
+
+    def refresh(self):
+        """Refresh the dashboard display"""
+        self._update_from_project()

@@ -312,6 +312,12 @@ class MainWindow(QMainWindow):
             "settings": SettingsView(),
         }
 
+        # Connect dashboard signals
+        dashboard_view = self.views["dashboard"]
+        dashboard_view.uploadRequested.connect(self.on_upload_requested)
+        dashboard_view.viewProjectsRequested.connect(lambda: self.on_navigation_requested("projects"))
+        dashboard_view.datasetSelected.connect(self.on_dataset_selected)
+
         # Connect ProjectsView signal
         projects_view = self.views["projects"]
         if hasattr(projects_view, 'project_open_requested'):
@@ -330,6 +336,8 @@ class MainWindow(QMainWindow):
         data_view.data_loaded.connect(query_view.set_dataframe)
         data_view.data_loaded.connect(reports_view.set_dataframe)
         data_view.dataset_added.connect(self._on_dataset_added)
+        # Also refresh dashboard when dataset is added
+        data_view.dataset_added.connect(lambda d: self.views["dashboard"].refresh() if "dashboard" in self.views else None)
         data_view.show_transform_requested.connect(self._on_show_transform_after_upload)
         transform_view.pipelineChanged.connect(self._on_pipeline_changed)
 
@@ -382,7 +390,7 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def on_dataset_selected(self, dataset_id):
-        """Handle dataset selection from sidebar"""
+        """Handle dataset selection from sidebar or dashboard"""
         if not self.current_project:
             return
 
@@ -391,6 +399,11 @@ class MainWindow(QMainWindow):
             self.current_dataset = dataset
             df = dataset.get_current_dataframe()
             if df is not None:
+                # Navigate to transform view
+                self.content_stack.setCurrentWidget(self.views["transform"])
+                self.ribbon_bar.setVisible(True)
+                self.sidebar.set_active_button("transform")
+
                 # Update all views with the dataset
                 transform_view = self.views.get("transform")
                 sql_view = self.views.get("sql")
@@ -402,7 +415,7 @@ class MainWindow(QMainWindow):
                     # Pass the dataset's pipeline if it exists to preserve transformations
                     transform_view.set_dataframe(df, dataset.transformation_pipeline)
                 if sql_view:
-                    sql_view.set_dataframe(df)
+                    sql_view.set_dataframe(df, dataset.name)
                 if viz_view:
                     viz_view.set_dataframe(df)
                 if query_view:
@@ -778,7 +791,7 @@ class MainWindow(QMainWindow):
                 current_df = self.current_dataset.get_current_dataframe()
                 if current_df is not None:
                     self.views["transform"].set_dataframe(current_df)
-                    self.views["sql"].set_dataframe(current_df)
+                    self.views["sql"].set_dataframe(current_df, self.current_dataset.name)
 
             # Navigate to dashboard
             self.content_stack.setCurrentWidget(self.views["dashboard"])
@@ -1208,7 +1221,7 @@ class MainWindow(QMainWindow):
                         current_df = self.current_dataset.get_current_dataframe()
                         if current_df is not None:
                             self.views["transform"].set_dataframe(current_df)
-                            self.views["sql"].set_dataframe(current_df)
+                            self.views["sql"].set_dataframe(current_df, self.current_dataset.name)
 
                     # Close backstage view and navigate to dashboard
                     self.backstage_view.setVisible(False)
@@ -1237,7 +1250,7 @@ class MainWindow(QMainWindow):
                     current_df = self.current_dataset.get_current_dataframe()
                     if current_df is not None:
                         self.views["transform"].set_dataframe(current_df)
-                        self.views["sql"].set_dataframe(current_df)
+                        self.views["sql"].set_dataframe(current_df, self.current_dataset.name)
 
                 # Close backstage view and navigate to dashboard
                 self.backstage_view.setVisible(False)
@@ -1327,20 +1340,12 @@ class MainWindow(QMainWindow):
     def refresh_dashboard_stats(self):
         """Refresh dashboard statistics"""
         dashboard = self.views.get("dashboard")
-        if dashboard and hasattr(dashboard, 'update_stats'):
-            # For now, just count current project datasets
-            # In a full implementation, this would query all projects
-            projects_count = 1 if self.current_project else 0
-            datasets_count = len(self.current_project.list_datasets()) if self.current_project else 0
-            analyses_count = 0  # Would need to track completed analyses
-            sessions_count = 0  # Would need to track saved sessions
-
-            dashboard.update_stats(
-                projects_count=projects_count,
-                datasets_count=datasets_count,
-                analyses_count=analyses_count,
-                sessions_count=sessions_count
-            )
+        if dashboard and hasattr(dashboard, 'refresh'):
+            # Use the refresh method which updates without changing project
+            dashboard.refresh()
+        elif dashboard and hasattr(dashboard, 'set_project'):
+            # Fallback: use set_project
+            dashboard.set_project(self.current_project)
 
     @Slot(object)
     def on_data_imported(self, dataframe):
@@ -1363,6 +1368,9 @@ class MainWindow(QMainWindow):
             # Add to project
             self.current_project.add_dataset(dataset)
 
+            # Add activity to project
+            self._add_project_activity("Imported dataset", dataset_name, "📥")
+
             # Set as current dataset
             self.current_dataset = dataset
 
@@ -1371,10 +1379,33 @@ class MainWindow(QMainWindow):
 
             # Update views with the new data
             self.views["transform"].set_dataframe(dataframe)
-            self.views["sql"].set_dataframe(dataframe)
+            self.views["sql"].set_dataframe(dataframe, dataset.name)
 
             # Refresh dashboard stats
             self.refresh_dashboard_stats()
+
+    def _add_project_activity(self, action: str, dataset_name: str = "", icon: str = "📁"):
+        """Add an activity to the current project"""
+        if not self.current_project:
+            return
+
+        # Ensure activities list exists
+        if not hasattr(self.current_project, 'activities'):
+            self.current_project.activities = []
+
+        from datetime import datetime
+        activity = {
+            "action": action,
+            "dataset": dataset_name,
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "icon": icon
+        }
+        self.current_project.activities.append(activity)
+
+        # Update dashboard activity display
+        dashboard = self.views.get("dashboard")
+        if dashboard and hasattr(dashboard, 'add_activity'):
+            dashboard.add_activity(action, dataset_name, icon)
 
     def import_data(self):
         """Import data from file"""
@@ -1715,6 +1746,14 @@ class MainWindow(QMainWindow):
         data_view = self.views.get("data")
         if data_view and hasattr(data_view, 'set_project'):
             data_view.set_project(project)
+
+        # Update SQL views with project
+        sql_view = self.views.get("sql")
+        if sql_view and hasattr(sql_view, 'set_project'):
+            sql_view.set_project(project)
+        query_view = self.views.get("query")
+        if query_view and hasattr(query_view, 'set_project'):
+            query_view.set_project(project)
 
     def set_dataset(self, dataset):
         """Set the current active dataset"""
