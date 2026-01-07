@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QPushButton, QGroupBox, QWidget, QMessageBox, QLineEdit,
     QRadioButton, QButtonGroup, QTabWidget, QProgressBar, QTextEdit, QCheckBox
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread, QRunnable, QThreadPool
+from PySide6.QtCore import Qt, QTimer, Signal
 
 from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector
 

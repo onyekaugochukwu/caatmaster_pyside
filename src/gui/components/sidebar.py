@@ -118,6 +118,7 @@ class Sidebar(QFrame):
     upload_requested = Signal()  # Request to upload dataset
     project_edit_requested = Signal()  # Request to edit current project
     project_delete_requested = Signal()  # Request to delete current project
+    toggle_ai_panel = Signal()  # Request to toggle AI panel visibility
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -601,6 +602,27 @@ class Sidebar(QFrame):
         self.settings_btn.setCursor(Qt.PointingHandCursor)
         self.settings_btn.clicked.connect(lambda: self.navigation_requested.emit("settings"))
         scroll_layout.addWidget(self.settings_btn)
+
+        # AI Assistant toggle button
+        self.ai_btn = QPushButton("  🤖  AI Assistant")
+        self.ai_btn.setCursor(Qt.PointingHandCursor)
+        self.ai_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #9ca3af;
+                border: none;
+                border-radius: 4px;
+                text-align: left;
+                padding-left: 12px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #1f2937;
+                color: white;
+            }
+        """)
+        self.ai_btn.clicked.connect(self.toggle_ai_panel.emit)
+        scroll_layout.addWidget(self.ai_btn)
 
         # Add bottom spacing
         scroll_layout.addSpacing(16)

@@ -49,12 +49,17 @@ def main():
     except Exception as e:
         print(f"Warning: Database initialization failed: {e}")
 
-    # Create and show main window in maximized mode
+    # Create main window (this will show login dialog)
+    # If login is cancelled, the app will exit during initialization
     window = MainWindow()
-    window.showMaximized()
 
-    # Start event loop
-    sys.exit(app.exec())
+    # Check if login was successful
+    # If login was cancelled, _login_successful will be False
+    if getattr(window, '_login_successful', False):
+        window.showMaximized()
+        sys.exit(app.exec())
+    else:
+        sys.exit(0)
 
 
 if __name__ == "__main__":

@@ -871,6 +871,18 @@ OPERATION_REGISTRY = {
         },
         "creates_columns": ["{output_column}"]
     },
+    "ai_generate_column": {
+        "display_name": "AI Generate Column",
+        "type": TransformationStepType.AI_EXTRACT,
+        "category": "ai",
+        "description": "Generates a new column using AI",
+        "parameter_schema": {
+            "column_name": {"type": "string", "required": True, "label": "Column Name"},
+            "instruction": {"type": "string", "required": True, "label": "Instruction"},
+            "generated_code": {"type": "string", "required": True, "label": "Generated Code"}
+        },
+        "creates_columns": ["{column_name}"]
+    },
 
     # =========================================================================
     # AUDIT OPERATIONS (Duplicate, Gap, Outlier Detection)

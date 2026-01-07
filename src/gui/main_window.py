@@ -10,23 +10,28 @@ from typing import Optional
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QStackedWidget, QStatusBar,
+    QStackedWidget, QStatusBar, QDialog,
     QSplitter, QMessageBox, QApplication, QFrame, QLabel,
     QPushButton, QScrollArea
 )
-from PySide6.QtCore import Qt, Signal, Slot, QSize
+from PySide6.QtCore import Qt, Signal, Slot, QSize, QThreadPool
 from PySide6.QtGui import QFont
 
 # Import project management
 from core.project_manager import Project, Dataset, ProjectExporter
 from core.data_processor import LegacyDataProcessor
 from services.export_service import ExportService
+from services.ai_service import AIManager, DatasetInterpreter, ColumnGenerator, ComplianceReportGenerator
 from gui.dialogs.project_dialog import NewProjectDialog, OpenProjectDialog, SaveProjectDialog, DatasetManagerDialog
+from gui.dialogs.ai_settings_dialog import AISettingsDialog
+from gui.dialogs.column_generator_dialog import ColumnGeneratorDialog
+from gui.dialogs.compliance_report_dialog import ComplianceReportDialog
 
 # Import the new sidebar, ribbon and backstage
 from gui.components.sidebar import Sidebar
 from gui.components.ribbon import RibbonBar, ApplicationMenu
 from gui.components.backstage import BackstageView
+from gui.components.ai_panel import AIPanel
 
 
 class MainWindow(QMainWindow):
@@ -37,8 +42,14 @@ class MainWindow(QMainWindow):
         self.current_project: Optional[Project] = None
         self.current_dataset: Optional[Dataset] = None
         self.auth_service = None
+        self.ai_manager: Optional[AIManager] = None
+        self.ai_interpreter: Optional[DatasetInterpreter] = None
+        self.ai_column_generator: Optional[ColumnGenerator] = None
+        self.ai_compliance: Optional[ComplianceReportGenerator] = None
+        self._login_successful = False  # Track if login was successful
         self._apply_theme()
         self.setup_auth()
+        self.setup_ai()
         self.setup_ui()
         self.setup_backstage()
         self.create_statusbar()
@@ -75,10 +86,51 @@ class MainWindow(QMainWindow):
         # Create default admin if no users exist
         self.auth_service.create_default_admin()
 
-        # Try to load saved session
-        if self.auth_service.load_session():
-            # Session loaded successfully
-            pass
+        # Note: We do NOT auto-load saved sessions
+        # User must login every time the app starts for security
+
+    def setup_ai(self):
+        """Initialize AI services"""
+        self.ai_manager = AIManager()
+        self.ai_interpreter = DatasetInterpreter(self.ai_manager)
+        self.ai_column_generator = ColumnGenerator(self.ai_manager)
+        self.ai_compliance = ComplianceReportGenerator(self.ai_manager)
+
+        # Load any saved API keys from secure storage
+        self._load_ai_credentials()
+
+    def _load_ai_credentials(self):
+        """Load AI credentials from secure storage"""
+        try:
+            from services.ai_service import load_stored_providers
+            load_stored_providers(self.ai_manager)
+            # Update AI panel with current provider info (only if ai_panel exists)
+            if hasattr(self, 'ai_panel') and self.ai_panel:
+                self._update_ai_panel_provider()
+        except Exception as e:
+            print(f"Warning: Could not load AI credentials: {e}")
+
+    def _update_ai_panel_provider(self):
+        """Update the AI panel with current provider info"""
+        if not hasattr(self, 'ai_panel') or not self.ai_panel:
+            return
+        if self.ai_manager and self.ai_manager.default_provider:
+            provider = self.ai_manager.get_provider(self.ai_manager.default_provider)
+            if provider:
+                display_name = provider.provider_name.title()
+                model_name = provider.model or "Unknown"
+                self.ai_panel.set_provider(display_name, model_name)
+
+    def _save_ai_credentials(self):
+        """Save AI credentials to secure storage"""
+        try:
+            from services.ai_service import save_ai_credentials
+
+            for provider in self.ai_manager.providers.values():
+                save_ai_credentials(provider.provider_name, provider.api_key, provider.model)
+
+        except Exception as e:
+            print(f"Warning: Could not save AI credentials: {e}")
 
     def setup_ui(self):
         """Set up the main window UI"""
@@ -129,6 +181,9 @@ class MainWindow(QMainWindow):
             QScrollBar::handle:horizontal:hover {
                 background-color: #9ca3af;
             }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                background: none;
+            }
             QScrollBar:vertical {
                 background-color: #f3f4f6;
                 width: 12px;
@@ -142,7 +197,14 @@ class MainWindow(QMainWindow):
             QScrollBar::handle:vertical:hover {
                 background-color: #9ca3af;
             }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
         """)
+
+        # Thread pool for async AI operations (no parent to avoid thread issues)
+        self.thread_pool = QThreadPool()
+        self.thread_pool.setMaxThreadCount(2)  # Limit to 2 concurrent threads
 
         # Middle area: sidebar + content area
         middle_area = QWidget()
@@ -163,6 +225,7 @@ class MainWindow(QMainWindow):
         self.sidebar.upload_requested.connect(self.on_upload_requested)
         self.sidebar.project_edit_requested.connect(self.edit_current_project)
         self.sidebar.project_delete_requested.connect(self.delete_current_project)
+        self.sidebar.toggle_ai_panel.connect(self.toggle_ai_panel)
         middle_layout.addWidget(self.sidebar)
 
         # Content area (right side) - Light mode
@@ -204,6 +267,18 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.content_stack)
 
         middle_layout.addWidget(content_area, 1)
+
+        # AI Panel (right sidebar) - initially hidden
+        self.ai_panel = AIPanel()
+        self.ai_panel.setFixedWidth(320)
+        self.ai_panel.setVisible(False)
+        self.ai_panel.sendMessage.connect(self._on_ai_message)
+        self.ai_panel.cancelRequest.connect(self._on_ai_cancel_request)
+        self.ai_panel.analyzeDataset.connect(self._on_ai_analyze_dataset)
+        self.ai_panel.generateColumn.connect(self._on_ai_generate_column)
+        self.ai_panel.complianceCheck.connect(self._on_ai_compliance_check)
+        self.ai_panel.showSettings.connect(self._on_ai_show_settings)
+        middle_layout.addWidget(self.ai_panel)
 
         # Set the middle_area as the scroll area's widget
         scroll_area.setWidget(middle_area)
@@ -258,6 +333,12 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'backstage_view') and self.backstage_view.isVisible():
             self.backstage_view.setGeometry(0, 0, self.width(), self.height())
 
+    def closeEvent(self, event):
+        """Handle window close - wait for threads to finish"""
+        # Wait for any running AI threads to complete (max 5 seconds)
+        self.thread_pool.waitForDone(5000)
+        event.accept()
+
     def _on_settings(self):
         """Navigate to settings"""
         self.hide_backstage()
@@ -279,6 +360,302 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Checking for updates...")
         elif "About" in help_option:
             self.show_about()
+
+    # ========================================================================
+    # AI Panel Signal Handlers
+    # ========================================================================
+
+    def toggle_ai_panel(self, visible: bool = None):
+        """Toggle the AI panel visibility"""
+        if visible is None:
+            visible = not self.ai_panel.isVisible()
+        self.ai_panel.setVisible(visible)
+
+    @Slot(str)
+    def _on_ai_message(self, message: str):
+        """Handle AI chat message"""
+        if not self._check_ai_available():
+            return
+
+        # Get current dataset info for context
+        context = self._get_ai_context()
+
+        def run_async():
+            """Run async code in a new event loop"""
+            import asyncio
+
+            async def send_to_ai():
+                try:
+                    # Show typing indicator (via signal for thread safety)
+                    self.ai_panel._typingIndicatorNeeded.emit()
+
+                    # Build context-enhanced prompt
+                    full_prompt = f"{context}\n\nUser Question: {message}"
+
+                    response = await self.ai_manager.complete(
+                        prompt=full_prompt,
+                        task_type="general",
+                        temperature=0.3
+                    )
+
+                    # Remove typing indicator and show response (via signal for thread safety)
+                    self.ai_panel._responseReady.emit(response.content)
+
+                except Exception as e:
+                    self.ai_panel._errorReady.emit(str(e))
+
+            # Run in new event loop (don't set as global loop)
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(send_to_ai())
+            finally:
+                loop.close()
+
+        # Run async using thread pool
+        self.thread_pool.start(run_async)
+
+    @Slot()
+    def _on_ai_cancel_request(self):
+        """Handle cancel request - stop ongoing AI operation"""
+        # Note: For true cancellation, we would need to track and cancel the asyncio tasks
+        # For now, we show a message and reset the UI state
+        self.ai_panel.set_processing(False)
+        self.ai_panel._responseReady.emit("Request cancelled.")
+        self.statusBar().showMessage("AI request cancelled")
+
+    @Slot()
+    def _on_ai_analyze_dataset(self):
+        """Handle analyze dataset request"""
+        if not self._check_data_loaded():
+            return
+        if not self._check_ai_available():
+            return
+
+        def run_async():
+            """Run async code in a new event loop"""
+            import asyncio
+
+            async def analyze():
+                try:
+                    self.statusBar().showMessage("Analyzing dataset with AI...")
+                    df = self.current_dataset.get_current_dataframe()
+
+                    # Get project context if available
+                    context = ""
+                    if self.current_project:
+                        context = f"Project: {self.current_project.name}\nClient: {self.current_project.client_name or 'N/A'}"
+
+                    summary = await self.ai_interpreter.analyze_dataset(df, context)
+
+                    # Show results in AI panel (via signal for thread safety)
+                    response = f"## Dataset Analysis\n\n**Executive Summary:**\n{summary.executive_summary}\n\n"
+                    response += f"**Data Quality Score:** {summary.data_quality.get('overall_score', 'N/A')}/100\n\n"
+                    response += f"**Key Fields:** {', '.join(summary.key_fields)}\n\n"
+                    response += "**Audit Insights:**\n"
+                    for insight in summary.audit_insights[:5]:
+                        response += f"- **{insight.get('title', 'Unknown')}** ({insight.get('severity', 'unknown')} risk)\n"
+                        response += f"  {insight.get('description', '')}\n\n"
+
+                    self.ai_panel._responseReady.emit(response)
+                    self.statusBar().showMessage("Dataset analysis complete")
+
+                except Exception as e:
+                    self.ai_panel._errorReady.emit(str(e))
+                    self.statusBar().showMessage("Analysis failed")
+
+            # Run in new event loop (don't set as global loop)
+            loop = asyncio.new_event_loop()
+            try:
+                loop.run_until_complete(analyze())
+            finally:
+                loop.close()
+
+        # Run async using thread pool
+        self.thread_pool.start(run_async)
+
+    @Slot()
+    def _on_ai_generate_column(self):
+        """Open AI column generator dialog"""
+        if not self._check_data_loaded():
+            return
+
+        # Get all datasets from current project
+        dataframes = {}
+        if self.current_project and hasattr(self.current_project, 'datasets'):
+            # datasets is a Dict[str, Dataset], iterate over values to get Dataset objects
+            for ds in self.current_project.datasets.values():
+                dataframes[ds.name] = ds.get_current_dataframe()
+        elif self.current_dataset:
+            # Fallback to current dataset only
+            dataframes[self.current_dataset.name] = self.current_dataset.get_current_dataframe()
+
+        if not dataframes:
+            QMessageBox.warning(self, "No Data", "No dataset available to generate column for.")
+            return
+
+        # Use current dataset name as selected key if available
+        selected_key = self.current_dataset.name if self.current_dataset and self.current_dataset.name in dataframes else None
+
+        dialog = ColumnGeneratorDialog(
+            dataframes,
+            self.ai_column_generator,
+            self,
+            selected_key=selected_key
+        )
+        dialog.column_applied.connect(self._on_column_applied)
+        dialog.exec()
+
+    @Slot()
+    def _on_ai_compliance_check(self):
+        """Open AI compliance check dialog"""
+        if not self._check_data_loaded():
+            return
+        if not self._check_ai_available():
+            return
+
+        # Get all datasets from current project
+        dataframes = {}
+        if self.current_project and hasattr(self.current_project, 'datasets'):
+            # datasets is a Dict[str, Dataset], iterate over values to get Dataset objects
+            for ds in self.current_project.datasets.values():
+                dataframes[ds.name] = ds.get_current_dataframe()
+        elif self.current_dataset:
+            dataframes[self.current_dataset.name] = self.current_dataset.get_current_dataframe()
+
+        if not dataframes:
+            QMessageBox.warning(self, "No Data", "No data available for compliance check.")
+            return
+
+        # Determine selected key
+        selected_key = self.current_dataset.name if self.current_dataset else None
+
+        dialog = ComplianceReportDialog(
+            dataframes,
+            self.ai_compliance,
+            self,
+            selected_key=selected_key
+        )
+        dialog.exec()
+
+    @Slot()
+    def _on_ai_show_settings(self):
+        """Open AI settings dialog"""
+        dialog = AISettingsDialog(self.ai_manager, self)
+        dialog.settingsChanged.connect(self._on_ai_settings_changed)
+        dialog.exec()
+
+    def _on_ai_settings_changed(self):
+        """Handle AI settings changes"""
+        self._save_ai_credentials()
+
+        # Reload AI providers from storage
+        try:
+            from services.ai_service import load_stored_providers, get_ai_credentials
+            # First load providers, then set default provider
+            load_stored_providers(self.ai_manager)
+
+            # Load and set the default provider (after providers are loaded)
+            default_creds = get_ai_credentials("default_provider")
+            if default_creds and default_creds.get("api_key"):
+                provider_name = default_creds["api_key"]
+                # Verify this provider exists before setting it
+                if provider_name in self.ai_manager.providers:
+                    self.ai_manager.default_provider = provider_name
+                else:
+                    # Provider not loaded yet, try to add it
+                    self.ai_manager.default_provider = provider_name
+
+            # Update AI panel with current provider info
+            self._update_ai_panel_provider()
+        except Exception as e:
+            print(f"Warning: Could not reload AI credentials: {e}")
+
+        self.statusBar().showMessage("AI settings updated")
+
+        # Update AI info in settings view if it's visible
+        settings_view = self.views.get("settings")
+        if settings_view and hasattr(settings_view, 'refresh_ai_info'):
+            settings_view.refresh_ai_info()
+
+    def _on_column_applied(self, data: dict):
+        """Handle when a column is applied"""
+        if not self.current_dataset:
+            return
+
+        column_name = data.get("column_name")
+        code = data.get("code")
+        instruction = data.get("instruction")
+
+        # Add step to transformation pipeline
+        if self.current_dataset.transformation_pipeline is None:
+            from core.data_processor import TransformationPipeline
+            self.current_dataset.set_pipeline(TransformationPipeline(self.current_dataset.original_dataframe))
+
+        # Add the step to the pipeline
+        step_params = {
+            "column_name": column_name,
+            "instruction": instruction,
+            "generated_code": code
+        }
+
+        try:
+            print(f"Adding step with params: {step_params}")
+            created = self.current_dataset.transformation_pipeline.add_step("ai_generate_column", step_params)
+            print(f"Step added successfully: {created}")
+            print(f"Pipeline now has {len(self.current_dataset.transformation_pipeline.get_steps())} steps")
+
+            # Update the dataset's dataframe to include the new column
+            self.current_dataset.original_dataframe = self.current_dataset.get_current_dataframe()
+
+            # Refresh the transform view to show the new step
+            transform_view = self.views.get("transform")
+            print(f"Transform view found: {transform_view}")
+            if transform_view:
+                transform_view.set_dataframe(self.current_dataset.get_current_dataframe(),
+                                            self.current_dataset.transformation_pipeline)
+                print("Transform view refreshed")
+
+            self.statusBar().showMessage(f"Column '{column_name}' added to dataset - step recorded")
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.statusBar().showMessage(f"Column added but failed to record step: {e}")
+
+    def _check_ai_available(self) -> bool:
+        """Check if AI is available (configured)"""
+        if not self.ai_manager or not self.ai_manager.providers:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "AI Not Configured",
+                "Please configure an AI provider in Settings > AI Settings first."
+            )
+            # Open settings dialog
+            self._on_ai_show_settings()
+            return False
+        return True
+
+    def _get_ai_context(self) -> str:
+        """Get context information for AI queries"""
+        context_parts = []
+
+        if self.current_project:
+            context_parts.append(f"Project: {self.current_project.name}")
+            if self.current_project.client_name:
+                context_parts.append(f"Client: {self.current_project.client_name}")
+
+        if self.current_dataset:
+            df = self.current_dataset.get_current_dataframe()
+            if df is not None:
+                context_parts.append(f"Dataset: {self.current_dataset.name}")
+                context_parts.append(f"Rows: {len(df):,}")
+                context_parts.append(f"Columns: {len(df.columns)}")
+                context_parts.append(f"Columns: {', '.join(df.columns[:10])}")
+                if len(df.columns) > 10:
+                    context_parts.append(f"And {len(df.columns) - 10} more columns...")
+
+        return "\n".join(context_parts) if context_parts else "No project or dataset loaded."
 
     def create_views(self):
         """Create all main views and add them to the stacked widget"""
@@ -309,7 +686,7 @@ class MainWindow(QMainWindow):
             "projects": ProjectsView(),
             "sessions": SessionsView(),
             "reports": ReportsView(),
-            "settings": SettingsView(),
+            "settings": SettingsView(self),
         }
 
         # Connect dashboard signals
@@ -1776,14 +2153,23 @@ class MainWindow(QMainWindow):
 
             dialog = LoginDialog(self.auth_service, self)
             dialog.login_success.connect(self.handle_login_success)
-            dialog.exec()
-            # If dialog closed without login, check again
-            if not self.auth_service.is_authenticated():
-                # User cancelled login, exit app
+
+            # If dialog is rejected (closed/cancelled), exit app
+            if not dialog.exec():
+                self.close()
                 QApplication.instance().quit()
+                return
+
+            # If we get here, login was successful
+            if not self.auth_service.is_authenticated():
+                # Should not happen, but be safe
+                self.close()
+                QApplication.instance().quit()
+                return
 
     def handle_login_success(self, user):
         """Handle successful user login"""
+        self._login_successful = True
         self.statusBar().showMessage(f"Welcome, {user.full_name}!")
         self.update_auth_ui()
         # Show window maximized after successful login

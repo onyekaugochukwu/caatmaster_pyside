@@ -17,6 +17,7 @@ class SettingsView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.auth_service = None
+        self.main_window = parent  # Store reference to main window
         self.setup_ui()
 
     def set_auth_service(self, auth_service):
@@ -250,23 +251,52 @@ class SettingsView(QWidget):
         widget = QWidget()
         layout = QVBoxLayout(widget)
 
-        # AI Provider settings
-        provider_group = QGroupBox("AI Provider")
-        provider_layout = QFormLayout()
+        # AI Provider configuration button
+        config_group = QGroupBox("Configure AI Providers")
+        config_layout = QVBoxLayout()
 
-        provider_combo = QComboBox()
-        provider_combo.addItems(["OpenAI", "Anthropic", "Local LLM", "None"])
-        provider_layout.addRow("Provider:", provider_combo)
+        config_desc = QLabel(
+            "Configure AI providers for dataset analysis, column generation, "
+            "and compliance checking. Supports OpenAI, Anthropic, DeepSeek, "
+            "Hugging Face, Ollama, LlamaCPP, and custom providers."
+        )
+        config_desc.setWordWrap(True)
+        config_desc.setStyleSheet("color: #666; font-size: 12px;")
+        config_layout.addWidget(config_desc)
 
-        api_key_input = QLineEdit()
-        api_key_input.setEchoMode(QLineEdit.Password)
-        provider_layout.addRow("API Key:", api_key_input)
+        config_btn = QPushButton("Edit AI Settings")
+        config_btn.setStyleSheet("""
+            QPushButton {
+                padding: 12px 24px;
+                background-color: #3b82f6;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #2563eb;
+            }
+        """)
+        config_btn.clicked.connect(self.open_ai_settings)
+        config_layout.addWidget(config_btn)
 
-        model_input = QLineEdit("gpt-4")
-        provider_layout.addRow("Model:", model_input)
+        config_group.setLayout(config_layout)
+        layout.addWidget(config_group)
 
-        provider_group.setLayout(provider_layout)
-        layout.addWidget(provider_group)
+        # Current provider info
+        info_group = QGroupBox("Current Configuration")
+        info_layout = QFormLayout()
+
+        self.ai_provider_label = QLabel("Not configured")
+        info_layout.addRow("Active Provider:", self.ai_provider_label)
+
+        self.ai_model_label = QLabel("-")
+        info_layout.addRow("Model:", self.ai_model_label)
+
+        info_group.setLayout(info_layout)
+        layout.addWidget(info_group)
 
         # ML settings
         ml_group = QGroupBox("Machine Learning")
@@ -289,6 +319,46 @@ class SettingsView(QWidget):
         layout.addStretch()
 
         return widget
+
+    def open_ai_settings(self):
+        """Open AI settings dialog"""
+        from ..dialogs.ai_settings_dialog import AISettingsDialog
+
+        if self.main_window and hasattr(self.main_window, 'ai_manager'):
+            dialog = AISettingsDialog(self.main_window.ai_manager, self)
+            dialog.exec()
+            # Update info after settings change
+            self.update_ai_info()
+        else:
+            QMessageBox.warning(
+                self,
+                "Error",
+                "Unable to open AI settings. Please restart the application."
+            )
+
+    def update_ai_info(self):
+        """Update AI configuration info display"""
+        if self.main_window and hasattr(self.main_window, 'ai_manager'):
+            ai_manager = self.main_window.ai_manager
+            if ai_manager and ai_manager.providers:
+                # Show the default provider
+                default = ai_manager.default_provider
+                provider = ai_manager.get_provider(default)
+                if provider:
+                    from ..dialogs.ai_settings_dialog import AIProviderFactory
+                    display_name = AIProviderFactory.get_display_name(default)
+                    self.ai_provider_label.setText(display_name)
+                    self.ai_model_label.setText(provider.model or "-")
+                else:
+                    self.ai_provider_label.setText("Not configured")
+                    self.ai_model_label.setText("-")
+            else:
+                self.ai_provider_label.setText("Not configured")
+                self.ai_model_label.setText("-")
+
+    def refresh_ai_info(self):
+        """Refresh AI info - called when dialog closes"""
+        self.update_ai_info()
 
     def create_advanced_tab(self) -> QWidget:
         """Create advanced settings tab"""

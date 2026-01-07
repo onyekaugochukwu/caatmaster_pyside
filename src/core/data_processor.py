@@ -94,6 +94,7 @@ class DataProcessor:
         'ai_classify': 'ai_classify',
         'ai_summarize': 'ai_summarize',
         'ai_enrich': 'ai_enrich',
+        'ai_generate_column': 'ai_generate_column',
         'audit_duplicate_detection': 'duplicate_detection',
         'audit_gap_analysis': 'gap_analysis',
         'audit_outlier_detection': 'audit_outlier_detection',
@@ -377,6 +378,8 @@ class DataProcessor:
             return self._call_mapped_method(self.ai_summarize, df, params)
         elif operation_id == 'ai_enrich':
             return self._call_mapped_method(self.ai_enrich, df, params)
+        elif operation_id == 'ai_generate_column':
+            return self._call_mapped_method(self.ai_generate_column, df, params)
 
         # ML Classification & Prediction
         elif operation_id == 'ml_classify':
@@ -1115,6 +1118,43 @@ class DataProcessor:
         return df.with_columns(
             pl.col(column).map_elements(enrich, return_dtype=pl.Utf8).alias(output_col)
         )
+
+    def ai_generate_column(self, df: pl.DataFrame, column_name: str, instruction: str,
+                           generated_code: str, **kwargs) -> pl.DataFrame:
+        """Execute AI-generated column code"""
+        try:
+            # Create execution context with df available
+            exec_globals = {"pl": pl}
+            exec_locals = {"df": df}
+
+            # Check if code reassigns df
+            lines = generated_code.strip().split("\n")
+            first_line = lines[0] if lines else ""
+            reassigns_df = "=" in first_line and first_line.split("=")[0].strip() in ("df", "_df")
+
+            if not reassigns_df:
+                # Wrap to capture result
+                wrapped = "_result = (" + generated_code.strip() + ")\n_result"
+                code_to_exec = wrapped
+            else:
+                code_to_exec = generated_code
+
+            exec(code_to_exec, exec_globals, exec_locals)
+
+            # Get result
+            if "_result" in exec_locals:
+                result = exec_locals["_result"]
+                if isinstance(result, pl.DataFrame):
+                    return result
+            if "df" in exec_locals:
+                result_df = exec_locals["df"]
+                if isinstance(result_df, pl.DataFrame):
+                    return result_df
+
+            return df
+        except Exception as e:
+            print(f"Error executing AI-generated column code: {e}")
+            raise
 
     # ============================================================================
     # AUDIT IMPLEMENTATIONS

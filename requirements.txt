@@ -3,7 +3,7 @@
 
 # GUI Framework
 PySide6>=6.8.0  # Supports Python 3.12
-# pyqtads removed - not compatible with newer Python versions
+
 
 # Data Processing
 polars>=1.0.0
@@ -35,9 +35,13 @@ pyjwt>=2.8.0  # JWT token handling
 # Build Tools
 pyinstaller>=6.3.0  # For building portable directory
 
-# Optional: AI Features
-# openai>=1.0.0  # Uncomment if using OpenAI API
-# anthropic>=0.18.0  # Uncomment if using Claude API
+# Optional: AI Features (uncomment to enable)
+openai>=1.68.0  # OpenAI GPT models (GPT-4o, GPT-4o-mini, etc.)
+anthropic>=0.18.0  # Anthropic Claude models
+google-generativeai>=0.3.0  # Google Gemini models
+httpx>=0.25.0  # For Ollama and other HTTP-based providers
+huggingface_hub>=0.20.0  # Hugging Face Inference API
+cryptography>=41.0.0  # For encrypted credential storage (Fernet)
 
 # Development
 pytest>=7.4.0

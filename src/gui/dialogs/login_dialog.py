@@ -1,5 +1,5 @@
 """
-Login and Registration Dialogs for CAATmaster
+Login and Registration Dialogs for CaatMaster
 """
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
@@ -7,7 +7,6 @@ from PySide6.QtWidgets import (
     QTabWidget, QWidget, QGroupBox
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction
 import traceback
 
 
@@ -23,14 +22,14 @@ class LoginDialog(QDialog):
         self.setup_ui()
 
     def setup_ui(self):
-        self.setWindowTitle("CAATmaster - Login")
+        self.setWindowTitle("CaatMaster - Login")
         self.setMinimumWidth(400)
         self.setModal(True)
 
         layout = QVBoxLayout(self)
 
         # Logo/title
-        title = QLabel("Welcome to CAATmaster")
+        title = QLabel("Welcome to CaatMaster")
         title.setStyleSheet("font-size: 24px; font-weight: bold; color: #0078d4; padding: 20px;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
@@ -85,13 +84,6 @@ class LoginDialog(QDialog):
         button_layout.addWidget(self.register_btn)
 
         layout.addLayout(button_layout)
-
-        # Info
-        info_label = QLabel(
-            "Default admin account:\n  Username: admin\n  Password: admin123"
-        )
-        info_label.setStyleSheet("color: #999; font-size: 11px; padding: 10px; background: #f5f5f5; border-radius: 4px;")
-        layout.addWidget(info_label)
 
         layout.addStretch()
 
