@@ -1106,6 +1106,14 @@ class ColumnGenerator:
 
         schema_info = self._get_schema_info(df)
 
+        # Build column name instruction
+        if column_name:
+            name_instruction = f'The column MUST be named "{column_name}".'
+            name_in_code = f'alias("{column_name}")'
+        else:
+            name_instruction = 'Provide a clear, descriptive column name.'
+            name_in_code = 'alias("new_column")'
+
         prompt = f"""
 You are helping an auditor create a new derived column.
 
@@ -1114,10 +1122,12 @@ Dataset Schema:
 
 Instruction: "{instruction}"
 
+{name_instruction}
+
 Provide your response as JSON:
 {{
-    "column_name": "suggested_name",
-    "code": "Complete Polars code to create this column",
+    "column_name": "{column_name if column_name else "your_suggested_name"}",
+    "code": "Complete Polars code to create this column with {name_in_code}",
     "explanation": "Brief explanation of what this column contains",
     "example_values": ["value1", "value2", "value3"]
 }}
@@ -1126,6 +1136,7 @@ Requirements:
 - Use Polars (pl.) library
 - Handle null values appropriately
 - Use method chaining with .with_columns()
+- The code MUST create a column named "{column_name if column_name else 'your_suggested_name'}"
 - Return only valid JSON
 """
 

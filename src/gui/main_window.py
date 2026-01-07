@@ -582,9 +582,10 @@ class MainWindow(QMainWindow):
         if not self.current_dataset:
             return
 
-        column_name = data.get("column_name")
+        column_name = data.get("column_name")  # Final column name (user's or AI's)
         code = data.get("code")
         instruction = data.get("instruction")
+        original_ai_name = data.get("original_ai_name")  # AI's suggested name
 
         # Add step to transformation pipeline
         if self.current_dataset.transformation_pipeline is None:
@@ -602,6 +603,22 @@ class MainWindow(QMainWindow):
             print(f"Adding step with params: {step_params}")
             created = self.current_dataset.transformation_pipeline.add_step("ai_generate_column", step_params)
             print(f"Step added successfully: {created}")
+
+            # Fix column tracking if user renamed the column
+            if original_ai_name and original_ai_name != column_name:
+                steps = self.current_dataset.transformation_pipeline.get_steps()
+                if steps:
+                    last_step = steps[-1]
+                    # Update created_columns to use the user's column name
+                    if original_ai_name in last_step.created_columns:
+                        last_step.created_columns.remove(original_ai_name)
+                        last_step.created_columns.append(column_name)
+                    # Update column tracking
+                    if original_ai_name in self.current_dataset.transformation_pipeline._column_tracking:
+                        tracking = self.current_dataset.transformation_pipeline._column_tracking.pop(original_ai_name)
+                        self.current_dataset.transformation_pipeline._column_tracking[column_name] = tracking
+                    print(f"Column tracking updated: {original_ai_name} -> {column_name}")
+
             print(f"Pipeline now has {len(self.current_dataset.transformation_pipeline.get_steps())} steps")
 
             # Update the dataset's dataframe to include the new column
