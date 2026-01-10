@@ -830,6 +830,186 @@ OPERATION_REGISTRY = {
     },
 
     # =========================================================================
+    # SUPERVISED LEARNING - REGRESSION
+    # =========================================================================
+    "ml_linear_regression": {
+        "display_name": "Linear Regression",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Predicts continuous values using linear regression",
+        "parameter_schema": {
+            "features": {"type": "list[column]", "required": True, "label": "Feature Columns"},
+            "target": {"type": "column", "required": True, "label": "Target Column"},
+            "output_column": {"type": "string", "required": False, "default": "y_hat", "label": "Prediction Column"},
+            "fit_intercept": {"type": "bool", "required": False, "default": True, "label": "Fit Intercept"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+    "ml_glm": {
+        "display_name": "GLM Regression",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Generalized Linear Models (Gaussian, Binomial, Poisson, Gamma)",
+        "parameter_schema": {
+            "features": {"type": "list[column]", "required": True, "label": "Feature Columns"},
+            "target": {"type": "column", "required": True, "label": "Target Column"},
+            "output_column": {"type": "string", "required": False, "default": "y_hat", "label": "Prediction Column"},
+            "family": {"type": "string", "required": False, "default": "gaussian", "label": "Family",
+                       "options": ["gaussian", "binomial", "poisson", "gamma"]}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+
+    # =========================================================================
+    # SUPERVISED LEARNING - TREE-BASED
+    # =========================================================================
+    "ml_decision_tree": {
+        "display_name": "Decision Tree",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Classification/regression using decision tree",
+        "parameter_schema": {
+            "features": {"type": "list[column]", "required": True, "label": "Feature Columns"},
+            "target": {"type": "column", "required": True, "label": "Target Column"},
+            "output_column": {"type": "string", "required": False, "default": "prediction", "label": "Prediction Column"},
+            "max_depth": {"type": "int", "required": False, "default": 10, "label": "Max Depth"},
+            "min_samples_split": {"type": "int", "required": False, "default": 2, "label": "Min Samples Split"},
+            "min_samples_leaf": {"type": "int", "required": False, "default": 1, "label": "Min Samples Leaf"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+    "ml_random_forest": {
+        "display_name": "Random Forest",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Ensemble learning with multiple decision trees",
+        "parameter_schema": {
+            "features": {"type": "list[column]", "required": True, "label": "Feature Columns"},
+            "target": {"type": "column", "required": True, "label": "Target Column"},
+            "output_column": {"type": "string", "required": False, "default": "prediction", "label": "Prediction Column"},
+            "n_estimators": {"type": "int", "required": False, "default": 100, "label": "Number of Trees"},
+            "max_depth": {"type": "int", "required": False, "default": 10, "label": "Max Depth"},
+            "min_samples_split": {"type": "int", "required": False, "default": 2, "label": "Min Samples Split"},
+            "min_samples_leaf": {"type": "int", "required": False, "default": 1, "label": "Min Samples Leaf"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+    "ml_gradient_boosting": {
+        "display_name": "Gradient Boosting",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Sequential ensemble using gradient boosting",
+        "parameter_schema": {
+            "features": {"type": "list[column]", "required": True, "label": "Feature Columns"},
+            "target": {"type": "column", "required": True, "label": "Target Column"},
+            "output_column": {"type": "string", "required": False, "default": "prediction", "label": "Prediction Column"},
+            "n_estimators": {"type": "int", "required": False, "default": 100, "label": "Number of Estimators"},
+            "learning_rate": {"type": "float", "required": False, "default": 0.1, "label": "Learning Rate"},
+            "max_depth": {"type": "int", "required": False, "default": 5, "label": "Max Depth"},
+            "min_samples_split": {"type": "int", "required": False, "default": 2, "label": "Min Samples Split"},
+            "min_samples_leaf": {"type": "int", "required": False, "default": 1, "label": "Min Samples Leaf"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+    "ml_xgboost": {
+        "display_name": "XGBoost",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Extreme Gradient Boosting for high performance",
+        "parameter_schema": {
+            "features": {"type": "list[column]", "required": True, "label": "Feature Columns"},
+            "target": {"type": "column", "required": True, "label": "Target Column"},
+            "output_column": {"type": "string", "required": False, "default": "prediction", "label": "Prediction Column"},
+            "n_estimators": {"type": "int", "required": False, "default": 100, "label": "Number of Trees"},
+            "learning_rate": {"type": "float", "required": False, "default": 0.1, "label": "Learning Rate"},
+            "max_depth": {"type": "int", "required": False, "default": 6, "label": "Max Depth"},
+            "subsample": {"type": "float", "required": False, "default": 0.8, "label": "Subsample"},
+            "colsample_bytree": {"type": "float", "required": False, "default": 0.8, "label": "Column Sample by Tree"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+    "ml_lightgbm": {
+        "display_name": "LightGBM",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Light Gradient Boosting Machine - fast on large datasets",
+        "parameter_schema": {
+            "features": {"type": "list[column]", "required": True, "label": "Feature Columns"},
+            "target": {"type": "column", "required": True, "label": "Target Column"},
+            "output_column": {"type": "string", "required": False, "default": "prediction", "label": "Prediction Column"},
+            "n_estimators": {"type": "int", "required": False, "default": 100, "label": "Number of Leaves"},
+            "learning_rate": {"type": "float", "required": False, "default": 0.1, "label": "Learning Rate"},
+            "num_leaves": {"type": "int", "required": False, "default": 31, "label": "Number of Leaves"},
+            "min_child_samples": {"type": "int", "required": False, "default": 20, "label": "Min Child Samples"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+
+    # =========================================================================
+    # UNSUPERVISED LEARNING - CLUSTERING
+    # =========================================================================
+    "ml_dbscan": {
+        "display_name": "DBSCAN Clustering",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Density-based spatial clustering",
+        "parameter_schema": {
+            "features": {"type": "list[column]", "required": True, "label": "Feature Columns"},
+            "output_column": {"type": "string", "required": False, "default": "cluster", "label": "Cluster Column"},
+            "eps": {"type": "float", "required": False, "default": 0.5, "label": "Epsilon (neighborhood)"},
+            "min_samples": {"type": "int", "required": False, "default": 5, "label": "Min Samples"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+    "ml_gmm": {
+        "display_name": "Gaussian Mixture",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Probabilistic clustering with Gaussian mixtures",
+        "parameter_schema": {
+            "features": {"type": "list[column]", "required": True, "label": "Feature Columns"},
+            "output_column": {"type": "string", "required": False, "default": "cluster", "label": "Cluster Column"},
+            "n_components": {"type": "int", "required": False, "default": 3, "label": "Number of Components"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+
+    # =========================================================================
+    # TIME SERIES (Statsmodels)
+    # =========================================================================
+    "ml_arima": {
+        "display_name": "ARIMA Forecast",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Time series forecasting with ARIMA",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Value Column"},
+            "output_column": {"type": "string", "required": False, "default": "forecast", "label": "Forecast Column"},
+            "order_p": {"type": "int", "required": False, "default": 1, "label": "AR Order (p)"},
+            "order_d": {"type": "int", "required": False, "default": 1, "label": "Differencing (d)"},
+            "order_q": {"type": "int", "required": False, "default": 1, "label": "MA Order (q)"},
+            "steps": {"type": "int", "required": False, "default": 12, "label": "Forecast Steps"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+    "ml_ets": {
+        "display_name": "Exponential Smoothing",
+        "type": TransformationStepType.ML_PREDICT,
+        "category": "ml",
+        "description": "Exponential smoothing state space models",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Value Column"},
+            "output_column": {"type": "string", "required": False, "default": "forecast", "label": "Forecast Column"},
+            "trend": {"type": "string", "required": False, "default": "add", "label": "Trend",
+                      "options": ["add", "mul", None]},
+            "seasonal": {"type": "string", "required": False, "default": None, "label": "Seasonal",
+                        "options": ["add", "mul", None]},
+            "steps": {"type": "int", "required": False, "default": 12, "label": "Forecast Steps"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+
+    # =========================================================================
     # AI OPERATIONS (Enrichment & Classification)
     # =========================================================================
     "ai_classify": {

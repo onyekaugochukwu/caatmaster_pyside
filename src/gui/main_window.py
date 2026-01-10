@@ -854,7 +854,15 @@ class MainWindow(QMainWindow):
 
         # Create a copy of the dataset
         new_dataset = dataset.duplicate()
-        new_dataset.name = f"{dataset.name} (copy)"
+        # Ensure unique name
+        base_name = f"{dataset.name} (copy)"
+        unique_name = base_name
+        counter = 1
+        existing_names = {ds.name for ds in self.current_project.list_datasets()}
+        while unique_name in existing_names:
+            unique_name = f"{base_name} ({counter})"
+            counter += 1
+        new_dataset.name = unique_name
         self.current_project.add_dataset(new_dataset)
         self.sidebar.set_project(self.current_project)
         self.statusBar().showMessage(f"Dataset duplicated: {new_dataset.name}")
@@ -1181,10 +1189,10 @@ class MainWindow(QMainWindow):
             datasets = project.list_datasets()
             if datasets:
                 self.current_dataset = datasets[0]
-                # Update views with the dataset
+                # Update views with the dataset - include pipeline to preserve steps
                 current_df = self.current_dataset.get_current_dataframe()
                 if current_df is not None:
-                    self.views["transform"].set_dataframe(current_df)
+                    self.views["transform"].set_dataframe(current_df, self.current_dataset.transformation_pipeline)
                     self.views["sql"].set_dataframe(current_df, self.current_dataset.name)
 
             # Navigate to dashboard
@@ -1611,10 +1619,10 @@ class MainWindow(QMainWindow):
                     datasets = project.list_datasets()
                     if datasets:
                         self.current_dataset = datasets[0]
-                        # Update views with the dataset
+                        # Update views with the dataset - include pipeline to preserve steps
                         current_df = self.current_dataset.get_current_dataframe()
                         if current_df is not None:
-                            self.views["transform"].set_dataframe(current_df)
+                            self.views["transform"].set_dataframe(current_df, self.current_dataset.transformation_pipeline)
                             self.views["sql"].set_dataframe(current_df, self.current_dataset.name)
 
                     # Close backstage view and navigate to dashboard
@@ -1640,10 +1648,10 @@ class MainWindow(QMainWindow):
                 datasets = project.list_datasets()
                 if datasets:
                     self.current_dataset = datasets[0]
-                    # Update views with the dataset
+                    # Update views with the dataset - include pipeline to preserve steps
                     current_df = self.current_dataset.get_current_dataframe()
                     if current_df is not None:
-                        self.views["transform"].set_dataframe(current_df)
+                        self.views["transform"].set_dataframe(current_df, self.current_dataset.transformation_pipeline)
                         self.views["sql"].set_dataframe(current_df, self.current_dataset.name)
 
                 # Close backstage view and navigate to dashboard
@@ -1771,8 +1779,8 @@ class MainWindow(QMainWindow):
             # Update status
             self.statusBar().showMessage(f"Dataset '{dataset_name}' added to project '{self.current_project.name}'")
 
-            # Update views with the new data
-            self.views["transform"].set_dataframe(dataframe)
+            # Update views with the new data - include pipeline (None for new datasets)
+            self.views["transform"].set_dataframe(dataframe, dataset.transformation_pipeline)
             self.views["sql"].set_dataframe(dataframe, dataset.name)
 
             # Refresh dashboard stats

@@ -371,11 +371,87 @@ class ColumnContextMenu(QMenu):
         self.addMenu(stats_menu)
 
     def _add_ml_section(self):
-        """Add ML analysis submenu"""
+        """Add ML analysis submenu - organized by category"""
         ml_menu = self._create_submenu("ML Analysis", "chart")
 
-        # Anomaly Detection
-        anomaly_menu = self._create_submenu("Detect Anomalies", "warning")
+        # =====================================================================
+        # SUPERVISED LEARNING - Linear Models
+        # =====================================================================
+        linear_menu = self._create_submenu("Supervised → Linear", "line")
+        linear_ops = [
+            ("Linear Regression", "ml_linear_regression", "Predict continuous values"),
+            ("GLM Regression", "ml_glm", "Generalized Linear Models"),
+        ]
+        for label, op, desc in linear_ops:
+            action = QAction(label, self)
+            action.setToolTip(desc)
+            action.triggered.connect(
+                lambda checked, o=op: self._emit_transform(o)
+            )
+            linear_menu.addAction(action)
+        ml_menu.addMenu(linear_menu)
+
+        # =====================================================================
+        # SUPERVISED LEARNING - Tree-Based
+        # =====================================================================
+        tree_menu = self._create_submenu("Supervised → Tree-Based", "tree")
+        tree_ops = [
+            ("Decision Tree", "ml_decision_tree", "Tree-based classification/regression"),
+            ("Random Forest", "ml_random_forest", "Ensemble of decision trees"),
+            ("Gradient Boosting", "ml_gradient_boosting", "Sequential ensemble boosting"),
+            ("XGBoost", "ml_xgboost", "Extreme Gradient Boosting"),
+            ("LightGBM", "ml_lightgbm", "Light Gradient Boosting"),
+        ]
+        for label, op, desc in tree_ops:
+            action = QAction(label, self)
+            action.setToolTip(desc)
+            action.triggered.connect(
+                lambda checked, o=op: self._emit_transform(o)
+            )
+            tree_menu.addAction(action)
+        ml_menu.addMenu(tree_menu)
+
+        # =====================================================================
+        # UNSUPERVISED LEARNING - Clustering
+        # =====================================================================
+        cluster_menu = self._create_submenu("Unsupervised → Clustering", "cluster")
+        cluster_ops = [
+            ("K-Means", "ml_cluster", "Partition into K clusters"),
+            ("DBSCAN", "ml_dbscan", "Density-based spatial clustering"),
+            ("Gaussian Mixture", "ml_gmm", "Probabilistic clustering"),
+        ]
+        for label, op, desc in cluster_ops:
+            action = QAction(label, self)
+            action.setToolTip(desc)
+            action.triggered.connect(
+                lambda checked, o=op: self._emit_transform(o)
+            )
+            cluster_menu.addAction(action)
+        ml_menu.addMenu(cluster_menu)
+
+        # =====================================================================
+        # TIME SERIES
+        # =====================================================================
+        timeseries_menu = self._create_submenu("Time Series", "time")
+        ts_ops = [
+            ("ARIMA Forecast", "ml_arima", "AutoRegressive Integrated Moving Average"),
+            ("Exp. Smoothing", "ml_ets", "Exponential Smoothing State Space"),
+        ]
+        for label, op, desc in ts_ops:
+            action = QAction(label, self)
+            action.setToolTip(desc)
+            action.triggered.connect(
+                lambda checked, o=op: self._emit_transform(o)
+            )
+            timeseries_menu.addAction(action)
+        ml_menu.addMenu(timeseries_menu)
+
+        ml_menu.addSeparator()
+
+        # =====================================================================
+        # ANOMALY DETECTION
+        # =====================================================================
+        anomaly_menu = self._create_submenu("Anomaly Detection", "warning")
         anomaly_ops = [
             ("Isolation Forest", "ml_anomaly_iforest", "Tree-based anomaly detection"),
             ("Z-Score Method", "ml_anomaly_zscore", "Statistical outlier detection"),
@@ -391,34 +467,9 @@ class ColumnContextMenu(QMenu):
             anomaly_menu.addAction(action)
         ml_menu.addMenu(anomaly_menu)
 
-        # Outlier Detection
-        outlier_action = QAction("Outlier Detection", self)
-        outlier_action.triggered.connect(
-            lambda: self._emit_transform("ml_outlier")
-        )
-        ml_menu.addAction(outlier_action)
-
-        ml_menu.addSeparator()
-
-        # Clustering
-        cluster_action = QAction("Cluster (K-Means)", self)
-        cluster_action.setToolTip("Groups data into K clusters")
-        cluster_action.triggered.connect(
-            lambda: self._emit_transform("ml_cluster")
-        )
-        ml_menu.addAction(cluster_action)
-
-        # Time Series Forecast
-        forecast_action = QAction("Time Series Forecast", self)
-        forecast_action.setToolTip("Predicts future values using exponential smoothing")
-        forecast_action.triggered.connect(
-            lambda: self._emit_transform("ml_forecast")
-        )
-        ml_menu.addAction(forecast_action)
-
-        ml_menu.addSeparator()
-
-        # Audit Operations
+        # =====================================================================
+        # AUDIT OPERATIONS
+        # =====================================================================
         audit_menu = self._create_submenu("Audit", "shield")
         audit_ops = [
             ("Benford's Law Analysis", "audit_benfords_law", "Digit distribution analysis"),

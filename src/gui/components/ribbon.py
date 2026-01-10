@@ -647,48 +647,61 @@ class RibbonBar(QFrame):
     # ========================================================================
 
     def create_ml_tab(self, layout):
-        """Create ML tab."""
-        # Anomaly Detection group
-        anomaly_group = RibbonGroup("Anomaly Detection")
-        anomaly_layout = QVBoxLayout()
-        anomaly_layout.setSpacing(2)
-        anomaly_layout.addWidget(SmallRibbonButton("Isolation Forest", "🌲", self, lambda: self.emit_action("ml_anomaly_iforest")))
-        anomaly_layout.addWidget(SmallRibbonButton("Z-Score", "📊", self, lambda: self.emit_action("ml_anomaly_zscore")))
-        anomaly_layout.addWidget(SmallRibbonButton("IQR", "📐", self, lambda: self.emit_action("ml_anomaly_iqr")))
-        anomaly_layout.addWidget(SmallRibbonButton("LOF", "📍", self, lambda: self.emit_action("ml_lof")))
-        anomaly_group.add_layout(anomaly_layout)
-        layout.addWidget(anomaly_group)
+        """Create ML tab - organized by category."""
+        # Supervised Learning - Linear Models
+        linear_group = RibbonGroup("Linear Models")
+        linear_layout = QVBoxLayout()
+        linear_layout.setSpacing(2)
+        linear_layout.addWidget(SmallRibbonButton("Linear Regression", "📈", self, lambda: self.emit_action("ml_linear_regression")))
+        linear_layout.addWidget(SmallRibbonButton("GLM", "📊", self, lambda: self.emit_action("ml_glm")))
+        linear_group.add_layout(linear_layout)
+        layout.addWidget(linear_group)
         self._add_vertical_divider(layout)
 
-        # Classification & Prediction group
-        classification_group = RibbonGroup("Classification")
-        classification_layout = QVBoxLayout()
-        classification_layout.setSpacing(2)
-        classification_layout.addWidget(SmallRibbonButton("ML Classify", "🎯", self, lambda: self.emit_action("ml_classify")))
-        classification_layout.addWidget(SmallRibbonButton("ML Predict", "🔮", self, lambda: self.emit_action("ml_predict")))
-        classification_layout.addWidget(SmallRibbonButton("Risk Score", "⚠️", self, lambda: self.emit_action("ml_risk_score")))
-        classification_group.add_layout(classification_layout)
-        layout.addWidget(classification_group)
+        # Supervised Learning - Tree-Based
+        tree_group = RibbonGroup("Tree-Based")
+        tree_layout = QVBoxLayout()
+        tree_layout.setSpacing(2)
+        tree_layout.addWidget(SmallRibbonButton("Decision Tree", "🌳", self, lambda: self.emit_action("ml_decision_tree")))
+        tree_layout.addWidget(SmallRibbonButton("Random Forest", "🌲", self, lambda: self.emit_action("ml_random_forest")))
+        tree_layout.addWidget(SmallRibbonButton("Gradient Boosting", "📉", self, lambda: self.emit_action("ml_gradient_boosting")))
+        tree_layout.addWidget(SmallRibbonButton("XGBoost", "⚡", self, lambda: self.emit_action("ml_xgboost")))
+        tree_layout.addWidget(SmallRibbonButton("LightGBM", "💡", self, lambda: self.emit_action("ml_lightgbm")))
+        tree_group.add_layout(tree_layout)
+        layout.addWidget(tree_group)
         self._add_vertical_divider(layout)
 
-        # Clustering group
+        # Unsupervised Learning - Clustering
         cluster_group = RibbonGroup("Clustering")
         cluster_layout = QVBoxLayout()
         cluster_layout.setSpacing(2)
-        cluster_layout.addWidget(SmallRibbonButton("K-Means", "◈", self, lambda: self.emit_action("ml_kmeans")))
-        cluster_layout.addWidget(SmallRibbonButton("DBSCAN", "○", self, lambda: self.emit_action("ml_kmeans")))  # Placeholder
+        cluster_layout.addWidget(SmallRibbonButton("K-Means", "◈", self, lambda: self.emit_action("ml_cluster")))
+        cluster_layout.addWidget(SmallRibbonButton("DBSCAN", "○", self, lambda: self.emit_action("ml_dbscan")))
+        cluster_layout.addWidget(SmallRibbonButton("Gaussian Mixture", "🔮", self, lambda: self.emit_action("ml_gmm")))
         cluster_group.add_layout(cluster_layout)
         layout.addWidget(cluster_group)
         self._add_vertical_divider(layout)
 
-        # Forecasting group
-        forecast_group = RibbonGroup("Forecasting")
-        forecast_layout = QVBoxLayout()
-        forecast_layout.setSpacing(2)
-        forecast_layout.addWidget(SmallRibbonButton("Time Series", "📈", self, lambda: self.emit_action("ml_forecast")))
-        forecast_layout.addWidget(SmallRibbonButton("Train Model", "🎓", self, lambda: self.emit_action("ml_train")))
-        forecast_group.add_layout(forecast_layout)
-        layout.addWidget(forecast_group)
+        # Time Series
+        timeseries_group = RibbonGroup("Time Series")
+        timeseries_layout = QVBoxLayout()
+        timeseries_layout.setSpacing(2)
+        timeseries_layout.addWidget(SmallRibbonButton("ARIMA", "📈", self, lambda: self.emit_action("ml_arima")))
+        timeseries_layout.addWidget(SmallRibbonButton("Exp. Smoothing", "📊", self, lambda: self.emit_action("ml_ets")))
+        timeseries_group.add_layout(timeseries_layout)
+        layout.addWidget(timeseries_group)
+        self._add_vertical_divider(layout)
+
+        # Anomaly Detection
+        anomaly_group = RibbonGroup("Anomaly")
+        anomaly_layout = QVBoxLayout()
+        anomaly_layout.setSpacing(2)
+        anomaly_layout.addWidget(SmallRibbonButton("Isolation Forest", "🚨", self, lambda: self.emit_action("ml_anomaly_iforest")))
+        anomaly_layout.addWidget(SmallRibbonButton("Z-Score", "📐", self, lambda: self.emit_action("ml_anomaly_zscore")))
+        anomaly_layout.addWidget(SmallRibbonButton("IQR", "📏", self, lambda: self.emit_action("ml_anomaly_iqr")))
+        anomaly_layout.addWidget(SmallRibbonButton("LOF", "📍", self, lambda: self.emit_action("ml_lof")))
+        anomaly_group.add_layout(anomaly_layout)
+        layout.addWidget(anomaly_group)
 
     # ========================================================================
     # VIEW TAB

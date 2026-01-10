@@ -173,6 +173,17 @@ class DataView(QWidget):
             if not ok or not dataset_name.strip():
                 dataset_name = f"Dataset_{len(self.current_project.datasets) + 1}" if self.current_project else "Imported Data"
 
+            # Ensure unique name within project
+            if self.current_project:
+                base_name = dataset_name.strip()
+                unique_name = base_name
+                counter = 1
+                existing_names = {ds.name for ds in self.current_project.list_datasets()}
+                while unique_name in existing_names:
+                    unique_name = f"{base_name} ({counter})"
+                    counter += 1
+                dataset_name = unique_name
+
             # Create dataset
             dataset = Dataset(name=dataset_name.strip(), dataframe=df)
 

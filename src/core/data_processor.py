@@ -91,6 +91,17 @@ class DataProcessor:
         'ml_classify': 'ml_classify',
         'ml_risk_score': 'ml_risk_score',
         'ml_predict': 'ml_predict',
+        'ml_linear_regression': 'ml_linear_regression',
+        'ml_glm': 'ml_glm',
+        'ml_decision_tree': 'ml_decision_tree',
+        'ml_random_forest': 'ml_random_forest',
+        'ml_gradient_boosting': 'ml_gradient_boosting',
+        'ml_xgboost': 'ml_xgboost',
+        'ml_lightgbm': 'ml_lightgbm',
+        'ml_dbscan': 'ml_dbscan',
+        'ml_gmm': 'ml_gmm',
+        'ml_arima': 'ml_arima',
+        'ml_ets': 'ml_ets',
         'ai_classify': 'ai_classify',
         'ai_summarize': 'ai_summarize',
         'ai_enrich': 'ai_enrich',
@@ -388,6 +399,36 @@ class DataProcessor:
             return self._call_mapped_method(self.ml_risk_score, df, params)
         elif operation_id == 'ml_predict':
             return self._call_mapped_method(self.ml_predict, df, params)
+
+        # Supervised Learning - Regression
+        elif operation_id == 'ml_linear_regression':
+            return self._call_mapped_method(self.ml_linear_regression, df, params)
+        elif operation_id == 'ml_glm':
+            return self._call_mapped_method(self.ml_glm, df, params)
+
+        # Supervised Learning - Tree-based
+        elif operation_id == 'ml_decision_tree':
+            return self._call_mapped_method(self.ml_decision_tree, df, params)
+        elif operation_id == 'ml_random_forest':
+            return self._call_mapped_method(self.ml_random_forest, df, params)
+        elif operation_id == 'ml_gradient_boosting':
+            return self._call_mapped_method(self.ml_gradient_boosting, df, params)
+        elif operation_id == 'ml_xgboost':
+            return self._call_mapped_method(self.ml_xgboost, df, params)
+        elif operation_id == 'ml_lightgbm':
+            return self._call_mapped_method(self.ml_lightgbm, df, params)
+
+        # Unsupervised Learning - Clustering
+        elif operation_id == 'ml_dbscan':
+            return self._call_mapped_method(self.ml_dbscan, df, params)
+        elif operation_id == 'ml_gmm':
+            return self._call_mapped_method(self.ml_gmm, df, params)
+
+        # Time Series
+        elif operation_id == 'ml_arima':
+            return self._call_mapped_method(self.ml_arima, df, params)
+        elif operation_id == 'ml_ets':
+            return self._call_mapped_method(self.ml_ets, df, params)
 
         # Audit transformations
         elif operation_id == 'audit_duplicate_detection':
@@ -737,7 +778,7 @@ class DataProcessor:
     # ML TRANSFORMATION IMPLEMENTATIONS
     # ============================================================================
 
-    def ml_anomaly_iforest(self, df: pl.DataFrame, column: str, output_col: str, contamination: float = 0.1) -> pl.DataFrame:
+    def ml_anomaly_iforest(self, df: pl.DataFrame, column: str, contamination: float = 0.1) -> pl.DataFrame:
         """Anomaly detection using Isolation Forest - simplified"""
         import numpy as np
         col_data = df[column].to_numpy().reshape(-1, 1)
@@ -752,31 +793,41 @@ class DataProcessor:
         scores = 1 - (1 / (1 + distances))
 
         return df.with_columns([
-            pl.Series(name=output_col, values=is_anomaly.flatten())
+            pl.Series(name=f"{column}_is_anomaly", values=is_anomaly.flatten()),
+            pl.Series(name=f"{column}_anomaly_score", values=scores.flatten())
         ])
 
-    def ml_anomaly_zscore(self, df: pl.DataFrame, column: str, output_col: str, threshold: float = 3.0) -> pl.DataFrame:
+    def ml_anomaly_zscore(self, df: pl.DataFrame, column: str, threshold: float = 3.0) -> pl.DataFrame:
         """Anomaly detection using Z-score"""
-        col = pl.col(column)
-        mean = df[column].mean()
-        std = df[column].std()
+        import numpy as np
+        col_data = df[column].to_numpy()
+        mean = np.mean(col_data)
+        std = np.std(col_data)
         if std == 0:
             std = 1
-        zscore = (col - mean) / std
-        return df.with_columns((zscore.abs() > threshold).alias(output_col))
+        zscore = (col_data - mean) / std
+        is_outlier = np.abs(zscore) > threshold
+        return df.with_columns([
+            pl.Series(name=f"{column}_is_outlier", values=is_outlier),
+            pl.Series(name=f"{column}_zscore", values=zscore)
+        ])
 
-    def ml_anomaly_iqr(self, df: pl.DataFrame, column: str, output_col: str, multiplier: float = 1.5) -> pl.DataFrame:
+    def ml_anomaly_iqr(self, df: pl.DataFrame, column: str, multiplier: float = 1.5) -> pl.DataFrame:
         """Anomaly detection using IQR"""
-        Q1 = df[column].quantile(0.25)
-        Q3 = df[column].quantile(0.75)
+        col_data = df[column].to_numpy()
+        Q1 = np.percentile(col_data, 25)
+        Q3 = np.percentile(col_data, 75)
         IQR = Q3 - Q1
         lower_bound = Q1 - multiplier * IQR
         upper_bound = Q3 + multiplier * IQR
-        return df.with_columns(
-            ((pl.col(column) < lower_bound) | (pl.col(column) > upper_bound)).alias(output_col)
-        )
+        is_outlier = (col_data < lower_bound) | (col_data > upper_bound)
+        iqr_distance = np.abs(col_data - (Q3 + Q1) / 2)
+        return df.with_columns([
+            pl.Series(name=f"{column}_is_outlier", values=is_outlier),
+            pl.Series(name=f"{column}_iqr_distance", values=iqr_distance)
+        ])
 
-    def ml_anomaly_lof(self, df: pl.DataFrame, column: str, output_col: str, n_neighbors: int = 20) -> pl.DataFrame:
+    def ml_anomaly_lof(self, df: pl.DataFrame, column: str, n_neighbors: int = 20) -> pl.DataFrame:
         """Local Outlier Factor - simplified"""
         import numpy as np
         col_data = df[column].to_numpy()
@@ -786,9 +837,11 @@ class DataProcessor:
         if max_dist == 0:
             max_dist = 1
         scores = 1 - (distances / max_dist)
-        threshold = 0.3
-        is_outlier = scores < threshold
-        return df.with_columns(pl.Series(name=output_col, values=is_outlier))
+        is_outlier = scores < 0.3
+        return df.with_columns([
+            pl.Series(name=f"{column}_is_outlier", values=is_outlier),
+            pl.Series(name=f"{column}_lof_score", values=scores)
+        ])
 
     def ml_outlier_detection(self, df: pl.DataFrame, column: str, output_col: str, method: str = 'iqr') -> pl.DataFrame:
         """General outlier detection"""
@@ -1154,6 +1207,450 @@ class DataProcessor:
             return df
         except Exception as e:
             print(f"Error executing AI-generated column code: {e}")
+            raise
+
+    # ============================================================================
+    # SUPERVISED LEARNING - REGRESSION
+    # ============================================================================
+
+    def ml_linear_regression(self, df: pl.DataFrame, features: List[str], target: str,
+                             output_col: str = "y_hat", fit_intercept: bool = True,
+                             **kwargs) -> pl.DataFrame:
+        """Linear regression prediction"""
+        try:
+            from sklearn.linear_model import LinearRegression
+            from sklearn.preprocessing import StandardScaler
+
+            # Convert to pandas for sklearn
+            X = df.select(features).to_pandas()
+            y = df[target].to_pandas()
+
+            # Scale features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+
+            # Train model
+            model = LinearRegression(fit_intercept=fit_intercept)
+            model.fit(X_scaled, y)
+
+            # Predict
+            y_pred = model.predict(X_scaled)
+
+            return df.with_columns(pl.Series(name=output_col, values=y_pred))
+
+        except Exception as e:
+            print(f"Linear regression error: {e}")
+            raise
+
+    def ml_glm(self, df: pl.DataFrame, features: List[str], target: str,
+               output_col: str = "y_hat", family: str = "gaussian",
+               **kwargs) -> pl.DataFrame:
+        """Generalized Linear Model prediction"""
+        try:
+            import statsmodels.api as sm
+            from statsmodels.genmod.families import Gaussian, Binomial, Poisson, Gamma
+
+            family_map = {
+                "gaussian": Gaussian(),
+                "binomial": Binomial(),
+                "poisson": Poisson(),
+                "gamma": Gamma()
+            }
+
+            # Convert to pandas for statsmodels
+            X = df.select(features).to_pandas()
+            y = df[target].to_pandas()
+
+            # Add constant for intercept
+            X = sm.add_constant(X)
+
+            # Fit GLM
+            model = sm.GLM(y, X, family=family_map.get(family, Gaussian()))
+            result = model.fit()
+
+            # Predict
+            y_pred = result.predict(X)
+
+            return df.with_columns(pl.Series(name=output_col, values=y_pred))
+
+        except Exception as e:
+            print(f"GLM error: {e}")
+            raise
+
+    # ============================================================================
+    # SUPERVISED LEARNING - TREE-BASED
+    # ============================================================================
+
+    def ml_decision_tree(self, df: pl.DataFrame, features: List[str], target: str,
+                         output_col: str = "prediction", max_depth: int = 10,
+                         min_samples_split: int = 2, min_samples_leaf: int = 1,
+                         **kwargs) -> pl.DataFrame:
+        """Decision tree prediction"""
+        try:
+            from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+            from sklearn.preprocessing import LabelEncoder
+
+            # Convert to pandas
+            X = df.select(features).to_pandas()
+            y = df[target].to_pandas()
+
+            # Encode target if categorical
+            le = LabelEncoder()
+            y_encoded = le.fit_transform(y)
+
+            # Determine if classification or regression
+            is_classification = len(le.classes_) <= 10 and y.dtype == 'object'
+
+            # Train model
+            if is_classification:
+                model = DecisionTreeClassifier(max_depth=max_depth, min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf)
+            else:
+                model = DecisionTreeRegressor(max_depth=max_depth, min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf)
+
+            model.fit(X, y_encoded)
+
+            # Predict
+            y_pred = model.predict(X)
+
+            # Decode if classification
+            if is_classification:
+                y_pred = le.inverse_transform(y_pred.astype(int))
+
+            return df.with_columns(pl.Series(name=output_col, values=y_pred))
+
+        except Exception as e:
+            print(f"Decision tree error: {e}")
+            raise
+
+    def ml_random_forest(self, df: pl.DataFrame, features: List[str], target: str,
+                         output_col: str = "prediction", n_estimators: int = 100,
+                         max_depth: int = 10, min_samples_split: int = 2,
+                         min_samples_leaf: int = 1, **kwargs) -> pl.DataFrame:
+        """Random forest prediction"""
+        try:
+            from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+            from sklearn.preprocessing import LabelEncoder
+
+            X = df.select(features).to_pandas()
+            y = df[target].to_pandas()
+
+            le = LabelEncoder()
+            y_encoded = le.fit_transform(y)
+
+            is_classification = len(le.classes_) <= 10 and y.dtype == 'object'
+
+            if is_classification:
+                model = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth,
+                                               min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf)
+            else:
+                model = RandomForestRegressor(n_estimators=n_estimators, max_depth=max_depth,
+                                              min_samples_split=min_samples_split, min_samples_leaf=min_samples_leaf)
+
+            model.fit(X, y_encoded)
+            y_pred = model.predict(X)
+
+            if is_classification:
+                y_pred = le.inverse_transform(y_pred.astype(int))
+
+            return df.with_columns(pl.Series(name=output_col, values=y_pred))
+
+        except Exception as e:
+            print(f"Random forest error: {e}")
+            raise
+
+    def ml_gradient_boosting(self, df: pl.DataFrame, features: List[str], target: str,
+                             output_col: str = "prediction", n_estimators: int = 100,
+                             learning_rate: float = 0.1, max_depth: int = 5,
+                             min_samples_split: int = 2, min_samples_leaf: int = 1,
+                             **kwargs) -> pl.DataFrame:
+        """Gradient boosting prediction"""
+        try:
+            from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
+            from sklearn.preprocessing import LabelEncoder
+
+            # Validate parameters
+            learning_rate = max(0.01, float(learning_rate))
+            n_estimators = max(1, int(n_estimators))
+            max_depth = max(1, int(max_depth))
+            min_samples_split = max(2, int(min_samples_split))
+            min_samples_leaf = max(1, int(min_samples_leaf))
+
+            X = df.select(features).to_pandas()
+            y = df[target].to_pandas()
+
+            le = LabelEncoder()
+            y_encoded = le.fit_transform(y)
+
+            is_classification = len(le.classes_) <= 10 and y.dtype == 'object'
+
+            if is_classification:
+                model = GradientBoostingClassifier(n_estimators=n_estimators, learning_rate=learning_rate,
+                                                   max_depth=max_depth, min_samples_split=min_samples_split,
+                                                   min_samples_leaf=min_samples_leaf)
+            else:
+                model = GradientBoostingRegressor(n_estimators=n_estimators, learning_rate=learning_rate,
+                                                  max_depth=max_depth, min_samples_split=min_samples_split,
+                                                  min_samples_leaf=min_samples_leaf)
+
+            model.fit(X, y_encoded)
+            y_pred = model.predict(X)
+
+            if is_classification:
+                y_pred = le.inverse_transform(y_pred.astype(int))
+
+            return df.with_columns(pl.Series(name=output_col, values=y_pred))
+
+        except Exception as e:
+            print(f"Gradient boosting error: {e}")
+            raise
+
+    def ml_xgboost(self, df: pl.DataFrame, features: List[str], target: str,
+                   output_col: str = "prediction", n_estimators: int = 100,
+                   learning_rate: float = 0.1, max_depth: int = 6,
+                   subsample: float = 0.8, colsample_bytree: float = 0.8,
+                   **kwargs) -> pl.DataFrame:
+        """XGBoost prediction"""
+        try:
+            import xgboost as xgb
+            from sklearn.preprocessing import LabelEncoder
+
+            # Validate parameters
+            learning_rate = max(0.01, float(learning_rate))
+            n_estimators = max(1, int(n_estimators))
+            max_depth = max(1, int(max_depth))
+            subsample = max(0.1, min(1.0, float(subsample)))
+            colsample_bytree = max(0.1, min(1.0, float(colsample_bytree)))
+
+            X = df.select(features).to_pandas()
+            y = df[target].to_pandas()
+
+            le = LabelEncoder()
+            y_encoded = le.fit_transform(y)
+
+            is_classification = len(le.classes_) <= 10 and y.dtype == 'object'
+
+            if is_classification:
+                model = xgb.XGBClassifier(n_estimators=n_estimators, learning_rate=learning_rate,
+                                          max_depth=max_depth, subsample=subsample,
+                                          colsample_bytree=colsample_bytree, use_label_encoder=False,
+                                          eval_metric='logloss')
+            else:
+                model = xgb.XGBRegressor(n_estimators=n_estimators, learning_rate=learning_rate,
+                                         max_depth=max_depth, subsample=subsample,
+                                         colsample_bytree=colsample_bytree)
+
+            model.fit(X, y_encoded)
+            y_pred = model.predict(X)
+
+            if is_classification:
+                y_pred = le.inverse_transform(y_pred.astype(int))
+
+            return df.with_columns(pl.Series(name=output_col, values=y_pred))
+
+        except ImportError:
+            raise ImportError("xgboost not installed. Install with: pip install xgboost")
+        except Exception as e:
+            print(f"XGBoost error: {e}")
+            raise
+
+    def ml_lightgbm(self, df: pl.DataFrame, features: List[str], target: str,
+                    output_col: str = "prediction", n_estimators: int = 100,
+                    learning_rate: float = 0.1, num_leaves: int = 31,
+                    min_child_samples: int = 20, **kwargs) -> pl.DataFrame:
+        """LightGBM prediction"""
+        try:
+            import lightgbm as lgb
+            from sklearn.preprocessing import LabelEncoder
+
+            # Validate parameters
+            learning_rate = max(0.01, float(learning_rate))
+            n_estimators = max(1, int(n_estimators))
+            num_leaves = max(2, min(200, int(num_leaves)))
+            min_child_samples = max(1, int(min_child_samples))
+
+            X = df.select(features).to_pandas()
+            y = df[target].to_pandas()
+
+            le = LabelEncoder()
+            y_encoded = le.fit_transform(y)
+
+            is_classification = len(le.classes_) <= 10 and y.dtype == 'object'
+
+            if is_classification:
+                model = lgb.LGBMClassifier(n_estimators=n_estimators, learning_rate=learning_rate,
+                                           num_leaves=num_leaves, min_child_samples=min_child_samples,
+                                           verbose=-1)
+            else:
+                model = lgb.LGBMRegressor(n_estimators=n_estimators, learning_rate=learning_rate,
+                                          num_leaves=num_leaves, min_child_samples=min_child_samples,
+                                          verbose=-1)
+
+            model.fit(X, y_encoded)
+            y_pred = model.predict(X)
+
+            if is_classification:
+                y_pred = le.inverse_transform(y_pred.astype(int))
+
+            return df.with_columns(pl.Series(name=output_col, values=y_pred))
+
+        except ImportError:
+            raise ImportError("lightgbm not installed. Install with: pip install lightgbm")
+        except Exception as e:
+            print(f"LightGBM error: {e}")
+            raise
+
+    # ============================================================================
+    # UNSUPERVISED LEARNING - CLUSTERING
+    # ============================================================================
+
+    def ml_dbscan(self, df: pl.DataFrame, features: List[str],
+                  output_col: str = "cluster", eps: float = 0.5,
+                  min_samples: int = 5, **kwargs) -> pl.DataFrame:
+        """DBSCAN clustering"""
+        try:
+            from sklearn.cluster import DBSCAN
+            from sklearn.preprocessing import StandardScaler
+
+            X = df.select(features).to_pandas()
+
+            # Scale features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+
+            # Fit DBSCAN
+            model = DBSCAN(eps=eps, min_samples=min_samples)
+            labels = model.fit_predict(X_scaled)
+
+            return df.with_columns(pl.Series(name=output_col, values=labels))
+
+        except Exception as e:
+            print(f"DBSCAN error: {e}")
+            raise
+
+    def ml_gmm(self, df: pl.DataFrame, features: List[str],
+               output_col: str = "cluster", n_components: int = 3,
+               **kwargs) -> pl.DataFrame:
+        """Gaussian Mixture Model clustering"""
+        try:
+            from sklearn.mixture import GaussianMixture
+            from sklearn.preprocessing import StandardScaler
+
+            X = df.select(features).to_pandas()
+
+            # Scale features
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+
+            # Fit GMM
+            model = GaussianMixture(n_components=n_components)
+            labels = model.fit_predict(X_scaled)
+
+            return df.with_columns(pl.Series(name=output_col, values=labels))
+
+        except Exception as e:
+            print(f"GMM error: {e}")
+            raise
+
+    # ============================================================================
+    # TIME SERIES FORECASTING
+    # ============================================================================
+
+    def ml_arima(self, df: pl.DataFrame, column: str, output_col: str = "forecast",
+                 order_p: int = 1, order_d: int = 1, order_q: int = 1,
+                 steps: int = 12, **kwargs) -> pl.DataFrame:
+        """ARIMA time series forecasting - extends dataset with forecast values"""
+        try:
+            from statsmodels.tsa.arima.model import ARIMA
+            import numpy as np
+
+            # Get the time series data - convert to float64
+            series = df[column].to_pandas().astype(np.float64)
+            n = len(series)
+
+            # Fit ARIMA model
+            model = ARIMA(series, order=(order_p, order_d, order_q))
+            result = model.fit()
+
+            # Forecast future values
+            forecast = result.forecast(steps=steps)
+
+            # Step 1: Add forecast column to original df with NaN values (Float64 type)
+            result_df = df.with_columns(pl.lit(np.nan).cast(pl.Float64).alias(output_col))
+
+            # Step 2: Create new rows for forecast period
+            new_rows = []
+            for val in forecast.values:
+                row = {col: None for col in df.columns}
+                row[column] = None  # Original value is null for new rows
+                row[output_col] = float(val)
+                new_rows.append(row)
+
+            # Step 3: Concatenate original df with new rows
+            if new_rows:
+                new_df = pl.DataFrame(new_rows)
+                # Ensure output_col is Float64
+                if output_col in new_df.columns:
+                    new_df = new_df.with_columns(pl.col(output_col).cast(pl.Float64))
+                result_df = pl.concat([result_df, new_df], how="vertical")
+
+            return result_df
+
+        except Exception as e:
+            print(f"ARIMA error: {e}")
+            raise
+
+    def ml_ets(self, df: pl.DataFrame, column: str, output_col: str = "forecast",
+               trend: str = "add", seasonal: str = None, steps: int = 12,
+               **kwargs) -> pl.DataFrame:
+        """Exponential Smoothing - extends dataset with forecast values"""
+        try:
+            from statsmodels.tsa.holtwinters import ExponentialSmoothing
+            import numpy as np
+
+            # Get the time series data - convert to float64
+            series = df[column].to_pandas().astype(np.float64)
+            n = len(series)
+
+            # Determine seasonal periods (if any)
+            seasonal_periods = None
+            if seasonal:
+                seasonal_periods = 12  # Monthly data assumption
+
+            # Fit ETS model
+            model = ExponentialSmoothing(
+                series,
+                trend=trend if trend else None,
+                seasonal=seasonal,
+                seasonal_periods=seasonal_periods
+            )
+            result = model.fit()
+
+            # Forecast future values
+            forecast = result.forecast(steps=steps)
+
+            # Step 1: Add forecast column to original df with NaN values (Float64 type)
+            result_df = df.with_columns(pl.lit(np.nan).cast(pl.Float64).alias(output_col))
+
+            # Step 2: Create new rows for forecast period
+            new_rows = []
+            for val in forecast.values:
+                row = {col: None for col in df.columns}
+                row[column] = None
+                row[output_col] = float(val)
+                new_rows.append(row)
+
+            # Step 3: Concatenate original df with new rows
+            if new_rows:
+                new_df = pl.DataFrame(new_rows)
+                # Ensure output_col is Float64
+                if output_col in new_df.columns:
+                    new_df = new_df.with_columns(pl.col(output_col).cast(pl.Float64))
+                result_df = pl.concat([result_df, new_df], how="vertical")
+
+            return result_df
+
+        except Exception as e:
+            print(f"ETS error: {e}")
             raise
 
     # ============================================================================

@@ -300,6 +300,9 @@ class TransformView(QWidget):
             # For table category (split, combine, etc.)
             elif category_key == 'table':
                 self._add_table_submenu(category_menu, grouped_ops[category_key], column_name)
+            # For ml category, create sub-submenus for Supervised, Unsupervised, Time Series, etc.
+            elif category_key == 'ml':
+                self._add_ml_submenu(category_menu, grouped_ops[category_key], column_name)
             else:
                 # For other categories, just list operations directly
                 for op_id, op_data in sorted(grouped_ops[category_key], key=lambda x: x[1]['display_name']):
@@ -571,6 +574,92 @@ class TransformView(QWidget):
             action.triggered.connect(
                 lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
             )
+
+    def _add_ml_submenu(self, parent_menu, operations, column_name):
+        """Add ML operations with sub-submenus organized by category"""
+        # Operations to exclude from the menu (no-ops or duplicates)
+        exclude_ops = {'ml_classify', 'ml_predict', 'ml_outlier', 'ml_forecast', 'ml_train'}
+
+        # Group ML operations by subcategory
+        supervised_linear = []   # Linear Regression, GLM
+        supervised_tree = []     # Decision Tree, Random Forest, Gradient Boosting, XGBoost, LightGBM
+        clustering = []          # K-Means, DBSCAN, Gaussian Mixture
+        time_series = []         # ARIMA, ETS
+        anomaly_detection = []   # Isolation Forest, Z-Score, IQR, LOF
+        audit_ops = []           # ML Risk Score
+
+        for op_id, op_data in operations:
+            # Skip excluded operations
+            if op_id in exclude_ops:
+                continue
+
+            if op_id in ('ml_linear_regression', 'ml_glm'):
+                supervised_linear.append((op_id, op_data))
+            elif op_id in ('ml_decision_tree', 'ml_random_forest', 'ml_gradient_boosting',
+                           'ml_xgboost', 'ml_lightgbm'):
+                supervised_tree.append((op_id, op_data))
+            elif op_id in ('ml_cluster', 'ml_dbscan', 'ml_gmm'):
+                clustering.append((op_id, op_data))
+            elif op_id in ('ml_arima', 'ml_ets'):
+                time_series.append((op_id, op_data))
+            elif op_id in ('ml_anomaly_iforest', 'ml_anomaly_zscore', 'ml_anomaly_iqr', 'ml_anomaly_lof'):
+                anomaly_detection.append((op_id, op_data))
+            elif op_id in ('ml_risk_score',):
+                audit_ops.append((op_id, op_data))
+
+        # Anomaly Detection submenu
+        if anomaly_detection:
+            anomaly_menu = parent_menu.addMenu("Anomaly Detection")
+            for op_id, op_data in sorted(anomaly_detection, key=lambda x: x[1]['display_name']):
+                action = anomaly_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Clustering submenu
+        if clustering:
+            cluster_menu = parent_menu.addMenu("Clustering")
+            for op_id, op_data in sorted(clustering, key=lambda x: x[1]['display_name']):
+                action = cluster_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Supervised → Linear submenu
+        if supervised_linear:
+            linear_menu = parent_menu.addMenu("Supervised → Linear")
+            for op_id, op_data in sorted(supervised_linear, key=lambda x: x[1]['display_name']):
+                action = linear_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Supervised → Tree-Based submenu
+        if supervised_tree:
+            tree_menu = parent_menu.addMenu("Supervised → Tree-Based")
+            for op_id, op_data in sorted(supervised_tree, key=lambda x: x[1]['display_name']):
+                action = tree_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Time Series submenu
+        if time_series:
+            ts_menu = parent_menu.addMenu("Time Series")
+            for op_id, op_data in sorted(time_series, key=lambda x: x[1]['display_name']):
+                action = ts_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Audit submenu
+        if audit_ops:
+            audit_menu = parent_menu.addMenu("Audit")
+            for op_id, op_data in sorted(audit_ops, key=lambda x: x[1]['display_name']):
+                action = audit_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
 
     def _extract_placeholders(self, template: str):
         """Extract placeholder names from a template string.
