@@ -1,7 +1,7 @@
 """
-Applied Steps panel — Power Query style: a persistent side panel (not tied
-to a single page) showing the active dataset's transformation pipeline,
-with per-step enable/disable and timing.
+Applied Steps panel — a persistent side panel (not tied to a single page)
+showing the active dataset's transformation pipeline, with per-step
+enable/disable and timing.
 
 This widget only renders steps and emits signals — TransformView still owns
 the actual TransformationPipeline and all mutation logic (undo/clear/toggle),
@@ -12,7 +12,8 @@ import qtawesome as qta
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QListWidget, QListWidgetItem, QCheckBox, QGroupBox
+    QListWidget, QListWidgetItem, QCheckBox, QGroupBox,
+    QTabWidget, QTextEdit, QTreeWidget, QTableWidget
 )
 
 from gui.theme import Colors
@@ -73,6 +74,32 @@ class AppliedStepsPanel(QWidget):
         self.steps_list_widget.itemSelectionChanged.connect(self._on_selection_changed)
         steps_layout.addWidget(self.steps_list_widget)
         layout.addWidget(steps_group, 1)
+
+        # Step Inspector — sits directly under Applied Steps so selecting a
+        # step and inspecting it are one visual unit, not split across
+        # separate panels.
+        inspector_group = QGroupBox("Step Inspector")
+        inspector_layout = QVBoxLayout(inspector_group)
+
+        self.inspector_tabs = QTabWidget()
+        self.inspector_tabs.setMaximumHeight(280)
+
+        self.params_text = QTextEdit()
+        self.params_text.setReadOnly(True)
+        self.inspector_tabs.addTab(self.params_text, "Parameters")
+
+        self.columns_tree = QTreeWidget()
+        self.columns_tree.setHeaderLabel("Created Columns")
+        self.inspector_tabs.addTab(self.columns_tree, "Columns")
+
+        self.step_preview_table = QTableWidget()
+        self.step_preview_table.setAlternatingRowColors(True)
+        self.step_preview_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.step_preview_table.horizontalHeader().setStretchLastSection(True)
+        self.inspector_tabs.addTab(self.step_preview_table, "Preview")
+
+        inspector_layout.addWidget(self.inspector_tabs)
+        layout.addWidget(inspector_group)
 
     def set_pipeline(self, pipeline):
         """Bind to a (possibly different) pipeline and re-render from it."""

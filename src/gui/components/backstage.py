@@ -1,8 +1,8 @@
 """
 Backstage View for CaatMaster
 ==============================
-Power BI / Microsoft Office-style backstage view that slides in from the left.
-Used for File menu operations like New, Open, Save, Export, etc.
+A full-screen panel that slides in from the left for File menu operations
+like New, Open, Save, Export, etc.
 """
 
 import qtawesome as qta
@@ -31,7 +31,6 @@ class BackstageItem(QListWidgetItem):
 class BackstageView(QFrame):
     """
     Backstage view - slides in from left for file operations.
-    Similar to Power BI and Microsoft Office File menu.
     """
 
     # Signals for menu actions
@@ -58,7 +57,7 @@ class BackstageView(QFrame):
         self._update_project_info()
 
     def _setup_ui(self):
-        """Setup the backstage UI - Power Query style"""
+        """Setup the backstage UI"""
         self.setStyleSheet(f"""
             QFrame#BackstageView {{
                 background-color: {Colors.BG_PRIMARY};

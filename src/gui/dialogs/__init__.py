@@ -2,7 +2,7 @@
 Dialogs package for CAATmaster GUI
 """
 from .pivot_dialog import PivotTableDialog
-from .unpivot_dialog import UnpivotDialog, PowerPivotDialog
+from .unpivot_dialog import UnpivotDialog, PivotColumnDialog
 from .filter_dialog import FilterDialog
 from .anomaly_dialog import AnomalyDetectionDialog
 from .kmeans_dialog import KMeansDialog
@@ -19,7 +19,7 @@ from .ai_chat_dialog import AIChatDialog, create_ai_chat_dialog
 
 __all__ = [
     'PivotTableDialog',
-    'PowerPivotDialog',
+    'PivotColumnDialog',
     'UnpivotDialog',
     'FilterDialog',
     'AnomalyDetectionDialog',

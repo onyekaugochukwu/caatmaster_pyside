@@ -17,7 +17,8 @@ class Dataset:
     """Represents a dataset with transformation pipeline metadata."""
 
     def __init__(self, id: str = None, name: str = "", dataframe: pl.DataFrame = None,
-                 source_file_path: str = None, source_sheet_name: str = None):
+                 source_file_path: str = None, source_sheet_name: str = None,
+                 source_dataset_ids: List[str] = None, source_operation: str = None):
         self.id = id or str(uuid.uuid4())
         self.name = name
         self.original_dataframe: pl.DataFrame = dataframe
@@ -27,6 +28,11 @@ class Dataset:
         # the source and replay all steps against the fresh data.
         self.source_file_path = source_file_path
         self.source_sheet_name = source_sheet_name
+        # Dataset-level lineage: which other dataset(s) this one was derived
+        # from via join/append/split, and which operation did it — drives
+        # the Dependencies view. Empty for a plain file import or paste.
+        self.source_dataset_ids: List[str] = source_dataset_ids or []
+        self.source_operation: Optional[str] = source_operation
         self.metadata: Dict[str, Any] = {
             "created_at": datetime.now().isoformat(),
             "version": "1.0",
@@ -152,6 +158,8 @@ class Dataset:
             "pipeline": pipeline_data,
             "source_file_path": self.source_file_path,
             "source_sheet_name": self.source_sheet_name,
+            "source_dataset_ids": self.source_dataset_ids,
+            "source_operation": self.source_operation,
             # Note: Dataframe is stored separately in the export format
         }
 
@@ -163,7 +171,9 @@ class Dataset:
             name=data["name"],
             dataframe=dataframe,
             source_file_path=data.get("source_file_path"),
-            source_sheet_name=data.get("source_sheet_name")
+            source_sheet_name=data.get("source_sheet_name"),
+            source_dataset_ids=data.get("source_dataset_ids"),
+            source_operation=data.get("source_operation")
         )
         dataset.metadata = data.get("metadata", {})
 

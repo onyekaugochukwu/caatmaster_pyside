@@ -1,14 +1,14 @@
 """
 .caat portable project file format.
 
-A .caat file is a zip container — the same trick .pbix/.xlsx/.docx already
-use — holding everything needed to reopen and continue an audit engagement
-on another machine: for every dataset, the untouched source snapshot plus
-the ordered list of transformation steps applied to it, and project-level
-metadata. Storing source + steps (not just the transformed result) is what
-makes "Refresh" possible — re-read the source and replay the steps — the
-same way a Power Query query works, and it's what keeps the file small and
-the steps themselves diffable in plain text.
+A .caat file is a zip container — the same trick most modern document
+formats already use — holding everything needed to reopen and continue an
+audit engagement on another machine: for every dataset, the untouched
+source snapshot plus the ordered list of transformation steps applied to
+it, and project-level metadata. Storing source + steps (not just the
+transformed result) is what makes "Refresh" possible — re-read the source
+and replay the steps — and it's what keeps the file small and the steps
+themselves diffable in plain text.
 
 Layout:
     manifest.json           format_version, app_version, project id, author
@@ -43,7 +43,8 @@ class CaatFormatError(ValueError):
     """Raised for invalid or unsupported .caat files."""
 
 
-def save_caat(project: Project, file_path: str, author: Optional[str] = None) -> str:
+def save_caat(project: Project, file_path: str, author: Optional[str] = None,
+              active_dataset_id: Optional[str] = None) -> str:
     """Save a Project as a .caat file — the app's native save format.
 
     Each dataset's *original* (pre-transformation) data is written to
@@ -100,11 +101,11 @@ def save_caat(project: Project, file_path: str, author: Optional[str] = None) ->
             dataset_meta = dataset.to_dict()
             (ds_dir / "steps.json").write_text(json.dumps(dataset_meta, indent=2, default=str))
 
-        # Seeds for future features (dataset lineage view, resume-on-reopen)
-        # — present now so later code can start writing into them without a
-        # format version bump.
+        # Seeds for future features (dataset lineage view) plus the actual
+        # last-active-dataset state, so reopening a project resumes on the
+        # same dataset instead of always defaulting to the first one.
         (tmp_dir / "relationships.json").write_text(json.dumps({"joins": [], "appends": []}, indent=2))
-        (tmp_dir / "ui_state.json").write_text(json.dumps({"last_active_dataset_id": None}, indent=2))
+        (tmp_dir / "ui_state.json").write_text(json.dumps({"last_active_dataset_id": active_dataset_id}, indent=2))
 
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
             for f in tmp_dir.rglob("*"):
@@ -163,7 +164,46 @@ def load_caat(file_path: str) -> Project:
                 dataset = Dataset.from_dict(dataset_meta, source_df)
                 project.add_dataset(dataset)
 
+        # Not part of Project's own data model (it's UI resume-state, not
+        # project data) — stashed as a plain attribute so callers can restore
+        # which dataset was active without every Project needing this field.
+        project.last_active_dataset_id = None
+        ui_state_path = tmp_dir / "ui_state.json"
+        if ui_state_path.exists():
+            try:
+                ui_state = json.loads(ui_state_path.read_text())
+                project.last_active_dataset_id = ui_state.get("last_active_dataset_id")
+            except Exception:
+                pass
+
     return project
+
+
+def peek_caat_metadata(file_path: str) -> dict:
+    """Read just manifest.json + project.json (and count dataset folders)
+    from a .caat file without extracting any parquet data — cheap enough to
+    call for every file in a projects list without loading each one fully.
+    """
+    path = Path(file_path)
+    with zipfile.ZipFile(path, "r") as zf:
+        names = zf.namelist()
+        manifest = json.loads(zf.read("manifest.json")) if "manifest.json" in names else {}
+        project_meta = json.loads(zf.read("project.json")) if "project.json" in names else {}
+        dataset_ids = {n.split("/")[1] for n in names if n.startswith("datasets/") and "/" in n[len("datasets/"):]}
+
+    return {
+        "name": project_meta.get("name", path.stem),
+        "client_name": project_meta.get("client_name"),
+        "engagement_type": project_meta.get("engagement_type"),
+        "phase": project_meta.get("phase"),
+        "risk_score": project_meta.get("risk_score"),
+        "description": project_meta.get("description"),
+        "objectives": project_meta.get("objectives"),
+        "dataset_count": len(dataset_ids),
+        "saved_at": manifest.get("saved_at"),
+        "author": manifest.get("author"),
+        "path": str(path),
+    }
 
 
 def is_caat_file(file_path: str) -> bool:

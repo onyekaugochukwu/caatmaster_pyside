@@ -2,9 +2,8 @@
 CaatMaster design tokens — single source of truth for color, spacing, radius,
 and typography.
 
-Palette follows Microsoft's Fluent Design tokens (the same ones Excel, Power
-BI Desktop, and Power Query use) so the app reads as part of that family
-rather than inventing its own visual language.
+Palette follows Microsoft's Fluent Design tokens for a clean, professional,
+data-tool look rather than inventing its own visual language from scratch.
 
 Every widget-level stylesheet in the app should build on these tokens instead
 of hardcoding hex values. `get_stylesheet()` returns the one application-wide
@@ -33,7 +32,7 @@ class Colors:
     TEXT_DISABLED = "#a19f9d"
     TEXT_ON_ACCENT = "#ffffff"
 
-    # Accent (Fluent "communication blue" — the exact blue Excel/Power BI use)
+    # Accent (Fluent "communication blue")
     ACCENT = "#0078d4"
     ACCENT_HOVER = "#106ebe"
     ACCENT_PRESSED = "#005a9e"

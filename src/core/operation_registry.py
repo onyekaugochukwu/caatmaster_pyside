@@ -851,20 +851,12 @@ OPERATION_REGISTRY = {
         },
         "creates_columns": ["{column}_min", "{column}_max", "{column}_mean", "{column}_std"]
     },
-    "stat_group_stats": {
-        "display_name": "Add Group Statistics",
-        "type": TransformationStepType.STAT_ADD_GROUP,
-        "category": "statistics",
-        "description": "Adds aggregate statistics as new columns per group",
-        "parameter_schema": {
-            "group_column": {"type": "column", "required": True, "label": "Group By Column"},
-            "target_column": {"type": "column", "required": True, "label": "Target Column"},
-            "calculations": {"type": "list[str]", "required": False,
-                           "options": ["mean", "std", "min", "max", "sum", "count"],
-                           "default": ["mean", "std"], "label": "Calculations"}
-        },
-        "creates_columns": ["{target_column}_mean", "{target_column}_std"]
-    },
+
+    # Note: "stat_group_stats" used to live here as a near-duplicate of
+    # stat_add_group_stats below (same display name, same params, no
+    # execution method — always crashed). Removed rather than fixed, since
+    # stat_add_group_stats is the actively-maintained version (it also
+    # supports a zscore calculation and more descriptive column names).
 
     # =========================================================================
     # ML CLASSIFICATION & PREDICTION OPERATIONS
@@ -1146,6 +1138,19 @@ OPERATION_REGISTRY = {
     # =========================================================================
     # AUDIT OPERATIONS (Duplicate, Gap, Outlier Detection)
     # =========================================================================
+    "audit_flag_rows": {
+        "display_name": "Flag Rows",
+        "type": TransformationStepType.AUDIT_FLAG,
+        "category": "audit",
+        "description": "Marks rows matching one or more conditions (AND/OR) with a new flag column, without removing any rows",
+        "parameter_schema": {
+            "conditions": {"type": "list[dict]", "required": True, "label": "Conditions"},
+            "combine_operator": {"type": "string", "required": False, "default": "AND",
+                                 "options": ["AND", "OR"], "label": "Combine With"},
+            "flag_column": {"type": "string", "required": False, "default": "flagged", "label": "Flag Column"}
+        },
+        "creates_columns": ["{flag_column}"]
+    },
     "audit_duplicate_detection": {
         "display_name": "Duplicate Detection",
         "type": TransformationStepType.AUDIT_FLAG,
@@ -1217,13 +1222,13 @@ OPERATION_REGISTRY = {
     },
 
     # =========================================================================
-    # TEXT EXTRACTION OPERATIONS (Excel LEFT/RIGHT/MID style)
+    # TEXT EXTRACTION OPERATIONS (LEFT/RIGHT/MID style)
     # =========================================================================
     "text_extract_first": {
         "display_name": "Extract First N Characters",
         "type": TransformationStepType.CALCULATE,
         "category": "text",
-        "description": "Extracts the first N characters from text (Excel LEFT function)",
+        "description": "Extracts the first N characters from text (LEFT-style)",
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"},
             "num_chars": {"type": "int", "required": False, "default": 1, "label": "Number of Characters"}
@@ -1235,7 +1240,7 @@ OPERATION_REGISTRY = {
         "display_name": "Extract Last N Characters",
         "type": TransformationStepType.CALCULATE,
         "category": "text",
-        "description": "Extracts the last N characters from text (Excel RIGHT function)",
+        "description": "Extracts the last N characters from text (RIGHT-style)",
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"},
             "num_chars": {"type": "int", "required": False, "default": 1, "label": "Number of Characters"}
@@ -1247,7 +1252,7 @@ OPERATION_REGISTRY = {
         "display_name": "Extract Middle Characters",
         "type": TransformationStepType.CALCULATE,
         "category": "text",
-        "description": "Extracts characters from the middle of text (Excel MID function)",
+        "description": "Extracts characters from the middle of text (MID-style)",
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"},
             "start_pos": {"type": "int", "required": False, "default": 1, "label": "Start Position (1-indexed)"},
@@ -1456,6 +1461,21 @@ OPERATION_REGISTRY = {
     },
 
     # -------------------------------------------------------------------------
+    # ADD INDEX COLUMN
+    # -------------------------------------------------------------------------
+    "add_index_column": {
+        "display_name": "Index Column",
+        "type": TransformationStepType.CALCULATE,
+        "category": "column",
+        "description": "Adds a sequential row-number column",
+        "parameter_schema": {
+            "output_column": {"type": "string", "required": False, "default": "index", "label": "Column Name"},
+            "start": {"type": "int", "required": False, "default": 0, "label": "Start Value"}
+        },
+        "creates_columns": ["{output_column}"]
+    },
+
+    # -------------------------------------------------------------------------
     # RENAME COLUMNS (Bulk rename)
     # -------------------------------------------------------------------------
     "rename_columns": {
@@ -1554,6 +1574,37 @@ OPERATION_REGISTRY = {
     },
 
     # -------------------------------------------------------------------------
+    # SORT ROWS
+    # -------------------------------------------------------------------------
+    "sort_column": {
+        "display_name": "Sort by Column",
+        "type": TransformationStepType.SORT,
+        "category": "table",
+        "description": "Sorts all rows by a column's values",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "ascending": {"type": "bool", "required": False, "default": True, "label": "Ascending"}
+        },
+        "creates_columns": False
+    },
+
+    # -------------------------------------------------------------------------
+    # ADVANCED FILTER (multi-condition, AND/OR)
+    # -------------------------------------------------------------------------
+    "filter_advanced": {
+        "display_name": "Advanced Filter",
+        "type": TransformationStepType.FILTER,
+        "category": "table",
+        "description": "Filters rows using one or more conditions combined with AND/OR",
+        "parameter_schema": {
+            "conditions": {"type": "list[dict]", "required": True, "label": "Conditions"},
+            "combine_operator": {"type": "string", "required": False, "default": "AND",
+                                 "options": ["AND", "OR"], "label": "Combine With"}
+        },
+        "creates_columns": False
+    },
+
+    # -------------------------------------------------------------------------
     # FILTER ROWS
     # -------------------------------------------------------------------------
     "filter_rows": {
@@ -1570,21 +1621,11 @@ OPERATION_REGISTRY = {
         "creates_columns": False  # Filters rows
     },
 
-    # -------------------------------------------------------------------------
-    # COMBINE WORKSHEETS (Union/Append)
-    # -------------------------------------------------------------------------
-    "combine_sheets": {
-        "display_name": "Combine Worksheets",
-        "type": TransformationStepType.JOIN,
-        "category": "table",
-        "description": "Creates a unified dataset by appending multiple worksheets",
-        "parameter_schema": {
-            "source_datasets": {"type": "list[str]", "required": True, "label": "Source Datasets"},
-            "align_columns": {"type": "bool", "required": False, "default": True, "label": "Auto-align Columns"},
-            "fill_missing": {"type": "bool", "required": False, "default": False, "label": "Fill Missing with Null"}
-        },
-        "creates_columns": False  # Combines datasets
-    },
+    # Note: no "combine worksheets" entry here — a single-dataframe pipeline
+    # step has no way to reference sibling datasets by name, so this could
+    # never actually run. The real, working equivalent is "Append Datasets"
+    # from the sidebar (main_window.on_append_datasets_requested), which
+    # already has direct access to every dataset in the project.
 
     # -------------------------------------------------------------------------
     # QUERY SHEET (Filter/Transform with formulas)

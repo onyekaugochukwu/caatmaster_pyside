@@ -8,8 +8,8 @@ from PySide6.QtWidgets import QWidget
 
 from .generic_transformation_dialog import GenericTransformationDialog
 from .pivot_dialog import PivotTableDialog
-from .unpivot_dialog import UnpivotDialog, PowerPivotDialog
-from .filter_dialog import FilterDialog
+from .unpivot_dialog import UnpivotDialog, PivotColumnDialog
+from .filter_dialog import FilterDialog, AuditFlagDialog
 from .anomaly_dialog import AnomalyDetectionDialog
 from .kmeans_dialog import KMeansDialog
 from .benford_dialog import BenfordDialog
@@ -55,10 +55,11 @@ class TransformationDialogFactory:
         # Pivot operations
         'pivot_table': PivotTableDialog,
         'unpivot_table': UnpivotDialog,
-        'pivot_single': PowerPivotDialog,
+        'pivot_single': PivotColumnDialog,
 
         # Filter operations
         'filter_advanced': FilterDialog,
+        'audit_flag_rows': AuditFlagDialog,
 
         # Financial Operations
         'financial_ratios': FinancialRatiosDialog,
@@ -99,8 +100,12 @@ class TransformationDialogFactory:
         # Replace
         'replace_values': ReplaceValuesDialog,
 
-        # Group Statistics
-        'stat_group_stats': GroupStatsDialog,
+        # Note: GroupStatsDialog was mapped to the now-removed "stat_group_stats"
+        # operation_id, but its own get_parameters() output (value_column,
+        # statistics, prefix, as_new_rows) never actually matched what any
+        # real operation expected — it would have crashed on apply either
+        # way. stat_add_group_stats (the working group-stats operation)
+        # uses the generic dialog, which does match its real schema.
 
         # AI Operations
         'ai_explain': AIExplainDialog,
@@ -124,9 +129,11 @@ class TransformationDialogFactory:
 
         # Table operations
         # Note: split_sheet is NOT here - it creates multiple datasets and is triggered from sidebar
+        # Note: combine_sheets was removed from OPERATION_REGISTRY - see the
+        # comment there; "Append Datasets" from the sidebar is the working
+        # equivalent for cross-dataset combination.
         'transpose': TransposeDialog,
         'promote_row_header': PromoteRowHeaderDialog,
-        'combine_sheets': CombineSheetsDialog,
         'query_sheet': QuerySheetDialog,
         'select_n_rows': SelectNRowsDialog,
         'join_datasets': JoinDatasetsDialog,

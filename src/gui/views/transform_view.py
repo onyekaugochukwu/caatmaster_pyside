@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
     QSplitter, QMessageBox, QMenu, QListWidget, QListWidgetItem,
     QGroupBox, QTextEdit, QTreeWidget, QTreeWidgetItem, QTabWidget, QScrollArea, QDialog,
-    QCheckBox
+    QCheckBox, QLineEdit
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize
 import polars as pl
@@ -38,10 +38,10 @@ class TransformView(QWidget):
 
         # Applied Steps rendering lives in a shared, persistent panel (see
         # gui.components.applied_steps_panel) so it stays visible across
-        # every data-workspace page, not just this one — Power Query never
-        # hides its Applied Steps pane just because you switched ribbon tabs.
-        # Falls back to a private instance if none is supplied, so this view
-        # remains independently constructible/testable.
+        # every data-workspace page, not just this one — it never hides just
+        # because you switched pages. Falls back to a private instance if
+        # none is supplied, so this view remains independently
+        # constructible/testable.
         from gui.components.applied_steps_panel import AppliedStepsPanel
         self.steps_panel = applied_steps_panel or AppliedStepsPanel()
         self.steps_panel.undoRequested.connect(self.undo_last_step)
@@ -57,62 +57,40 @@ class TransformView(QWidget):
         main_layout.setSpacing(0)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # --- Left Panel: Step Inspector (scrollable) ---
-        # Applied Steps itself is rendered by the shared panel (self.steps_panel),
-        # not owned by this view — see __init__.
-        left_panel = QWidget()
-        left_panel.setObjectName("LeftPanel")
-        left_panel.setFixedWidth(350)
-
-        # Wrap left panel content in scroll area
-        left_scroll = QScrollArea()
-        left_scroll.setWidgetResizable(True)
-        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        left_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        left_scroll.setWidget(left_panel)
-
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(10, 10, 10, 10)
-        left_layout.setSpacing(10)
-
-        # Step Inspector section
-        inspector_group = QGroupBox("Step Inspector")
-        inspector_layout = QVBoxLayout(inspector_group)
-
-        self.inspector_tabs = QTabWidget()
-        self.inspector_tabs.setMaximumHeight(300)
-
-        # Parameters tab
-        self.params_text = QTextEdit()
-        self.params_text.setReadOnly(True)
-        self.params_text.setMaximumHeight(200)
-        self.inspector_tabs.addTab(self.params_text, "Parameters")
-
-        # Created Columns tab
-        self.columns_tree = QTreeWidget()
-        self.columns_tree.setHeaderLabel("Created Columns")
-        self.columns_tree.setMaximumHeight(200)
-        self.inspector_tabs.addTab(self.columns_tree, "Columns")
-
-        # Data Preview tab
-        self.step_preview_table = QTableWidget()
-        self.step_preview_table.setMaximumHeight(200)
-        self.step_preview_table.setAlternatingRowColors(True)
-        self.step_preview_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.step_preview_table.horizontalHeader().setStretchLastSection(True)
-        self.inspector_tabs.addTab(self.step_preview_table, "Preview")
-
-        inspector_layout.addWidget(self.inspector_tabs)
-        left_layout.addWidget(inspector_group)
-
-        left_layout.addStretch()  # Add stretch to push content to top
-        main_layout.addWidget(left_scroll)
+        # No left panel here anymore — Applied Steps AND the Step Inspector
+        # both render in the shared, persistent AppliedStepsPanel (see
+        # __init__ and gui.components.applied_steps_panel), so this view is
+        # just the data grid.
 
         # --- Right Panel: Data Preview ---
         preview_widget = QWidget()
         preview_widget.setObjectName("PreviewPanel")
         preview_layout = QVBoxLayout(preview_widget)
         preview_layout.setContentsMargins(10, 10, 10, 10)
+
+        # Formula bar — hidden until toggled from View > Formula Bar.
+        # Type an expression using col('Name') to reference columns, same
+        # syntax as Custom Column, just entered inline instead of in a
+        # dialog — the muscle memory Excel users already have.
+        self.formula_bar = QWidget()
+        formula_layout = QHBoxLayout(self.formula_bar)
+        formula_layout.setContentsMargins(0, 0, 0, 8)
+        fx_label = QLabel("fx")
+        fx_label.setStyleSheet(f"font-weight: 600; color: {Colors.ACCENT}; padding: 0 4px;")
+        formula_layout.addWidget(fx_label)
+        self.formula_output_edit = QLineEdit()
+        self.formula_output_edit.setPlaceholderText("New column name")
+        self.formula_output_edit.setFixedWidth(160)
+        formula_layout.addWidget(self.formula_output_edit)
+        self.formula_expr_edit = QLineEdit()
+        self.formula_expr_edit.setPlaceholderText("e.g. col('Amount') * 1.1")
+        self.formula_expr_edit.returnPressed.connect(self._on_formula_apply)
+        formula_layout.addWidget(self.formula_expr_edit, 1)
+        formula_apply_btn = QPushButton("Apply")
+        formula_apply_btn.clicked.connect(self._on_formula_apply)
+        formula_layout.addWidget(formula_apply_btn)
+        self.formula_bar.setVisible(False)
+        preview_layout.addWidget(self.formula_bar)
 
         # Wrap data table in scroll area for proper horizontal scrolling
         data_scroll = QScrollArea()
@@ -139,7 +117,7 @@ class TransformView(QWidget):
         self.data_table.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
         self.data_table.horizontalHeader().customContextMenuRequested.connect(self.show_header_context_menu)
 
-        # Excel-style AutoFilter state: column name -> set of allowed values
+        # Column AutoFilter state: column name -> set of allowed values
         # (as displayed strings; None key absent = no filter on that column)
         self.column_filters = {}
         self._last_full_df = None
@@ -150,8 +128,7 @@ class TransformView(QWidget):
         self.info_label = QLabel("Load data via the sidebar to begin transforming.")
         preview_layout.addWidget(self.info_label)
 
-        main_layout.addWidget(preview_widget)
-        main_layout.setStretch(1, 1)  # Make the right panel expand
+        main_layout.addWidget(preview_widget, 1)
 
     @Slot(pl.DataFrame)
     def set_dataframe(self, df: pl.DataFrame, pipeline: TransformationPipeline = None):
@@ -201,6 +178,31 @@ class TransformView(QWidget):
         column_name = self.data_table.horizontalHeaderItem(column_index).text()
 
         menu = QMenu(self)
+
+        # Sort Ascending/Descending and Remove Column — immediate, no
+        # dialog (the column is already known from the right-click), same
+        # one-click convention as most spreadsheet tools.
+        sort_asc_action = menu.addAction(f'Sort "{column_name}" Ascending')
+        sort_asc_action.triggered.connect(
+            lambda checked=False, col=column_name: self.apply_transformation(
+                'sort_column', {'column': col, 'ascending': True}
+            )
+        )
+        sort_desc_action = menu.addAction(f'Sort "{column_name}" Descending')
+        sort_desc_action.triggered.connect(
+            lambda checked=False, col=column_name: self.apply_transformation(
+                'sort_column', {'column': col, 'ascending': False}
+            )
+        )
+        menu.addSeparator()
+
+        remove_action = menu.addAction(f'Remove "{column_name}"')
+        remove_action.triggered.connect(
+            lambda checked=False, col=column_name: self.apply_transformation(
+                'choose_columns', {'action': 'remove', 'columns_to_remove': [col]}
+            )
+        )
+        menu.addSeparator()
 
         # Group operations by category (matching Ribbon structure)
         grouped_ops = defaultdict(list)
@@ -802,6 +804,34 @@ class TransformView(QWidget):
                 f"Failed to apply '{operation_id}':\n{str(e)}"
             )
 
+    def toggle_formula_bar(self, visible: bool = None):
+        """Show/hide the formula bar (View > Formula Bar)."""
+        if visible is None:
+            visible = not self.formula_bar.isVisible()
+        self.formula_bar.setVisible(visible)
+        if visible:
+            self.formula_expr_edit.setFocus()
+
+    def _on_formula_apply(self):
+        """Add a calculated column from the formula bar's expression."""
+        if not self.pipeline:
+            QMessageBox.warning(self, "No Data", "No data pipeline is active.")
+            return
+
+        output_column = self.formula_output_edit.text().strip()
+        expression = self.formula_expr_edit.text().strip()
+        if not output_column or not expression:
+            QMessageBox.warning(self, "Formula Bar", "Enter both a column name and an expression.")
+            return
+
+        current_df = self.pipeline.apply()
+        self.apply_transformation('custom_column_from_math', {
+            'expression': expression,
+            'output_column': output_column,
+            'columns': list(current_df.columns),
+        })
+        self.formula_expr_edit.clear()
+
     def undo_last_step(self):
         """Removes the last transformation step."""
         if not self.pipeline or len(self.pipeline.get_steps()) == 0:
@@ -852,7 +882,7 @@ class TransformView(QWidget):
 
     def populate_table(self, df: pl.DataFrame):
         """Populates the table with data from a Polars DataFrame, applying
-        any active Excel-style column AutoFilters first."""
+        any active column AutoFilters first."""
         if df is None:
             self._last_full_df = None
             self.data_table.setRowCount(0)
@@ -890,7 +920,7 @@ class TransformView(QWidget):
 
     def _apply_column_filters(self, df: pl.DataFrame) -> pl.DataFrame:
         """Apply active AutoFilter selections (view-level only — does not
-        modify the pipeline or its steps, matching Excel's AutoFilter)."""
+        modify the pipeline or its steps)."""
         if not self.column_filters:
             return df
 
@@ -996,20 +1026,20 @@ class TransformView(QWidget):
                 params_text += f"  {key}: {value}\n"
 
         params_text += f"\nTimestamp: {step.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
-        self.params_text.setPlainText(params_text)
+        self.steps_panel.params_text.setPlainText(params_text)
 
         # Update Columns tab
-        self.columns_tree.clear()
+        self.steps_panel.columns_tree.clear()
         if step.created_columns:
             for col in step.created_columns:
                 col_info = self.pipeline.get_column_info(col)
                 item = QTreeWidgetItem([col])
                 if col_info:
                     item.setToolTip(0, f"Created by: {col_info['operation']} at step {col_info['created_by_step']}")
-                self.columns_tree.addTopLevelItem(item)
+                self.steps_panel.columns_tree.addTopLevelItem(item)
         else:
             no_cols_item = QTreeWidgetItem(["No columns created"])
-            self.columns_tree.addTopLevelItem(no_cols_item)
+            self.steps_panel.columns_tree.addTopLevelItem(no_cols_item)
 
         # Update Preview tab
         step_df = self.pipeline.get_dataframe_at_step(step_number)
@@ -1017,31 +1047,32 @@ class TransformView(QWidget):
 
     def clear_inspector(self):
         """Clear all inspector tabs."""
-        self.params_text.clear()
-        self.columns_tree.clear()
-        self.step_preview_table.setRowCount(0)
-        self.step_preview_table.setColumnCount(0)
+        self.steps_panel.params_text.clear()
+        self.steps_panel.columns_tree.clear()
+        self.steps_panel.step_preview_table.setRowCount(0)
+        self.steps_panel.step_preview_table.setColumnCount(0)
 
     def populate_step_preview_table(self, df: pl.DataFrame):
         """Populate the step preview table with a subset of the dataframe."""
+        table = self.steps_panel.step_preview_table
         if df is None:
-            self.step_preview_table.setRowCount(0)
-            self.step_preview_table.setColumnCount(0)
+            table.setRowCount(0)
+            table.setColumnCount(0)
             return
 
         # Show first 50 rows and first 10 columns for preview
         preview_df = df.head(50).select(df.columns[:10])
 
-        self.step_preview_table.setRowCount(preview_df.height)
-        self.step_preview_table.setColumnCount(preview_df.width)
-        self.step_preview_table.setHorizontalHeaderLabels(preview_df.columns)
+        table.setRowCount(preview_df.height)
+        table.setColumnCount(preview_df.width)
+        table.setHorizontalHeaderLabels(preview_df.columns)
 
         for row_idx in range(preview_df.height):
             for col_idx, value in enumerate(preview_df.row(row_idx)):
                 item = QTableWidgetItem(str(value) if value is not None else "")
-                self.step_preview_table.setItem(row_idx, col_idx, item)
+                table.setItem(row_idx, col_idx, item)
 
-        self.step_preview_table.resizeColumnsToContents()
+        table.resizeColumnsToContents()
 
     def export_transformations(self):
         """Export transformed data to file (CSV, JSON, or Parquet)."""

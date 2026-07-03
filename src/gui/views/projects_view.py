@@ -24,6 +24,7 @@ class ProjectsView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_project_path = None
+        self.current_project_format = None  # "caat" or "json"
         self.projects_data = []  # List of (path, project_data) tuples
         self.setup_ui()
 
@@ -310,11 +311,15 @@ class ProjectsView(QWidget):
         self.load_projects()
 
     def load_projects(self):
-        """Load all projects from the projects directory"""
+        """Load all projects — .caat files (the app's native format) found
+        in the default projects directory or previously opened from
+        elsewhere (via the recent-projects index), plus any legacy .json
+        project files for backward compatibility."""
         self.projects_data.clear()
         self.projects_table.setRowCount(0)
 
-        # Check multiple possible project directories
+        from core.caat_format import peek_caat_metadata
+
         project_dirs = [
             Path.home() / "Documents" / "CaatMaster" / "Projects",
             Path.home() / "CaatMaster" / "Projects",
@@ -322,40 +327,79 @@ class ProjectsView(QWidget):
             Path.cwd() / "data" / "projects",
         ]
 
-        project_files = []
+        caat_paths = set()
         for project_dir in project_dirs:
             if project_dir.exists():
-                # Find all .json and .zip project files
-                project_files.extend(project_dir.glob("*.json"))
-                project_files.extend(project_dir.glob("*.zip"))
+                caat_paths.update(str(p) for p in project_dir.glob("*.caat"))
 
-        # Load each project
-        for project_path in project_files:
+        # Merge in anything opened from a non-default location (e.g. Save As)
+        try:
+            from core.recent_projects import list_recent
+            for entry in list_recent(limit=50):
+                p = entry.get("path", "")
+                if p.endswith(".caat"):
+                    caat_paths.add(p)
+        except Exception:
+            pass
+
+        rows = []
+        for caat_path in caat_paths:
             try:
-                # Read project metadata
-                if project_path.suffix == '.json':
-                    with open(project_path, 'r') as f:
-                        project_data = json.load(f)
+                meta = peek_caat_metadata(caat_path)
+                rows.append({
+                    "path": caat_path,
+                    "format": "caat",
+                    "name": meta.get("name", "Unknown"),
+                    "client_name": meta.get("client_name") or "-",
+                    "engagement_type": meta.get("engagement_type") or "-",
+                    "phase": meta.get("phase") or "-",
+                    "created": (meta.get("saved_at") or "Unknown").split("T")[0],
+                    "meta": meta,
+                })
+            except Exception as e:
+                print(f"Error reading project {caat_path}: {e}")
 
-                    # Add to table
-                    row = self.projects_table.rowCount()
-                    self.projects_table.insertRow(row)
+        # Legacy .json project files, still openable via ProjectExporter
+        legacy_files = []
+        for project_dir in project_dirs:
+            if project_dir.exists():
+                legacy_files.extend(project_dir.glob("*.json"))
 
-                    self.projects_table.setItem(row, 0, QTableWidgetItem(project_data.get('name', 'Unknown')))
-                    self.projects_table.setItem(row, 1, QTableWidgetItem(project_data.get('client_name', '-')))
-                    self.projects_table.setItem(row, 2, QTableWidgetItem(project_data.get('engagement_type', '-').replace('_', ' ').title()))
-                    self.projects_table.setItem(row, 3, QTableWidgetItem(project_data.get('phase', '-').replace('_', ' ').title()))
-                    created = project_data.get('metadata', {}).get('created_at', 'Unknown')
-                    if isinstance(created, str):
-                        created = created.split('T')[0]  # Just the date part
-                    self.projects_table.setItem(row, 4, QTableWidgetItem(str(created)))
-
-                    # Store path in UserRole
-                    self.projects_table.item(row, 0).setData(Qt.UserRole, str(project_path))
-                    self.projects_data.append((str(project_path), project_data))
-
+        for project_path in legacy_files:
+            try:
+                with open(project_path, 'r') as f:
+                    project_data = json.load(f)
+                created = project_data.get('metadata', {}).get('created_at', 'Unknown')
+                if isinstance(created, str):
+                    created = created.split('T')[0]
+                rows.append({
+                    "path": str(project_path),
+                    "format": "json",
+                    "name": project_data.get('name', 'Unknown'),
+                    "client_name": project_data.get('client_name') or '-',
+                    "engagement_type": project_data.get('engagement_type') or '-',
+                    "phase": project_data.get('phase') or '-',
+                    "created": str(created),
+                    "meta": project_data,
+                })
             except Exception as e:
                 print(f"Error loading project {project_path}: {e}")
+
+        rows.sort(key=lambda r: r.get("created", ""), reverse=True)
+
+        for row_data in rows:
+            row = self.projects_table.rowCount()
+            self.projects_table.insertRow(row)
+
+            self.projects_table.setItem(row, 0, QTableWidgetItem(row_data["name"]))
+            self.projects_table.setItem(row, 1, QTableWidgetItem(row_data["client_name"]))
+            self.projects_table.setItem(row, 2, QTableWidgetItem(str(row_data["engagement_type"]).replace('_', ' ').title()))
+            self.projects_table.setItem(row, 3, QTableWidgetItem(str(row_data["phase"]).replace('_', ' ').title()))
+            self.projects_table.setItem(row, 4, QTableWidgetItem(row_data["created"]))
+
+            self.projects_table.item(row, 0).setData(Qt.UserRole, row_data["path"])
+            self.projects_table.item(row, 0).setData(Qt.UserRole + 1, row_data["format"])
+            self.projects_data.append((row_data["path"], row_data["meta"]))
 
         if self.projects_table.rowCount() == 0:
             # Show empty state
@@ -373,6 +417,7 @@ class ProjectsView(QWidget):
         item = self.projects_table.item(row, 0)
         if item:
             project_path = item.data(Qt.UserRole)
+            self.current_project_format = item.data(Qt.UserRole + 1)
             self.current_project_path = project_path
             self.show_project_details(project_path)
             self.open_btn.setEnabled(True)
@@ -390,6 +435,28 @@ class ProjectsView(QWidget):
     def show_project_details(self, project_path: str):
         """Show project details"""
         try:
+            if self.current_project_format == "caat":
+                from core.caat_format import peek_caat_metadata
+                meta = peek_caat_metadata(project_path)
+                details = f"""<b>Name:</b> {meta.get('name', 'Unknown')}
+<b>Client:</b> {meta.get('client_name') or 'Not specified'}
+<b>Type:</b> {str(meta.get('engagement_type') or '-').replace('_', ' ').title()}
+<b>Phase:</b> {str(meta.get('phase') or '-').replace('_', ' ').title()}
+<b>Risk Score:</b> {meta.get('risk_score', '-')}/10
+
+<b>Description:</b>
+{meta.get('description') or 'No description'}
+
+<b>Objectives:</b>
+{meta.get('objectives') or 'None specified'}
+
+<b>Last Saved:</b> {meta.get('saved_at', 'Unknown')}
+<b>Datasets:</b> {meta.get('dataset_count', 0)}
+<b>Location:</b> {project_path}
+"""
+                self.details_text.setHtml(details)
+                return
+
             with open(project_path, 'r') as f:
                 project_data = json.load(f)
 
@@ -430,12 +497,28 @@ class ProjectsView(QWidget):
         )
 
     def edit_project(self):
-        """Edit the selected project"""
+        """Edit the selected project's name"""
         if not self.current_project_path:
             return
 
-        # Simple edit using input dialog
         try:
+            if self.current_project_format == "caat":
+                from core.caat_format import load_caat, save_caat, peek_caat_metadata
+                old_name = peek_caat_metadata(self.current_project_path).get('name', '')
+                new_name, ok = QInputDialog.getText(
+                    self, "Edit Project Name", "Project Name:", text=old_name
+                )
+                if ok and new_name.strip():
+                    project = load_caat(self.current_project_path)
+                    project.name = new_name.strip()
+                    save_caat(project, self.current_project_path,
+                              active_dataset_id=getattr(project, "last_active_dataset_id", None))
+                    QMessageBox.information(self, "Success", "Project name updated successfully!")
+                    self.load_projects()
+                    self.show_project_details(self.current_project_path)
+                return
+
+            # Legacy .json project files
             with open(self.current_project_path, 'r') as f:
                 project_data = json.load(f)
 
@@ -496,20 +579,18 @@ class ProjectsView(QWidget):
             return
 
         try:
-            # Load the project using ProjectExporter
-            from core.project_manager import ProjectExporter
-
-            project = ProjectExporter.import_project(self.current_project_path)
+            if self.current_project_format == "caat":
+                from core.caat_format import load_caat
+                project = load_caat(self.current_project_path)
+            else:
+                from core.project_manager import ProjectExporter
+                project = ProjectExporter.import_project(self.current_project_path)
 
             if project:
-                # Emit signal with the loaded project
-                self.project_open_requested.emit(project)
-
-                QMessageBox.information(
-                    self,
-                    "Project Opened",
-                    f"Project '{project.name}' is now active! You can now upload datasets."
-                )
+                # Emit (project, path) so main window knows where to save
+                # back to and can restore the dataset that was active when
+                # this project was last saved.
+                self.project_open_requested.emit((project, self.current_project_path))
             else:
                 QMessageBox.warning(self, "Error", "Failed to load project.")
 

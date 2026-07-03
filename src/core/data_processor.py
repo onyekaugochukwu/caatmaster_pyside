@@ -263,7 +263,7 @@ class DataProcessor:
         elif operation_id == 'text_soundex':
             return self._call_mapped_method(self.soundex, df, params)
 
-        # Text extraction operations (Excel LEFT/RIGHT/MID style)
+        # Text extraction operations (LEFT/RIGHT/MID style)
         elif operation_id == 'text_extract_first':
             return self._call_mapped_method(self.extract_first_chars, df, params)
         elif operation_id == 'text_extract_last':
@@ -369,7 +369,7 @@ class DataProcessor:
         elif operation_id == 'ml_outlier':
             return self._call_mapped_method(self.ml_outlier_detection, df, params)
         elif operation_id == 'ml_cluster':
-            return self._call_mapped_method(self.ml_clustering, df, params)
+            return self._call_mapped_method(self.ml_cluster, df, params)
         elif operation_id == 'ml_forecast':
             return self._call_mapped_method(self.ml_forecast, df, params)
 
@@ -405,7 +405,7 @@ class DataProcessor:
             )
 
         # Audit transformations
-        elif operation_id == 'audit_benfords_law':
+        elif operation_id == 'audit_benford_law':
             return self._call_mapped_method(self.audit_benford_law, df, params)
 
         # AI transformations
@@ -465,6 +465,8 @@ class DataProcessor:
             return self._call_mapped_method(self.ml_ets, df, params)
 
         # Audit transformations
+        elif operation_id == 'audit_flag_rows':
+            return self._call_mapped_method(self.flag_rows, df, params)
         elif operation_id == 'audit_duplicate_detection':
             return self._call_mapped_method(self.audit_duplicate_detection, df, params)
         elif operation_id == 'audit_gap_analysis':
@@ -477,6 +479,8 @@ class DataProcessor:
         # Statistics group operations
         elif operation_id == 'stat_add_group_stats':
             return self._call_mapped_method(self.stat_add_group_stats, df, params)
+        elif operation_id == 'stat_quick_stats':
+            return self._call_mapped_method(self.quick_stats, df, params)
 
         # Column operations
         elif operation_id == 'column_rename':
@@ -503,6 +507,8 @@ class DataProcessor:
             return self._call_mapped_method(self.calculated_columns, df, params)
         elif operation_id == 'choose_columns':
             return self._call_mapped_method(self.choose_columns, df, params)
+        elif operation_id == 'add_index_column':
+            return self._call_mapped_method(self.add_index_column, df, params)
         elif operation_id == 'change_dtype':
             return self._call_mapped_method(self.change_data_type_extended, df, params)
         elif operation_id == 'rename_columns':
@@ -526,6 +532,12 @@ class DataProcessor:
             return self._call_mapped_method(self.join_datasets, df, params)
         elif operation_id == 'append_datasets':
             return self._call_mapped_method(self.append_datasets, df, params)
+        elif operation_id == 'select_n_rows':
+            return self._call_mapped_method(self.select_n_rows, df, params)
+        elif operation_id == 'query_sheet':
+            return self._call_mapped_method(self.query_sheet, df, params)
+        elif operation_id == 'filter_advanced':
+            return self._call_mapped_method(self.apply_advanced_filter, df, params)
 
         # Aggregate operations (summary reports)
         elif operation_id == 'group_summary':
@@ -1636,6 +1648,28 @@ class DataProcessor:
     # UNSUPERVISED LEARNING - CLUSTERING
     # ============================================================================
 
+    def ml_cluster(self, df: pl.DataFrame, columns: List[str],
+                    n_clusters: int = 3, output_col: str = "cluster",
+                    **kwargs) -> pl.DataFrame:
+        """K-Means clustering across one or more feature columns."""
+        try:
+            from sklearn.cluster import KMeans
+            from sklearn.preprocessing import StandardScaler
+
+            X = df.select(columns).to_pandas()
+
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+
+            model = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            labels = model.fit_predict(X_scaled)
+
+            return df.with_columns(pl.Series(name=output_col, values=labels))
+
+        except Exception as e:
+            print(f"K-Means error: {e}")
+            raise
+
     def ml_dbscan(self, df: pl.DataFrame, features: List[str],
                   output_col: str = "cluster", eps: float = 0.5,
                   min_samples: int = 5, **kwargs) -> pl.DataFrame:
@@ -1918,6 +1952,19 @@ class DataProcessor:
     # STATISTICS ADD GROUP IMPLEMENTATIONS
     # ============================================================================
 
+    def quick_stats(self, df: pl.DataFrame, column: str, output_cols: List[str] = None) -> pl.DataFrame:
+        """Add the column's min/max/mean/std as new columns (same value on every row)."""
+        if output_cols is None or len(output_cols) < 4:
+            output_cols = [f"{column}_min", f"{column}_max", f"{column}_mean", f"{column}_std"]
+        min_col, max_col, mean_col, std_col = output_cols[:4]
+        s = df[column]
+        return df.with_columns([
+            pl.lit(s.min()).alias(min_col),
+            pl.lit(s.max()).alias(max_col),
+            pl.lit(s.mean()).alias(mean_col),
+            pl.lit(s.std()).alias(std_col),
+        ])
+
     def stat_add_group_stats(self, df: pl.DataFrame, group_column: str, target_column: str,
                             calculations: List[str], **kwargs) -> pl.DataFrame:
         """Add aggregate statistics as columns per group"""
@@ -2034,7 +2081,7 @@ class DataProcessor:
         # Clean up and return
         return result.drop("_split_parts", "_num_parts")
 
-    def custom_column_from_math(self, df: pl.DataFrame, expression: str, output_column: str = "custom_result", columns: List[str] = None) -> pl.DataFrame:
+    def custom_column_from_math(self, df: pl.DataFrame, expression: str, output_col: str = "custom_result", columns: List[str] = None) -> pl.DataFrame:
         """Create custom column using mathematical expression"""
         # For safety, use polars expressions
         try:
@@ -2045,14 +2092,14 @@ class DataProcessor:
 
             # Create the expression
             result_expr = eval(expr)
-            return df.with_columns(result_expr.alias(output_column))
+            return df.with_columns(result_expr.alias(output_col))
         except Exception as e:
             raise ValueError(f"Invalid expression: {e}")
 
-    def calculated_columns(self, df: pl.DataFrame, formula: str, output_column: str, formula_type: str = "arithmetic") -> pl.DataFrame:
+    def calculated_columns(self, df: pl.DataFrame, formula: str, output_col: str, formula_type: str = "arithmetic") -> pl.DataFrame:
         """Create calculated column using formula"""
         try:
-            return df.with_columns(eval(formula).alias(output_column))
+            return df.with_columns(eval(formula).alias(output_col))
         except Exception as e:
             raise ValueError(f"Invalid formula: {e}")
 
@@ -2068,6 +2115,10 @@ class DataProcessor:
             if column_order:
                 return df.select(column_order)
         return df
+
+    def add_index_column(self, df: pl.DataFrame, output_col: str = "index", start: int = 0) -> pl.DataFrame:
+        """Add a sequential row-number column."""
+        return df.with_row_index(name=output_col, offset=start)
 
     def change_data_type_extended(self, df: pl.DataFrame, column: str, new_dtype: str, format_string: str = None) -> pl.DataFrame:
         """Change column data type with extended type support"""
@@ -2559,32 +2610,148 @@ class DataProcessor:
         else:
             raise ValueError(f"Unsupported operator: {operator}")
 
+    def _build_condition_expr(self, df: pl.DataFrame, conditions: list, combine_operator: str = "AND"):
+        """Build a single combined polars boolean expression from a list of
+        {column, operator, value} conditions — shared by the Filter and
+        Audit Flag dialogs, which only differ in what they do with the
+        resulting boolean mask (filter vs. flag)."""
+        def coerce(value, dtype):
+            if dtype in (pl.Float32, pl.Float64):
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    return value
+            if dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64):
+                try:
+                    return int(float(value))
+                except (TypeError, ValueError):
+                    return value
+            return value
+
+        exprs = []
+        for cond in conditions:
+            column = cond.get("column")
+            operator = cond.get("operator")
+            value = cond.get("value", "")
+            if not column or column not in df.columns:
+                continue
+
+            col = pl.col(column)
+            dtype = df[column].dtype
+
+            if operator == "==":
+                exprs.append(col == coerce(value, dtype))
+            elif operator == "!=":
+                exprs.append(col != coerce(value, dtype))
+            elif operator == ">":
+                exprs.append(col > coerce(value, dtype))
+            elif operator == ">=":
+                exprs.append(col >= coerce(value, dtype))
+            elif operator == "<":
+                exprs.append(col < coerce(value, dtype))
+            elif operator == "<=":
+                exprs.append(col <= coerce(value, dtype))
+            elif operator == "contains":
+                exprs.append(col.cast(pl.Utf8).str.contains(str(value), literal=True))
+            elif operator == "not_contains":
+                exprs.append(~col.cast(pl.Utf8).str.contains(str(value), literal=True))
+            elif operator == "starts_with":
+                exprs.append(col.cast(pl.Utf8).str.starts_with(str(value)))
+            elif operator == "ends_with":
+                exprs.append(col.cast(pl.Utf8).str.ends_with(str(value)))
+            elif operator == "is_null":
+                exprs.append(col.is_null())
+            elif operator == "is_not_null":
+                exprs.append(col.is_not_null())
+            elif operator == "in_list":
+                items = [v.strip() for v in str(value).split(",") if v.strip()]
+                exprs.append(col.cast(pl.Utf8).is_in(items))
+            elif operator == "between":
+                parts = [v.strip() for v in str(value).split(",")]
+                if len(parts) == 2:
+                    lo, hi = coerce(parts[0], dtype), coerce(parts[1], dtype)
+                    exprs.append((col >= lo) & (col <= hi))
+
+        if not exprs:
+            return None
+
+        combined = exprs[0]
+        for e in exprs[1:]:
+            combined = (combined & e) if combine_operator == "AND" else (combined | e)
+        return combined
+
+    def apply_advanced_filter(self, df: pl.DataFrame, conditions: list, combine_operator: str = "AND") -> pl.DataFrame:
+        """Apply a multi-condition filter (combined with AND/OR) — the
+        real implementation behind the Filter dialog's condition builder."""
+        if not conditions:
+            return df
+        combined = self._build_condition_expr(df, conditions, combine_operator)
+        return df.filter(combined) if combined is not None else df
+
+    def flag_rows(self, df: pl.DataFrame, conditions: list, combine_operator: str = "AND",
+                  flag_col: str = "flagged") -> pl.DataFrame:
+        """Add a boolean column marking which rows match one or more
+        conditions (AND/OR) — an audit trail of what was flagged and why,
+        without discarding any rows the way Filter does."""
+        if not conditions:
+            return df.with_columns(pl.lit(False).alias(flag_col))
+        combined = self._build_condition_expr(df, conditions, combine_operator)
+        if combined is None:
+            return df.with_columns(pl.lit(False).alias(flag_col))
+        return df.with_columns(combined.alias(flag_col))
+
     def sort_rows(self, df: pl.DataFrame, column: str, ascending: bool = True) -> pl.DataFrame:
         """Sort rows by column"""
         return df.sort(column, descending=not ascending)
 
+    def select_n_rows(self, df: pl.DataFrame, selection_type: str, n: int,
+                       random_seed: int = None, step: int = 1) -> pl.DataFrame:
+        """Keep a subset of rows: the first/last N, N at random, or every Nth."""
+        if selection_type == "first":
+            return df.head(n)
+        elif selection_type == "last":
+            return df.tail(n)
+        elif selection_type == "random":
+            return df.sample(n=min(n, df.height), seed=random_seed)
+        elif selection_type == "every_nth":
+            return df.gather_every(max(1, step)).head(n) if n else df.gather_every(max(1, step))
+        return df
+
+    def query_sheet(self, df: pl.DataFrame, condition: str, sort_by: List[str] = None,
+                     sort_order: str = "asc", select_columns: List[str] = None) -> pl.DataFrame:
+        """Filter by a polars expression condition, then optionally sort and select columns."""
+        try:
+            result = df.filter(eval(condition))
+        except Exception as e:
+            raise ValueError(f"Invalid filter condition: {e}")
+        if sort_by:
+            result = result.sort(sort_by, descending=(sort_order == "desc"))
+        if select_columns:
+            result = result.select(select_columns)
+        return result
+
 
 
     # =========================================================================
-    # TEXT EXTRACTION OPERATIONS (Excel LEFT/RIGHT/MID style)
+    # TEXT EXTRACTION OPERATIONS (LEFT/RIGHT/MID style)
     # =========================================================================
 
     def extract_first_chars(self, df: pl.DataFrame, column: str, num_chars: int = 1, output_col: str = None) -> pl.DataFrame:
-        """Extract first N characters from text (Excel LEFT function)"""
+        """Extract first N characters from text (LEFT-style)"""
         output_col = output_col or f"{column}_left"
         return df.with_columns(
             pl.col(column).str.slice(offset=0, length=num_chars).alias(output_col)
         )
 
     def extract_last_chars(self, df: pl.DataFrame, column: str, num_chars: int = 1, output_col: str = None) -> pl.DataFrame:
-        """Extract last N characters from text (Excel RIGHT function)"""
+        """Extract last N characters from text (RIGHT-style)"""
         output_col = output_col or f"{column}_right"
         return df.with_columns(
             pl.col(column).str.slice(offset=-num_chars).alias(output_col)
         )
 
     def extract_middle_chars(self, df: pl.DataFrame, column: str, start_pos: int = 1, num_chars: int = 1, output_col: str = None) -> pl.DataFrame:
-        """Extract characters from the middle of text (Excel MID function)"""
+        """Extract characters from the middle of text (MID-style)"""
         output_col = output_col or f"{column}_mid"
         offset = max(0, start_pos - 1)
         return df.with_columns(
@@ -2927,8 +3094,8 @@ def substitute_parameters(text: str, parameters: Dict[str, Any]) -> str:
 
 def parse_clipboard_text(text: str) -> pl.DataFrame:
     """Parse tab- or comma-separated clipboard text (e.g. a range copied
-    from Excel) into a DataFrame, so users can paste a quick sample directly
-    into a new dataset without saving a file first. Assumes the first row
+    from a spreadsheet) into a DataFrame, so users can paste a quick sample
+    directly into a new dataset without saving a file first. Assumes the first row
     is a header, matching how CSV import already behaves."""
     import io
 

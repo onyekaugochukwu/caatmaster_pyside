@@ -1,8 +1,7 @@
 """
-Column Quality / Distribution / Profile dialog — Power Query style.
+Column Quality / Distribution / Profile dialog.
 
-Power Query shows three related views (column quality bars under headers,
-column distribution charts, column profile detail) that are really one
+Column quality bars, distribution charts, and profile detail are really one
 feature seen from different angles. This dialog implements all three as tabs
 over the same computed stats, rather than three disconnected stubs.
 """

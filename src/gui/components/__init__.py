@@ -50,13 +50,7 @@ from .context_menus import (
 
 from .backstage import BackstageView
 
-from .ribbon import (
-    RibbonButton,
-    SmallRibbonButton,
-    RibbonTab,
-    RibbonGroup,
-    RibbonBar,
-)
+from .app_menu import CommandRegistry, build_menu_bar
 
 __all__ = [
     # Modern UI
@@ -103,10 +97,7 @@ __all__ = [
     "RowContextMenu",
     # Backstage
     "BackstageView",
-    # Ribbon
-    "RibbonButton",
-    "SmallRibbonButton",
-    "RibbonTab",
-    "RibbonGroup",
-    "RibbonBar",
+    # App menu
+    "CommandRegistry",
+    "build_menu_bar",
 ]

@@ -203,8 +203,7 @@ class DataView(QWidget):
 
     def paste_from_clipboard(self):
         """Create a new dataset directly from clipboard text (e.g. a range
-        copied from Excel) — no file save required first, matching the
-        copy/paste habit Excel users already have."""
+        copied from a spreadsheet) — no file save required first."""
         from PySide6.QtWidgets import QApplication, QMessageBox
 
         if not self.current_project:
@@ -216,7 +215,7 @@ class DataView(QWidget):
 
         clipboard_text = QApplication.clipboard().text()
         if not clipboard_text or not clipboard_text.strip():
-            QMessageBox.information(self, "Clipboard Empty", "Copy some cells (e.g. from Excel) first, then try again.")
+            QMessageBox.information(self, "Clipboard Empty", "Copy some cells from a spreadsheet first, then try again.")
             return
 
         try:

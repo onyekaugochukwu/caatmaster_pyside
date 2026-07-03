@@ -1,5 +1,5 @@
 """
-Sidebar for CaatMaster — the "Queries" pane, Power Query style.
+Sidebar for CaatMaster — the "Queries" pane.
 Light, clean navigation with dataset management.
 """
 from typing import List
@@ -190,6 +190,15 @@ class Sidebar(QFrame):
 
         if datasets and not self.current_dataset_id:
             self.datasets_list.setCurrentRow(0)
+
+    def select_dataset(self, dataset_id: str):
+        """Highlight a specific dataset in the list — used when reopening a
+        project to resume on whichever dataset was active when it was last
+        saved, instead of always defaulting to the first one."""
+        item = self.dataset_items.get(dataset_id)
+        if item:
+            self.current_dataset_id = dataset_id
+            self.datasets_list.setCurrentItem(item)
 
     def _on_datasetClicked(self, item):
         """Handle dataset item click (left click only)"""

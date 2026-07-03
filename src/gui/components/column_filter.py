@@ -1,10 +1,10 @@
 """
-Excel-style column filter dropdowns for the data grid.
+AutoFilter-style column filter dropdowns for the data grid.
 
 A small filter icon is drawn at the right edge of each header section;
 clicking it opens a checklist of the column's unique values (with a search
-box), matching Excel's AutoFilter — discoverable without needing to already
-know to right-click the header.
+box) — discoverable without needing to already know to right-click the
+header.
 """
 from typing import List, Optional
 
@@ -62,7 +62,7 @@ class FilterableHeaderView(QHeaderView):
 
 
 class ColumnFilterPopup(QWidget):
-    """Checklist popup for one column's unique values, Excel AutoFilter style."""
+    """Checklist popup for one column's unique values, AutoFilter style."""
 
     filtersApplied = Signal(str, set)  # column_name, selected values (or None = clear filter)
 

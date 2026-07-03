@@ -27,9 +27,9 @@ from gui.dialogs.ai_settings_dialog import AISettingsDialog
 from gui.dialogs.column_generator_dialog import ColumnGeneratorDialog
 from gui.dialogs.compliance_report_dialog import ComplianceReportDialog
 
-# Import the new sidebar, ribbon and backstage
+# Import the sidebar, menu/toolbar chrome, and backstage
 from gui.components.sidebar import Sidebar
-from gui.components.ribbon import RibbonBar, ApplicationMenu
+from gui.components.app_menu import CommandRegistry, build_menu_bar
 from gui.components.backstage import BackstageView
 from gui.components.ai_panel import AIPanel
 
@@ -37,11 +37,21 @@ from gui.components.ai_panel import AIPanel
 class MainWindow(QMainWindow):
     """Main application window with modern CaatMaster UI"""
 
+    # operation_ids that count as "running an audit" for the dashboard's
+    # Last Audit tile — the actual audit/statistical-flag checks, not every
+    # transformation (a rename or a sort shouldn't bump "last audit").
+    AUDIT_OPERATION_IDS = {
+        "audit_benford_law", "audit_duplicate_detection", "audit_gap_analysis",
+        "audit_outlier_detection", "audit_round_numbers", "audit_flag_rows",
+        "stat_zscore", "stat_percent_rank", "stat_rank", "stat_add_group_stats",
+    }
+
     def __init__(self):
         super().__init__()
         self.current_project: Optional[Project] = None
         self.current_project_path: Optional[str] = None  # .caat file this project was opened from / last saved to
         self.current_dataset: Optional[Dataset] = None
+        self.project_dirty: bool = False  # True if there are changes since the last save
         self.auth_service = None
         self.ai_manager: Optional[AIManager] = None
         self.ai_interpreter: Optional[DatasetInterpreter] = None
@@ -132,20 +142,24 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(min_width, min_height)
 
         self.setObjectName("MainWindow")
-        self.setMenuBar(None)  # Remove traditional menu bar
+
+        # Native menu bar (classic Office 2003-style chrome) — every command
+        # is a QAction defined once in CommandRegistry and shared between the
+        # menu and (via handle_ribbon_action) the Ctrl+K command palette.
+        # No toolbar: with everything organized into menus, a row of icon
+        # buttons duplicating a subset of them was just clutter.
+        self.command_registry = CommandRegistry(self)
+        self.setMenuBar(build_menu_bar(self, self.command_registry))
 
         # Create central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
-        # Main layout - vertical stack: ApplicationMenu, then sidebar+content
+        # Main layout - vertical stack: sidebar+content (menu/toolbar are
+        # native QMainWindow chrome, added above, not part of this layout)
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-
-        # Application Menu (File button + app branding)
-        self.app_menu = ApplicationMenu(main_window=self)
-        main_layout.addWidget(self.app_menu)
 
         # Create scroll area for middle content (sidebar + content area)
         scroll_area = QScrollArea()
@@ -194,11 +208,6 @@ class MainWindow(QMainWindow):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
 
-        # Add Ribbon Bar at the top of content area
-        self.ribbon_bar = RibbonBar(main_window=self)
-        self.ribbon_bar.setVisible(False)
-        content_layout.addWidget(self.ribbon_bar)
-
         # Create stacked widget for views
         self.content_stack = QStackedWidget()
         self.content_stack.setObjectName("ContentStack")
@@ -207,11 +216,10 @@ class MainWindow(QMainWindow):
         middle_layout.addWidget(content_area, 1)
 
         # Applied Steps panel — persistent across every data-workspace page
-        # (Data, Transform, SQL, Visualizations, Reports, Query), the same
-        # way Power Query's Applied Steps pane never disappears just because
-        # you're on a different ribbon tab. Visibility is toggled in
-        # on_navigation_requested(); TransformView renders into this shared
-        # instance regardless of which page is currently on screen.
+        # (Data, Transform, SQL, Visualizations, Reports, Query), so it never
+        # disappears just because you switched pages. Visibility is toggled
+        # in on_navigation_requested(); TransformView renders into this
+        # shared instance regardless of which page is currently on screen.
         from gui.components.applied_steps_panel import AppliedStepsPanel
         self.applied_steps_panel = AppliedStepsPanel()
         self.applied_steps_panel.setVisible(False)
@@ -236,7 +244,7 @@ class MainWindow(QMainWindow):
         # Create main views
         self.create_views()
 
-        # Paste an Excel/clipboard range directly into a new dataset
+        # Paste a clipboard range directly into a new dataset
         paste_shortcut = QShortcut(QKeySequence("Ctrl+Shift+V"), self)
         paste_shortcut.activated.connect(self.on_paste_requested)
 
@@ -291,10 +299,39 @@ class MainWindow(QMainWindow):
             self.backstage_view.setGeometry(0, 0, self.width(), self.height())
 
     def closeEvent(self, event):
-        """Handle window close - wait for threads to finish"""
+        """Handle window close - offer to save unsaved changes first, then
+        wait for threads to finish. Without this, closing the window with
+        pending transformations silently discarded them — autosave only
+        writes to a separate recovery file, never the project itself."""
+        if self.project_dirty and self.current_project:
+            reply = QMessageBox.question(
+                self, "Unsaved Changes",
+                f"'{self.current_project.name}' has unsaved changes. Save before closing?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            if reply == QMessageBox.Cancel:
+                event.ignore()
+                return
+            if reply == QMessageBox.Save:
+                self.save_project()
+                if self.project_dirty:
+                    # Save was cancelled (e.g. user backed out of the file
+                    # dialog on first save) — don't close after all.
+                    event.ignore()
+                    return
+
         # Wait for any running AI threads to complete (max 5 seconds)
         self.thread_pool.waitForDone(5000)
         event.accept()
+
+    def mark_project_dirty(self):
+        """Flag that the current project has unsaved changes."""
+        self.project_dirty = True
+
+    def mark_project_clean(self):
+        """Flag that the current project matches what's on disk."""
+        self.project_dirty = False
 
     def _on_settings(self):
         """Navigate to settings"""
@@ -327,6 +364,14 @@ class MainWindow(QMainWindow):
         if visible is None:
             visible = not self.ai_panel.isVisible()
         self.ai_panel.setVisible(visible)
+
+    def toggle_sidebar(self, visible: bool = None):
+        """Toggle the Queries sidebar's visibility (View > Show Sidebar, Ctrl+B)."""
+        if visible is None:
+            visible = not self.sidebar.isVisible()
+        self.sidebar.setVisible(visible)
+        if hasattr(self, "sidebar_toggle_action") and self.sidebar_toggle_action.isChecked() != visible:
+            self.sidebar_toggle_action.setChecked(visible)
 
     @Slot(str)
     def _on_ai_message(self, message: str):
@@ -734,7 +779,10 @@ class MainWindow(QMainWindow):
         query_view = self.views["query"]
         reports_view = self.views["reports"]
         data_view.data_loaded.connect(transform_view.set_dataframe)
-        data_view.data_loaded.connect(sql_view.set_dataframe)
+        # sql_view is NOT wired to data_loaded — unlike the other views, it
+        # keeps a multi-table catalog (Model Query), and set_dataframe()
+        # wipes every other registered table each time it's called. Every
+        # dataset gets registered by name instead, via _on_dataset_added.
         data_view.data_loaded.connect(viz_view.set_dataframe)
         data_view.data_loaded.connect(query_view.set_dataframe)
         data_view.data_loaded.connect(reports_view.set_dataframe)
@@ -781,20 +829,9 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def on_navigation_requested(self, view_name):
         """Handle navigation requests from the sidebar"""
-        # Views that show ribbon (data transformation modes)
-        ribbon_views = {"data", "transform", "visualizations", "reports", "query"}
-        # Views that hide ribbon (SQL and other modes)
-        no_ribbon_views = {"sql", "dashboard", "ml models", "projects", "settings"}
-
         if view_name in self.views:
             self.content_stack.setCurrentWidget(self.views[view_name])
             self.sidebar.set_active_button(view_name)
-
-            # Show/hide ribbon based on view
-            if view_name in ribbon_views:
-                self.ribbon_bar.setVisible(True)
-            elif view_name in no_ribbon_views:
-                self.ribbon_bar.setVisible(False)
 
             self.applied_steps_panel.setVisible(view_name in self.PIPELINE_VIEWS)
 
@@ -804,7 +841,6 @@ class MainWindow(QMainWindow):
             # Navigate to data view and trigger upload
             self.content_stack.setCurrentWidget(self.views["data"])
             self.sidebar.set_active_button("data")
-            self.ribbon_bar.setVisible(True)
             self.applied_steps_panel.setVisible(True)
             data_view = self.views.get("data")
             if data_view and hasattr(data_view, "show_import_dialog"):
@@ -829,7 +865,6 @@ class MainWindow(QMainWindow):
             if df is not None:
                 # Navigate to transform view
                 self.content_stack.setCurrentWidget(self.views["transform"])
-                self.ribbon_bar.setVisible(True)
                 self.sidebar.set_active_button("transform")
 
                 # Update all views with the dataset
@@ -843,7 +878,7 @@ class MainWindow(QMainWindow):
                     # Pass the dataset's pipeline if it exists to preserve transformations
                     transform_view.set_dataframe(df, dataset.transformation_pipeline)
                 if sql_view:
-                    sql_view.set_dataframe(df, dataset.name)
+                    sql_view.refresh_dataset(dataset.name, df, dataset_id=dataset.id)
                 if viz_view:
                     viz_view.set_dataframe(df)
                 if query_view:
@@ -871,7 +906,14 @@ class MainWindow(QMainWindow):
         )
 
         if ok and new_name and new_name.strip():
+            old_name = dataset.name
             dataset.name = new_name.strip()
+            self.mark_project_dirty()
+
+            sql_view = self.views.get("sql")
+            if sql_view:
+                sql_view.rename_dataset(dataset.id, old_name, dataset.name, dataset.get_current_dataframe())
+
             # Update sidebar
             self.sidebar.set_project(self.current_project)
             self.statusBar().showMessage(f"Dataset renamed to: {new_name}")
@@ -898,6 +940,12 @@ class MainWindow(QMainWindow):
             counter += 1
         new_dataset.name = unique_name
         self.current_project.add_dataset(new_dataset)
+        self.mark_project_dirty()
+
+        sql_view = self.views.get("sql")
+        if sql_view:
+            sql_view.refresh_dataset(new_dataset.name, new_dataset.get_current_dataframe(), dataset_id=new_dataset.id)
+
         self.sidebar.set_project(self.current_project)
         self.statusBar().showMessage(f"Dataset duplicated: {new_dataset.name}")
 
@@ -923,6 +971,11 @@ class MainWindow(QMainWindow):
 
         if reply == QMessageBox.Yes:
             del self.current_project.datasets[dataset_id]
+            self.mark_project_dirty()
+
+            sql_view = self.views.get("sql")
+            if sql_view:
+                sql_view.remove_dataset(dataset_id, dataset.name)
 
             # Clear current dataset if it was the deleted one
             if self.current_dataset and self.current_dataset.id == dataset_id:
@@ -977,7 +1030,9 @@ class MainWindow(QMainWindow):
                 new_dataset = Dataset(
                     id=str(uuid.uuid4()),
                     name=name,
-                    dataframe=df
+                    dataframe=df,
+                    source_dataset_ids=[dataset.id],
+                    source_operation="split"
                 )
 
                 # Set metadata
@@ -991,6 +1046,12 @@ class MainWindow(QMainWindow):
                 # Add to project
                 self.current_project.add_dataset(new_dataset)
 
+                sql_view = self.views.get("sql")
+                if sql_view:
+                    sql_view.refresh_dataset(new_dataset.name, df, dataset_id=new_dataset.id)
+
+            self.mark_project_dirty()
+
             # Update the sidebar
             self.sidebar.set_project(self.current_project)
 
@@ -1001,8 +1062,8 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def on_dataset_refresh_requested(self, dataset_id):
         """Re-read a dataset's original source file and replay all of its
-        transformation steps against the fresh data — Power Query's
-        "Refresh" for a dataset whose source file has changed since import."""
+        transformation steps against the fresh data — a "Refresh" for a
+        dataset whose source file has changed since import."""
         if not self.current_project:
             return
 
@@ -1027,15 +1088,20 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Refresh Failed", f"Failed to refresh dataset:\n{str(e)}")
             return
 
-        # If this is the active dataset, update the views showing it
+        # Keep this dataset's SQL table in sync regardless of whether it's
+        # the active one — a stale registration would silently return old
+        # data to a join/query that references it by name.
+        sql_view = self.views.get("sql")
+        if sql_view:
+            sql_view.refresh_dataset(dataset.name, refreshed_df, dataset_id=dataset.id)
+
+        # If this is the active dataset, also update the views showing it
         if self.current_dataset and self.current_dataset.id == dataset_id:
             transform_view = self.views.get("transform")
-            sql_view = self.views.get("sql")
             if transform_view:
                 transform_view.set_dataframe(refreshed_df, dataset.transformation_pipeline)
-            if sql_view:
-                sql_view.set_dataframe(refreshed_df, dataset.name)
 
+        self.mark_project_dirty()
         self.sidebar.set_project(self.current_project)
         self.statusBar().showMessage(
             f"Refreshed '{dataset.name}' from source and replayed {len(dataset.transformation_pipeline.get_steps()) if dataset.transformation_pipeline else 0} step(s)"
@@ -1114,7 +1180,9 @@ class MainWindow(QMainWindow):
                 new_dataset = Dataset(
                     id=str(uuid.uuid4()),
                     name=f"{source_dataset.name} + {right_dataset.name}",
-                    dataframe=joined_df
+                    dataframe=joined_df,
+                    source_dataset_ids=[source_dataset.id, right_dataset.id],
+                    source_operation="join"
                 )
 
                 new_dataset.metadata = source_dataset.metadata.copy()
@@ -1126,6 +1194,12 @@ class MainWindow(QMainWindow):
 
                 # Add to project
                 self.current_project.add_dataset(new_dataset)
+                self.mark_project_dirty()
+
+                sql_view = self.views.get("sql")
+                if sql_view:
+                    sql_view.refresh_dataset(new_dataset.name, joined_df, dataset_id=new_dataset.id)
+
                 self.sidebar.set_project(self.current_project)
                 self.statusBar().showMessage(f"Joined datasets: {new_dataset.name} ({len(joined_df):,} rows)")
 
@@ -1184,6 +1258,7 @@ class MainWindow(QMainWindow):
 
             # Collect all dataframes
             dataframes = [current_df]
+            appended_dataset_ids = [source_dataset.id]
 
             for ds_name in selected_datasets:
                 for ds in self.current_project.list_datasets():
@@ -1191,6 +1266,7 @@ class MainWindow(QMainWindow):
                         df = ds.get_current_dataframe()
                         if df is not None:
                             dataframes.append(df)
+                            appended_dataset_ids.append(ds.id)
                         break
 
             if len(dataframes) < 2:
@@ -1209,7 +1285,9 @@ class MainWindow(QMainWindow):
                 new_dataset = Dataset(
                     id=str(uuid.uuid4()),
                     name=f"{source_dataset.name} (Appended)",
-                    dataframe=appended_df
+                    dataframe=appended_df,
+                    source_dataset_ids=appended_dataset_ids,
+                    source_operation="append"
                 )
 
                 new_dataset.metadata = source_dataset.metadata.copy()
@@ -1221,6 +1299,12 @@ class MainWindow(QMainWindow):
 
                 # Add to project
                 self.current_project.add_dataset(new_dataset)
+                self.mark_project_dirty()
+
+                sql_view = self.views.get("sql")
+                if sql_view:
+                    sql_view.refresh_dataset(new_dataset.name, appended_df, dataset_id=new_dataset.id)
+
                 self.sidebar.set_project(self.current_project)
                 self.statusBar().showMessage(f"Appended datasets: {new_dataset.name} ({len(appended_df):,} rows)")
 
@@ -1232,6 +1316,7 @@ class MainWindow(QMainWindow):
         """Handle pipeline changes - save to current dataset"""
         if self.current_dataset and pipeline:
             self.current_dataset.set_pipeline(pipeline)
+            self.mark_project_dirty()
             self.statusBar().showMessage(f"Transformations saved to dataset: {self.current_dataset.name}")
 
     @Slot(object)
@@ -1323,41 +1408,80 @@ class MainWindow(QMainWindow):
         """Navigate to transform view after dataset upload"""
         self.content_stack.setCurrentWidget(self.views["transform"])
         self.sidebar.set_active_button("transform")
-        self.ribbon_bar.setVisible(True)  # Show ribbon in transform view
         self.statusBar().showMessage("Data uploaded successfully. Use the Applied Steps panel to start transforming your data.")
 
-    def on_project_open_requested(self, project):
-        """Handle project open request from ProjectsView"""
-        if project is None:
-            # None means create new project
+    def _resolve_active_dataset(self, project):
+        """Which dataset should become active when a project is opened:
+        whichever one was active when it was last saved (project.
+        last_active_dataset_id, set by caat_format.load_caat), falling back
+        to the first dataset if that id is missing or no longer valid."""
+        datasets = project.list_datasets()
+        if not datasets:
+            return None
+        active_id = getattr(project, "last_active_dataset_id", None)
+        if active_id:
+            match = project.datasets.get(active_id)
+            if match:
+                return match
+        return datasets[0]
+
+    def on_project_open_requested(self, payload):
+        """Handle project open request from ProjectsView. `payload` is either
+        None (create new) or a (project, file_path) tuple — the path is
+        needed so subsequent Save/Ctrl+S and session-resume know where this
+        project lives on disk."""
+        if payload is None:
             self.new_project()
-        else:
-            # Load the existing project
-            self.current_project = project
-            self.set_project(self.current_project)
-            self.refresh_dashboard_stats()
-            self.statusBar().showMessage(f"Opened project: {project.name}")
+            return
 
-            # Load first dataset if available
-            datasets = project.list_datasets()
-            if datasets:
-                self.current_dataset = datasets[0]
-                if self.current_dataset.transformation_pipeline:
-                    self.current_dataset.transformation_pipeline.set_parameters(project.parameters)
-                # Update views with the dataset - include pipeline to preserve steps
-                current_df = self.current_dataset.get_current_dataframe()
-                if current_df is not None:
-                    self.views["transform"].set_dataframe(current_df, self.current_dataset.transformation_pipeline)
-                    self.views["sql"].set_dataframe(current_df, self.current_dataset.name)
+        project, file_path = payload
+        if project is None:
+            self.new_project()
+            return
 
-            # Navigate to dashboard
-            self.content_stack.setCurrentWidget(self.views["dashboard"])
-            self.ribbon_bar.setVisible(False)
+        # Load the existing project
+        self.current_project = project
+        self.current_project_path = file_path
+        self.mark_project_clean()
+        self.set_project(self.current_project)
+        self.refresh_dashboard_stats()
+        self.statusBar().showMessage(f"Opened project: {project.name}")
+
+        if file_path:
+            from core.recent_projects import add_recent
+            from core.session_state import set_active_project
+            add_recent(file_path, project.name)
+            set_active_project(file_path)
+
+        # Resume on whichever dataset was active when this was last saved
+        self.current_dataset = self._resolve_active_dataset(project)
+        if self.current_dataset:
+            self.sidebar.select_dataset(self.current_dataset.id)
+            if self.current_dataset.transformation_pipeline:
+                self.current_dataset.transformation_pipeline.set_parameters(project.parameters)
+            # Update the transform view with the dataset - include pipeline
+            # to preserve steps. The SQL view already has every dataset
+            # registered by name from set_project() above — re-registering
+            # just this one here would wipe out all the others.
+            current_df = self.current_dataset.get_current_dataframe()
+            if current_df is not None:
+                self.views["transform"].set_dataframe(current_df, self.current_dataset.transformation_pipeline)
+
+        # Navigate to dashboard
+        self.content_stack.setCurrentWidget(self.views["dashboard"])
 
     def _on_dataset_added(self, dataset):
-        """Handle new dataset being added - update sidebar"""
+        """Handle new dataset being added - update sidebar, make it the
+        active dataset, and register it in the SQL view under its own name
+        so it's immediately queryable (and joinable with other datasets)
+        without disturbing anything already registered there."""
         if hasattr(self, 'sidebar'):
             self.sidebar.add_dataset(dataset)
+        self.current_dataset = dataset
+        sql_view = self.views.get("sql")
+        if sql_view:
+            sql_view.refresh_dataset(dataset.name, dataset.get_current_dataframe(), dataset_id=dataset.id)
+        self.mark_project_dirty()
         self.statusBar().showMessage(f"Dataset '{dataset.name}' added to project")
 
     def create_statusbar(self):
@@ -1366,9 +1490,9 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Ready")
 
     def setup_autosave(self):
-        """Periodically save a recovery copy of the current project, the way
-        Excel's AutoRecover does — separate from the user's own Save, and
-        never overwrites their actual .caat file."""
+        """Periodically save a recovery copy of the current project —
+        separate from the user's own Save, and never overwrites their
+        actual .caat file."""
         from PySide6.QtCore import QTimer
         self.autosave_timer = QTimer(self)
         self.autosave_timer.setInterval(2 * 60 * 1000)  # 2 minutes
@@ -1384,7 +1508,9 @@ class MainWindow(QMainWindow):
         try:
             from core.caat_format import save_caat
             autosave_path = self.current_project_path + ".autosave"
-            save_caat(self.current_project, autosave_path, author=self._current_username())
+            active_id = self.current_dataset.id if self.current_dataset else None
+            save_caat(self.current_project, autosave_path, author=self._current_username(),
+                      active_dataset_id=active_id)
             self.statusBar().showMessage("Autosaved recovery copy", 3000)
         except Exception as e:
             print(f"Warning: autosave failed: {e}")
@@ -1491,6 +1617,22 @@ class MainWindow(QMainWindow):
             "ml_risk_score": lambda: self._on_transform("ml_risk_score"),
             "ml_predict": lambda: self._on_transform("ml_predict"),
 
+            # ML operations reachable from the ML menu — implemented in
+            # data_processor.py and registered in operation_registry.py
+            # already; only the menu-to-dispatch wiring was missing.
+            "ml_linear_regression": lambda: self._on_transform("ml_linear_regression"),
+            "ml_glm": lambda: self._on_transform("ml_glm"),
+            "ml_decision_tree": lambda: self._on_transform("ml_decision_tree"),
+            "ml_random_forest": lambda: self._on_transform("ml_random_forest"),
+            "ml_gradient_boosting": lambda: self._on_transform("ml_gradient_boosting"),
+            "ml_xgboost": lambda: self._on_transform("ml_xgboost"),
+            "ml_lightgbm": lambda: self._on_transform("ml_lightgbm"),
+            "ml_cluster": lambda: self._on_transform("ml_cluster"),
+            "ml_dbscan": lambda: self._on_transform("ml_dbscan"),
+            "ml_gmm": lambda: self._on_transform("ml_gmm"),
+            "ml_arima": lambda: self._on_transform("ml_arima"),
+            "ml_ets": lambda: self._on_transform("ml_ets"),
+
             # Audit operations
             "stat_zscore": lambda: self._on_transform("stat_zscore"),
             "stat_pct_rank": lambda: self._on_transform("stat_percent_rank"),
@@ -1504,6 +1646,18 @@ class MainWindow(QMainWindow):
 
             # Statistics operations
             "stat_group_stats": lambda: self._on_transform("stat_add_group_stats"),
+            "stat_summary": lambda: self._on_statistics("stat_summary"),
+            "stat_central": lambda: self._on_statistics("stat_central"),
+            "stat_variance": lambda: self._on_statistics("stat_variance"),
+            "stat_ttest": lambda: self._on_statistics("stat_ttest"),
+            "stat_anova": lambda: self._on_statistics("stat_anova"),
+            "stat_chisquare": lambda: self._on_statistics("stat_chisquare"),
+            "stat_pearson": lambda: self._on_statistics("stat_pearson"),
+            "stat_spearman": lambda: self._on_statistics("stat_spearman"),
+            "stat_heatmap": lambda: self._on_statistics("stat_heatmap"),
+            "stat_normal": lambda: self._on_statistics("stat_normal"),
+            "stat_binomial": lambda: self._on_statistics("stat_binomial"),
+            "stat_poisson": lambda: self._on_statistics("stat_poisson"),
 
             # View operations
             "query_settings": self._on_query_settings,
@@ -1512,7 +1666,16 @@ class MainWindow(QMainWindow):
             "col_dist": self._on_col_dist,
             "col_profile": self._on_col_profile,
             "formula_bar": self._on_formula_bar,
-            "steps_panel": self._on_steps_panel,
+
+            # Report operations
+            "report_audit": self._on_report_audit,
+            "report_llm": self._on_ai_compliance_check,
+            "report_profile": self._on_col_profile,
+            "report_quality": self._on_col_quality,
+            "report_transformation": self._on_report_transformation_log,
+            "report_word": lambda: self._on_report_export("word"),
+            "report_excel": lambda: self._on_report_export("excel"),
+            "report_pdf": lambda: self._on_report_export("pdf"),
         }
 
         if action_name in action_handlers:
@@ -1523,33 +1686,40 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage(f"Action '{action_name}' not yet implemented")
 
-    # Placeholder methods for ribbon actions
     def _on_sort_asc(self):
-        """Sort ascending - navigate to transform view."""
-        self.content_stack.setCurrentWidget(self.views["transform"])
-        self.statusBar().showMessage("Use right-click context menu on column headers to sort")
+        """Open the sort dialog defaulting to ascending order."""
+        self._on_transform('sort_column', extra_params={'ascending': True})
 
     def _on_sort_desc(self):
-        """Sort descending."""
-        self._on_sort_asc()
+        """Open the sort dialog defaulting to descending order."""
+        self._on_transform('sort_column', extra_params={'ascending': False})
 
     def _on_remove_rows(self):
-        """Remove rows."""
-        QMessageBox.information(self, "Remove Rows", "Use filters to remove rows. Right-click column header for options.")
+        """Open the Remove Rows dialog (remove specific rows by index)."""
+        self._on_transform('remove_rows')
 
     def _on_remove_cols(self):
-        """Remove columns."""
-        QMessageBox.information(self, "Remove Columns", "Right-click column header and select 'Remove'.")
+        """Open Choose Columns, pre-set to Remove mode, to drop one or more columns."""
+        if not self._check_data_loaded():
+            return
+        from gui.dialogs.column_dialogs import ChooseColumnsDialog
+        dialog = ChooseColumnsDialog(self.current_dataset.get_current_dataframe(), self)
+        dialog.remove_radio.setChecked(True)
+        if dialog.exec():
+            params = dialog.get_parameters()
+            if params is not None:
+                transform_view = self.views.get("transform")
+                transform_view.apply_transformation('choose_columns', params)
 
     def _on_keep_top(self):
-        """Keep top rows."""
-        QMessageBox.information(self, "Keep Top Rows", "Use 'Head' transformation in Transform view.")
+        """Open Select N Rows, defaulting to keeping the first N rows."""
+        self._on_transform('select_n_rows', extra_params={'selection_type': 'first'})
 
     def _on_keep_bottom(self):
-        """Keep bottom rows."""
-        QMessageBox.information(self, "Keep Bottom Rows", "Use 'Tail' transformation in Transform view.")
+        """Open Select N Rows, defaulting to keeping the last N rows."""
+        self._on_transform('select_n_rows', extra_params={'selection_type': 'last'})
 
-    def _on_transform(self, operation_id: str):
+    def _on_transform(self, operation_id: str, extra_params: dict = None):
         """Apply transformation by opening a dialog or using the selected column."""
         if not self._check_data_loaded():
             return
@@ -1591,70 +1761,93 @@ class MainWindow(QMainWindow):
         # Get the current transformed dataframe from the pipeline
         current_df = transform_view.pipeline.apply() if transform_view.pipeline else transform_view.original_dataframe
 
+        initial_params = {'column': column_name}
+        if extra_params:
+            initial_params.update(extra_params)
+
         dialog = TransformationDialogFactory.create_dialog(
             operation_id=operation_id,
             dataframe=current_df,
             parent=self,
-            initial_params={'column': column_name}
+            initial_params=initial_params
         )
 
         if dialog and dialog.exec():
             params = dialog.get_parameters()
             if params is not None:
                 transform_view.apply_transformation(operation_id, params)
+                if operation_id in self.AUDIT_OPERATION_IDS:
+                    self._record_audit_run()
                 self.statusBar().showMessage(f"Applied {operation_id} transformation")
         else:
             self.statusBar().showMessage("Transformation cancelled")
 
-    def _on_pivot(self):
-        """Open pivot table dialog."""
-        from gui.dialogs.pivot_dialog import PivotDialog
-        if not self._check_data_loaded():
+    def _record_audit_run(self):
+        """Mark that an audit check was just run — drives the dashboard's
+        Last Audit tile. Stored in project.metadata (not a new top-level
+        Project field) so it round-trips through the existing .caat
+        serialization for free."""
+        if not self.current_project:
             return
-        dialog = PivotDialog(self.current_dataset.get_current_dataframe(), self)
-        dialog.exec()
+        from datetime import datetime
+        self.current_project.metadata["last_audit_at"] = datetime.now().isoformat()
+        self.mark_project_dirty()
+        dashboard = self.views.get("dashboard")
+        if dashboard and hasattr(dashboard, "refresh"):
+            dashboard.refresh()
+
+    def _on_pivot(self):
+        """Open pivot table dialog and apply the result to the pipeline."""
+        self._on_transform('pivot_table')
 
     def _on_unpivot(self):
-        """Open unpivot dialog."""
-        from gui.dialogs.unpivot_dialog import UnpivotDialog
-        if not self._check_data_loaded():
-            return
-        dialog = UnpivotDialog(self.current_dataset.get_current_dataframe(), self)
-        dialog.exec()
+        """Open unpivot dialog and apply the result to the pipeline."""
+        self._on_transform('unpivot_table')
 
     def _on_rename_column(self):
-        """Rename column."""
-        self.content_stack.setCurrentWidget(self.views["transform"])
-        self.statusBar().showMessage("Right-click column header and select 'Rename Column'")
+        """Open the Rename Columns dialog and apply the result."""
+        self._on_transform('rename_columns')
 
     def _on_change_dtype(self):
-        """Change data type."""
-        self.content_stack.setCurrentWidget(self.views["transform"])
-        self.statusBar().showMessage("Right-click column header and select 'Change Data Type'")
+        """Open the Change Data Type dialog and apply the result."""
+        self._on_transform('change_dtype')
 
     def _on_custom_column(self):
-        """Add custom column."""
-        self.content_stack.setCurrentWidget(self.views["transform"])
-        self.statusBar().showMessage("Use 'Custom Column' transformation in Transform view")
+        """Open the Custom Column (formula/expression) dialog and apply the result."""
+        self._on_transform('custom_column_from_math')
 
     def _on_index_column(self):
-        """Add index column."""
-        self._on_transform("stat_quick_stats")
+        """Add a sequential index column."""
+        self._on_transform("add_index_column")
 
     def _on_reorder_cols(self):
-        """Reorder columns."""
-        self.content_stack.setCurrentWidget(self.views["transform"])
-        self.statusBar().showMessage("Use drag and drop on column headers to reorder columns")
+        """Open Choose Columns, pre-set to Reorder mode, to change column order."""
+        if not self._check_data_loaded():
+            return
+        from gui.dialogs.column_dialogs import ChooseColumnsDialog
+        dialog = ChooseColumnsDialog(self.current_dataset.get_current_dataframe(), self)
+        dialog.reorder_radio.setChecked(True)
+        if dialog.exec():
+            params = dialog.get_parameters()
+            if params is not None:
+                transform_view = self.views.get("transform")
+                transform_view.apply_transformation('choose_columns', params)
 
     def _on_select_cols(self):
-        """Select columns."""
-        self.content_stack.setCurrentWidget(self.views["transform"])
-        self.statusBar().showMessage("Use column selection in Transform view")
+        """Open Choose Columns (defaults to Keep mode) to pick which columns to keep."""
+        if not self._check_data_loaded():
+            return
+        from gui.dialogs.column_dialogs import ChooseColumnsDialog
+        dialog = ChooseColumnsDialog(self.current_dataset.get_current_dataframe(), self)
+        if dialog.exec():
+            params = dialog.get_parameters()
+            if params is not None:
+                transform_view = self.views.get("transform")
+                transform_view.apply_transformation('choose_columns', params)
 
     def _on_filter(self):
-        """Filter rows."""
-        self.content_stack.setCurrentWidget(self.views["transform"])
-        self.statusBar().showMessage("Use filter transformation in Transform view")
+        """Open the Advanced Filter dialog (multi-condition, AND/OR)."""
+        self._on_transform('filter_advanced')
 
     def _on_stat_quick(self):
         """Quick statistics."""
@@ -1668,9 +1861,95 @@ class MainWindow(QMainWindow):
         dialog = MLTrainingDialog(self.current_dataset.get_current_dataframe(), self)
         dialog.exec()
 
+    def _on_statistics(self, stat_type: str):
+        """Open the Statistics dialog for a specific analysis (summary,
+        hypothesis test, correlation, or distribution check). These compute
+        and display a result — they don't modify the dataset, so they don't
+        go through the transformation pipeline like a normal operation."""
+        if not self._check_data_loaded():
+            return
+        from gui.dialogs.statistics_dialog import StatisticsDialog
+        df = self.current_dataset.get_current_dataframe()
+        dialog = StatisticsDialog(stat_type, df, self)
+        dialog.exec()
+
+    def _on_report_audit(self):
+        """Open the report builder for a configurable audit report."""
+        if not self._check_data_loaded():
+            return
+        self.content_stack.setCurrentWidget(self.views["reports"])
+        reports_view = self.views.get("reports")
+        if reports_view and hasattr(reports_view, "build_custom_report"):
+            reports_view.build_custom_report()
+
+    def _on_report_transformation_log(self):
+        """Show the active dataset's applied steps as a report."""
+        if not self._check_data_loaded():
+            return
+        pipeline = self.current_dataset.transformation_pipeline
+        steps = pipeline.get_steps() if pipeline else []
+        if not steps:
+            QMessageBox.information(self, "Transformation Log", "No transformation steps have been applied to this dataset yet.")
+            return
+
+        from core.operation_registry import OPERATION_REGISTRY
+        lines = [f"Transformation Log — {self.current_dataset.name}", f"{len(steps)} step(s)", ""]
+        for i, step in enumerate(steps, start=1):
+            op_name = OPERATION_REGISTRY.get(step.operation_id, {}).get('display_name', step.operation_id)
+            status = "enabled" if step.enabled else "disabled"
+            timing = f", {step.execution_time * 1000:.0f} ms" if step.execution_time is not None else ""
+            params_str = ", ".join(f"{k}={v}" for k, v in step.params.items())
+            lines.append(f"{i}. {op_name} ({status}{timing})")
+            lines.append(f"   {step.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            if params_str:
+                lines.append(f"   Parameters: {params_str}")
+            lines.append("")
+
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Transformation Log")
+        dialog.setMinimumSize(560, 480)
+        layout = QVBoxLayout(dialog)
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText("\n".join(lines))
+        layout.addWidget(text)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        dialog.exec()
+
+    def _on_report_export(self, fmt: str):
+        """Quick-export the active dataset (+ summary stats) as Word/Excel/PDF."""
+        if not self._check_data_loaded():
+            return
+
+        from PySide6.QtWidgets import QFileDialog
+        ext_map = {"word": ("docx", "Word Document (*.docx)"),
+                   "excel": ("xlsx", "Excel Workbook (*.xlsx)"),
+                   "pdf": ("pdf", "PDF Document (*.pdf)")}
+        ext, file_filter = ext_map[fmt]
+        default_name = f"{self.current_dataset.name.replace(' ', '_')}_report.{ext}"
+        file_path, _ = QFileDialog.getSaveFileName(self, "Export Report", str(Path.home() / default_name), file_filter)
+        if not file_path:
+            return
+        if not file_path.endswith(f".{ext}"):
+            file_path += f".{ext}"
+
+        try:
+            from services import quick_export_service
+            df = self.current_dataset.get_current_dataframe()
+            exporter = {"word": quick_export_service.export_word,
+                        "excel": quick_export_service.export_excel,
+                        "pdf": quick_export_service.export_pdf}[fmt]
+            exporter(df, self.current_dataset.name, file_path)
+            self.statusBar().showMessage(f"Report exported to: {file_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Failed", f"Failed to export report:\n{str(e)}")
+
     def _on_audit_flag(self):
-        """Flag rows for audit."""
-        self.statusBar().showMessage("Use 'Audit Flag' transformation to mark suspicious records")
+        """Open the Audit Flag dialog to mark rows matching a condition."""
+        self._on_transform('audit_flag_rows')
 
     def _on_query_settings(self):
         """Manage the project's reusable query parameters (materiality
@@ -1683,6 +1962,7 @@ class MainWindow(QMainWindow):
         dialog = ParametersDialog(self.current_project.parameters, self)
         if dialog.exec():
             self.current_project.parameters = dialog.get_parameters()
+            self.mark_project_dirty()
             self._sync_pipeline_parameters()
             self.statusBar().showMessage(
                 f"Saved {len(self.current_project.parameters)} query parameter(s)"
@@ -1700,8 +1980,65 @@ class MainWindow(QMainWindow):
             transform_view.update_info()
 
     def _on_dependencies(self):
-        """Show dependencies."""
-        QMessageBox.information(self, "Dependencies", "Data lineage and dependencies view coming soon.")
+        """Show the active dataset's lineage: where its data came from
+        (file/sheet import, or join/append/split ancestry), and which
+        other datasets in the project were derived from it."""
+        if not self._check_data_loaded():
+            return
+
+        project = self.current_project
+        dataset = self.current_dataset
+        lines = [f"Dataset: {dataset.name}", ""]
+
+        lines.append("SOURCE")
+        if dataset.source_dataset_ids:
+            op = (dataset.source_operation or "derived").title()
+            source_names = []
+            for sid in dataset.source_dataset_ids:
+                src = project.datasets.get(sid) if project else None
+                source_names.append(src.name if src else f"<deleted dataset {sid[:8]}>")
+            lines.append(f"  {op} of: {', '.join(source_names)}")
+        elif dataset.source_file_path:
+            sheet = f" (sheet: {dataset.source_sheet_name})" if dataset.source_sheet_name else ""
+            lines.append(f"  Imported from: {dataset.source_file_path}{sheet}")
+        else:
+            lines.append("  Pasted or generated directly (no external source)")
+
+        lines.append("")
+        lines.append("DERIVED DATASETS (created from this one)")
+        derived = [d for d in project.list_datasets() if dataset.id in (d.source_dataset_ids or [])] if project else []
+        if derived:
+            for d in derived:
+                op = (d.source_operation or "derived").title()
+                lines.append(f"  {d.name} ({op})")
+        else:
+            lines.append("  None")
+
+        pipeline = dataset.transformation_pipeline
+        steps = pipeline.get_steps() if pipeline else []
+        lines.append("")
+        lines.append(f"APPLIED STEPS ({len(steps)})")
+        if steps:
+            from core.operation_registry import OPERATION_REGISTRY
+            for i, step in enumerate(steps, start=1):
+                op_name = OPERATION_REGISTRY.get(step.operation_id, {}).get('display_name', step.operation_id)
+                lines.append(f"  {i}. {op_name}")
+        else:
+            lines.append("  None")
+
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Dependencies — {dataset.name}")
+        dialog.setMinimumSize(520, 460)
+        layout = QVBoxLayout(dialog)
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText("\n".join(lines))
+        layout.addWidget(text)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        dialog.exec()
 
     def _on_col_quality(self):
         """Show column quality (valid/empty bars for every column)."""
@@ -1742,14 +2079,11 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _on_formula_bar(self):
-        """Toggle formula bar."""
-        QMessageBox.information(self, "Formula Bar", "Formula bar for custom expressions coming soon.")
-
-    def _on_steps_panel(self):
-        """Toggle steps panel."""
+        """Toggle the formula bar in the Transform view."""
         self.content_stack.setCurrentWidget(self.views["transform"])
-        self.sidebar.set_active_button("transform")
-        self.statusBar().showMessage("Steps panel is visible in Transform view")
+        transform_view = self.views.get("transform")
+        if transform_view:
+            transform_view.toggle_formula_bar()
 
     def _check_data_loaded(self) -> bool:
         """Check if data is loaded."""
@@ -1792,7 +2126,6 @@ class MainWindow(QMainWindow):
             # Close backstage view if it's open and navigate to dashboard
             self.backstage_view.setVisible(False)
             self.content_stack.setCurrentWidget(self.views["dashboard"])
-            self.ribbon_bar.setVisible(False)
 
     def _save_new_project(self, project):
         """Save a newly created project as a native .caat file to the
@@ -1810,8 +2143,11 @@ class MainWindow(QMainWindow):
         try:
             saved_path = save_caat(project, str(project_file), author=self._current_username())
             self.current_project_path = saved_path
+            self.mark_project_clean()
             from core.recent_projects import add_recent
+            from core.session_state import set_active_project
             add_recent(saved_path, project.name)
+            set_active_project(saved_path)
             self.statusBar().showMessage(f"Created and saved project: {project.name} to {saved_path}")
         except Exception as e:
             QMessageBox.warning(self, "Save Warning", f"Project created, but the initial save failed:\n{str(e)}")
@@ -1832,30 +2168,35 @@ class MainWindow(QMainWindow):
                     project = load_caat(project_path)
                     self.current_project_path = project_path
                     from core.recent_projects import add_recent
+                    from core.session_state import set_active_project
                     add_recent(project_path, project.name)
+                    set_active_project(project_path)
                 else:
                     project = ProjectExporter.import_project(project_path)
                     self.current_project_path = None
                 if project:
                     self.current_project = project
+                    self.mark_project_clean()
                     self.set_project(self.current_project)
                     self.refresh_dashboard_stats()
                     self.statusBar().showMessage(f"Opened project: {project.name}")
 
-                    # Load first dataset if available
-                    datasets = project.list_datasets()
-                    if datasets:
-                        self.current_dataset = datasets[0]
-                        # Update views with the dataset - include pipeline to preserve steps
+                    # Resume on whichever dataset was active when this was last saved
+                    self.current_dataset = self._resolve_active_dataset(project)
+                    if self.current_dataset:
+                        self.sidebar.select_dataset(self.current_dataset.id)
+                        if self.current_dataset.transformation_pipeline:
+                            self.current_dataset.transformation_pipeline.set_parameters(project.parameters)
+                        # Update the transform view with the dataset - the
+                        # SQL view already has every dataset registered by
+                        # name from set_project() above.
                         current_df = self.current_dataset.get_current_dataframe()
                         if current_df is not None:
                             self.views["transform"].set_dataframe(current_df, self.current_dataset.transformation_pipeline)
-                            self.views["sql"].set_dataframe(current_df, self.current_dataset.name)
 
                     # Close backstage view and navigate to dashboard
                     self.backstage_view.setVisible(False)
                     self.content_stack.setCurrentWidget(self.views["dashboard"])
-                    self.ribbon_bar.setVisible(False)
                     return
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Failed to open project:\n{str(e)}")
@@ -1867,32 +2208,37 @@ class MainWindow(QMainWindow):
             project = dialog.get_selected_project()
             if project:
                 self.current_project = project
+                self.mark_project_clean()
                 opened_path = dialog.file_path_edit.text().strip()
                 from core.caat_format import is_caat_file
                 if opened_path and is_caat_file(opened_path):
                     self.current_project_path = opened_path
                     from core.recent_projects import add_recent
+                    from core.session_state import set_active_project
                     add_recent(opened_path, project.name)
+                    set_active_project(opened_path)
                 else:
                     self.current_project_path = None
                 self.set_project(self.current_project)
                 self.refresh_dashboard_stats()
                 self.statusBar().showMessage(f"Opened project: {project.name}")
 
-                # Load first dataset if available
-                datasets = project.list_datasets()
-                if datasets:
-                    self.current_dataset = datasets[0]
-                    # Update views with the dataset - include pipeline to preserve steps
+                # Resume on whichever dataset was active when this was last saved
+                self.current_dataset = self._resolve_active_dataset(project)
+                if self.current_dataset:
+                    self.sidebar.select_dataset(self.current_dataset.id)
+                    if self.current_dataset.transformation_pipeline:
+                        self.current_dataset.transformation_pipeline.set_parameters(project.parameters)
+                    # Update the transform view with the dataset - the SQL
+                    # view already has every dataset registered by name
+                    # from set_project() above.
                     current_df = self.current_dataset.get_current_dataframe()
                     if current_df is not None:
                         self.views["transform"].set_dataframe(current_df, self.current_dataset.transformation_pipeline)
-                        self.views["sql"].set_dataframe(current_df, self.current_dataset.name)
 
                 # Close backstage view and navigate to dashboard
                 self.backstage_view.setVisible(False)
                 self.content_stack.setCurrentWidget(self.views["dashboard"])
-                self.ribbon_bar.setVisible(False)
 
     def edit_current_project(self):
         """Edit the current project"""
@@ -1910,22 +2256,37 @@ class MainWindow(QMainWindow):
 
         if ok and new_name.strip():
             self.current_project.name = new_name.strip()
+            self.mark_project_dirty()
             self.set_project(self.current_project)
             self.refresh_dashboard_stats()
             self.statusBar().showMessage(f"Project renamed to: {new_name}")
 
     def delete_current_project(self):
-        """Delete the current project"""
+        """Close the current project (clears it from the workspace — does
+        not delete the .caat file on disk)."""
         if not self.current_project:
             QMessageBox.warning(self, "No Project", "No project is currently open.")
             return
 
+        if self.project_dirty:
+            save_reply = QMessageBox.question(
+                self, "Unsaved Changes",
+                f"'{self.current_project.name}' has unsaved changes. Save before closing?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            if save_reply == QMessageBox.Cancel:
+                return
+            if save_reply == QMessageBox.Save:
+                self.save_project()
+                if self.project_dirty:
+                    return  # save was cancelled partway through
+
         reply = QMessageBox.question(
             self,
-            "Delete Project",
-            f"Are you sure you want to delete the project '{self.current_project.name}'?\n\n"
-            "This will delete all datasets and work associated with this project. "
-            "This action cannot be undone.",
+            "Close Project",
+            f"Close the project '{self.current_project.name}'?\n\n"
+            "This removes it from the workspace but does not delete the saved file.",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -1936,6 +2297,12 @@ class MainWindow(QMainWindow):
             # Clear the current project
             self.current_project = None
             self.current_dataset = None
+            self.current_project_path = None
+            self.mark_project_clean()
+
+            # Explicit close: don't resume this project on next launch
+            from core.session_state import set_active_project
+            set_active_project(None)
 
             # Update UI
             self.set_project(None)
@@ -1978,10 +2345,15 @@ class MainWindow(QMainWindow):
             target_path = file_path
 
         try:
-            saved_path = save_caat(self.current_project, target_path, author=self._current_username())
+            active_id = self.current_dataset.id if self.current_dataset else None
+            saved_path = save_caat(self.current_project, target_path, author=self._current_username(),
+                                    active_dataset_id=active_id)
             self.current_project_path = saved_path
+            self.mark_project_clean()
             from core.recent_projects import add_recent
+            from core.session_state import set_active_project
             add_recent(saved_path, self.current_project.name)
+            set_active_project(saved_path)
             self.statusBar().showMessage(f"Project saved to: {saved_path}")
         except Exception as e:
             QMessageBox.critical(self, "Save Error", f"Failed to save project:\n{str(e)}")
@@ -2009,73 +2381,14 @@ class MainWindow(QMainWindow):
             # Fallback: use set_project
             dashboard.set_project(self.current_project)
 
-    @Slot(object)
-    def on_data_imported(self, dataframe):
-        """Handle data import and add to current project"""
-        if not self.current_project:
-            return
-
-        # Create a dataset name from a dialog or use default
-        from PySide6.QtWidgets import QInputDialog
-        dataset_name, ok = QInputDialog.getText(
-            self, "Dataset Name",
-            "Enter a name for this dataset:",
-            text=f"Dataset_{len(self.current_project.list_datasets()) + 1}"
-        )
-
-        if ok and dataset_name:
-            # Create dataset
-            dataset = Dataset(name=dataset_name, dataframe=dataframe)
-
-            # Add to project
-            self.current_project.add_dataset(dataset)
-
-            # Add activity to project
-            self._add_project_activity("Imported dataset", dataset_name, "📥")
-
-            # Set as current dataset
-            self.current_dataset = dataset
-
-            # Update status
-            self.statusBar().showMessage(f"Dataset '{dataset_name}' added to project '{self.current_project.name}'")
-
-            # Update views with the new data - include pipeline (None for new datasets)
-            self.views["transform"].set_dataframe(dataframe, dataset.transformation_pipeline)
-            self.views["sql"].set_dataframe(dataframe, dataset.name)
-
-            # Refresh dashboard stats
-            self.refresh_dashboard_stats()
-
-    def _add_project_activity(self, action: str, dataset_name: str = "", icon: str = "📁"):
-        """Add an activity to the current project"""
-        if not self.current_project:
-            return
-
-        # Ensure activities list exists
-        if not hasattr(self.current_project, 'activities'):
-            self.current_project.activities = []
-
-        from datetime import datetime
-        activity = {
-            "action": action,
-            "dataset": dataset_name,
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "icon": icon
-        }
-        self.current_project.activities.append(activity)
-
-        # Update dashboard activity display
-        dashboard = self.views.get("dashboard")
-        if dashboard and hasattr(dashboard, 'add_activity'):
-            dashboard.add_activity(action, dataset_name, icon)
-
     def import_data(self):
         """Import data from file"""
         self.content_stack.setCurrentWidget(self.views["data"])
         data_view = self.views.get("data")
         if data_view and hasattr(data_view, "show_import_dialog"):
-            # Connect to data loaded signal to add to project
-            data_view.data_loaded.connect(self.on_data_imported)
+            # data_view's own dataset_added/data_loaded signals (connected
+            # once in create_views()) already add the imported dataset to
+            # the project and update every view — nothing more to wire here.
             data_view.show_import_dialog()
         else:
             QMessageBox.warning(self, "Data View Not Available", "The data import view is not available.")
@@ -2459,6 +2772,41 @@ class MainWindow(QMainWindow):
         self.update_auth_ui()
         # Show window maximized after successful login
         self.setWindowState(Qt.WindowMaximized)
+        self._resume_last_project()
+
+    def _resume_last_project(self):
+        """Reopen whichever project was active when the app last closed —
+        like reopening a document — unless it was explicitly closed first
+        (session_state.get_active_project() returns None in that case).
+        Fails gracefully if the file went missing or won't load: clears the
+        stale pointer so it doesn't keep failing on every future launch, and
+        leaves the user on an empty Dashboard instead of crashing."""
+        from core.session_state import get_active_project, set_active_project
+
+        path = get_active_project()
+        if not path:
+            return
+
+        if not Path(path).exists():
+            set_active_project(None)
+            self.statusBar().showMessage(
+                f"Couldn't resume your last project — '{Path(path).name}' no longer exists.", 8000
+            )
+            return
+
+        try:
+            from core.caat_format import load_caat
+            project = load_caat(path)
+        except Exception as e:
+            set_active_project(None)
+            QMessageBox.warning(
+                self, "Couldn't Resume Last Project",
+                f"Your last project couldn't be reopened:\n{e}\n\n"
+                "Starting with an empty workspace instead."
+            )
+            return
+
+        self.on_project_open_requested((project, path))
 
     def handle_logout(self):
         """Handle user logout"""

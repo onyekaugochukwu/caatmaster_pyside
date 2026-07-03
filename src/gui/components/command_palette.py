@@ -16,9 +16,9 @@ from PySide6.QtWidgets import (
 
 from gui.theme import Colors
 
-# (label, action_id) pairs mirroring every ribbon button — kept in sync with
-# gui.components.ribbon's emit_action() calls, so the palette can find the
-# same 80+ operations without the user needing to know which tab they're on.
+# (label, action_id) pairs mirroring every menu command — kept in sync with
+# gui.components.app_menu's action_id values, so the palette can find the
+# same 80+ operations without the user needing to know which menu it's under.
 RIBBON_ACTIONS = [
     ("Import", "import_data"), ("Export", "export_data"), ("Quick Export", "export_data"),
     ("Sort", "sort_asc"), ("Remove", "remove_rows"), ("Filter", "filter"),
@@ -50,7 +50,7 @@ RIBBON_ACTIONS = [
     ("IQR (Anomaly)", "ml_anomaly_iqr"), ("LOF (Anomaly)", "ml_lof"),
     ("Query Settings", "query_settings"), ("Dependencies", "dependencies"),
     ("Column Quality", "col_quality"), ("Column Profile", "col_profile"),
-    ("Formula Bar", "formula_bar"), ("Applied Steps Panel", "steps_panel"),
+    ("Formula Bar", "formula_bar"),
 ]
 
 _CATEGORY_BY_PREFIX = [

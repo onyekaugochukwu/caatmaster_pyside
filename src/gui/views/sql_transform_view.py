@@ -453,12 +453,6 @@ class SQLTransformView(QWidget):
                 font-size: 12px;
             }
         """)
-        self.info_text.setPlainText(
-            "DuckDB SQL Editor\n"
-            "• Load data from the Data Workspace to begin\n"
-            "• Write standard SQL queries to transform data\n"
-            "• Use templates for common operations"
-        )
         info_layout.addWidget(self.info_text)
 
         splitter.addWidget(info_widget)
@@ -475,7 +469,8 @@ class SQLTransformView(QWidget):
         """Update the dataset list with datasets from current project."""
         self.dataset_list.clear()
         self.dataset_widgets.clear()
-        self.registered_tables.clear()
+        for table_name in list(self.registered_tables.keys()):
+            self._unregister_table(table_name)
 
         if not self.current_project:
             return
@@ -486,12 +481,7 @@ class SQLTransformView(QWidget):
 
         # Automatically register all datasets as tables
         for dataset in self.current_project.list_datasets():
-            item = QListWidgetItem(dataset.name)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Checked)  # Auto-check to auto-register
-            item.setData(Qt.UserRole, dataset.id)
-            self.dataset_list.addItem(item)
-            self.dataset_widgets[dataset.id] = item
+            item = self._ensure_dataset_list_item(dataset.id, dataset.name)
 
             # Auto-register the dataset as a table
             df = dataset.get_current_dataframe()
@@ -502,6 +492,22 @@ class SQLTransformView(QWidget):
         # Update the completer with all registered tables
         self._update_completer_model()
         self._update_schema_summary()
+
+    def _ensure_dataset_list_item(self, dataset_id: str, display_name: str) -> QListWidgetItem:
+        """Get (or create, checked by default) the Model Query checklist
+        item for a dataset, keyed by its stable project id — not by name,
+        since names can be renamed out from under a table registration."""
+        item = self.dataset_widgets.get(dataset_id)
+        if item is None:
+            item = QListWidgetItem(display_name)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked)
+            item.setData(Qt.UserRole, dataset_id)
+            self.dataset_list.addItem(item)
+            self.dataset_widgets[dataset_id] = item
+        elif item.text() != display_name:
+            item.setText(display_name)
+        return item
 
     def _update_schema_summary(self):
         """Show how many tables are registered so it's obvious a cross-dataset
@@ -555,21 +561,59 @@ class SQLTransformView(QWidget):
         self.duckdb_conn.register(table_name, df)
         self.registered_tables[table_name] = df
 
-    def refresh_dataset(self, dataset_name: str, df: pl.DataFrame):
-        """Re-register one dataset's table with updated data (e.g. after a
-        transformation step changes it elsewhere) without touching any other
-        registered table — keeps Model Query cross-dataset joins intact."""
+    def refresh_dataset(self, dataset_name: str, df: pl.DataFrame, dataset_id: str = None):
+        """Re-register one dataset's table with updated data (e.g. after
+        upload, selection, or a transformation step changes it elsewhere)
+        without touching any other registered table — keeps Model Query
+        cross-dataset joins intact.
+
+        Pass `dataset_id` (the project's stable id, not the display name)
+        whenever it's available so the Model Query checklist gets/stays an
+        entry for this dataset too — without it, the table is queryable by
+        name but won't show up as a checkable join candidate."""
         table_name = self._sanitize_table_name(dataset_name)
         self._register_dataset_table(table_name, df)
+        if dataset_id is not None:
+            item = self._ensure_dataset_list_item(dataset_id, dataset_name)
+            if item.checkState() != Qt.Checked:
+                item.setCheckState(Qt.Checked)
+        self._update_completer_model()
+        self._update_schema_summary()
+
+    def rename_dataset(self, dataset_id: str, old_name: str, new_name: str, df: pl.DataFrame):
+        """A dataset was renamed elsewhere — move its table registration
+        from the old sanitized name to the new one, and relabel its Model
+        Query checklist entry, instead of leaving a stale table behind
+        under a name nothing points to anymore."""
+        old_table_name = self._sanitize_table_name(old_name)
+        if old_table_name in self.registered_tables:
+            self._unregister_table(old_table_name)
+        self.refresh_dataset(new_name, df, dataset_id=dataset_id)
+
+    def remove_dataset(self, dataset_id: str, name: str):
+        """A dataset was deleted elsewhere — unregister its table (so
+        querying it correctly fails instead of returning stale data) and
+        drop its Model Query checklist entry."""
+        table_name = self._sanitize_table_name(name)
+        self._unregister_table(table_name)
+        item = self.dataset_widgets.pop(dataset_id, None)
+        if item is not None:
+            row = self.dataset_list.row(item)
+            if row >= 0:
+                self.dataset_list.takeItem(row)
         self._update_completer_model()
         self._update_schema_summary()
 
     def _unregister_table(self, table_name: str):
-        """Unregister a table from DuckDB."""
+        """Unregister a table from DuckDB, so it doesn't linger in the
+        catalog once the dataset it came from is gone or replaced."""
         if table_name in self.registered_tables:
             del self.registered_tables[table_name]
-        # Note: DuckDB doesn't have unregister; we could close and recreate connection
-        # For simplicity, we'll just remove from dict and not query it.
+            if self.duckdb_conn is not None:
+                try:
+                    self.duckdb_conn.unregister(table_name)
+                except Exception:
+                    pass  # already gone / never actually registered
 
     def _update_completer_model(self):
         """Update completer model with SQL keywords, table names, and column names."""
@@ -627,7 +671,8 @@ class SQLTransformView(QWidget):
         self.current_table_name = sanitized_name
 
         # Clear existing tables before registering new one (to avoid duplicates like 'data' and 'customer')
-        self.registered_tables.clear()
+        for old_table_name in list(self.registered_tables.keys()):
+            self._unregister_table(old_table_name)
 
         # Register with DuckDB
         self._register_dataframe(df, sanitized_name)
@@ -649,13 +694,6 @@ class SQLTransformView(QWidget):
         # Register the Polars DataFrame directly with DuckDB using the provided table name
         self.duckdb_conn.register(table_name, df)
         self.registered_tables[table_name] = df
-
-        # Register any columns for custom functions as DuckDB relations
-        for col in df.columns:
-            # Create a Polars DataFrame with just this column
-            col_df = df.select(pl.col(col))
-            if len(col_df.columns) > 0:
-                self.duckdb_conn.register(f'col_{col}', col_df)
 
     @Slot()
     def execute_query(self):

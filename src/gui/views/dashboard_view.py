@@ -92,6 +92,7 @@ class MetricCard(QFrame):
             }
         """)
         layout.addWidget(value_label)
+        self.value_label = value_label  # Direct reference — no need to guess which QLabel is the value later
 
         # Subtitle
         if subtitle:
@@ -486,25 +487,35 @@ class DashboardView(QWidget):
         return f"{avg_quality:.1f}%"
 
     def _get_last_audit_time(self) -> str:
-        """Get last audit time from activities"""
-        if not self.activities:
+        """Get last audit time from the project's last_audit_at metadata,
+        set whenever an audit/statistical-flag check is actually run (see
+        MainWindow._record_audit_run) — not just any transformation."""
+        if not self.current_project:
             return "Never"
 
-        # Get the most recent activity time
-        for activity in self.activities:
-            time_str = activity.get("time", "")
-            if time_str and time_str != "Never":
-                return time_str
+        last_audit_at = self.current_project.metadata.get("last_audit_at")
+        if not last_audit_at:
+            return "Never"
 
-        return "Just now"
+        from datetime import datetime
+        try:
+            timestamp = datetime.fromisoformat(last_audit_at)
+        except (ValueError, TypeError):
+            return "Never"
+
+        return self._format_timestamp(timestamp)
 
     def _format_timestamp(self, timestamp):
-        """Format datetime for display (e.g., '2 hours ago')"""
-        from datetime import datetime, timezone
-        now = datetime.now(timezone.utc)
-        if timestamp.tzinfo is None:
-            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        """Format datetime for display (e.g., '2 hours ago'). Everywhere in
+        this app stores naive local timestamps (datetime.now().isoformat()),
+        so this compares naive-to-naive rather than assuming UTC."""
+        from datetime import datetime
+        now = datetime.now()
+        if timestamp.tzinfo is not None:
+            timestamp = timestamp.replace(tzinfo=None)
         diff = now - timestamp
+        if diff.total_seconds() < 0:
+            return "Just now"
         if diff.days > 0:
             return f"{diff.days} days ago"
         hours = diff.seconds // 3600
@@ -853,19 +864,7 @@ class DashboardView(QWidget):
         for i, card in enumerate(metrics):
             card.setMinimumHeight(160)
             layout.addWidget(card, 0, i)
-            # Find the value label
-            for child in card.findChildren(QLabel):
-                if child.text() in metric_titles:
-                    continue
-                # Skip labels with icons or trends
-                if child.text() and not any(c in child.text() for c in ["📊", "📈", "✓", "📅", "↑", "↓"]):
-                    if "Just now" not in child.text() and "Never" not in child.text():
-                        self.stat_labels[metric_titles[i]] = child
-                        break
-                elif child.text() in ["0", "0%", "Never"]:
-                    # These are the value labels we want to track
-                    self.stat_labels[metric_titles[i]] = child
-                    break
+            self.stat_labels[metric_titles[i]] = card.value_label
 
         return widget
 

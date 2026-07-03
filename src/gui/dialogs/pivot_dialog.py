@@ -1,6 +1,6 @@
 """
 Pivot Table Dialog for CAATmaster
-Excel-style pivot table creation with drag-drop column selection
+Pivot table creation with drag-drop column selection
 """
 import polars as pl
 from typing import Optional, List, Dict, Any
@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
     QPushButton, QSpinBox, QCheckBox, QGroupBox, QTableWidget,
     QTableWidgetItem, QHeaderView, QSplitter, QFrame, QScrollArea,
-    QWidget, QApplication
+    QWidget, QApplication, QLineEdit
 )
 from PySide6.QtCore import Qt, Signal, QMimeData
 from PySide6.QtGui import QDrag, QPixmap, QFont, QColor
@@ -197,7 +197,7 @@ class DropZone(QFrame):
 
 class PivotTableDialog(BaseModal):
     """
-    Excel-style Pivot Table dialog with drag-drop column selection
+    Pivot Table dialog with drag-drop column selection
     """
 
     def __init__(self, dataframe: pl.DataFrame, parent=None):

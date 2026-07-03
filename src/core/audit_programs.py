@@ -5,8 +5,7 @@ A firm typically reruns the same audit procedures (three-way match, Benford's
 Law on a GL extract, duplicate-payment detection, ...) on a new client's
 data every engagement. An Audit Program captures a dataset's current
 Applied Steps as a named, reusable template that can be applied to any other
-dataset later — a genuine differentiator over stock Power Query, which has
-no equivalent concept.
+dataset later.
 
 Stored as plain JSON files (one per program) under
 ~/Documents/CaatMaster/AuditPrograms/ — consistent with the rest of the

@@ -486,3 +486,31 @@ class FilterDialog(BaseModal):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to apply filter:\n{str(e)}")
             return self.original_df.clone()
+
+
+class AuditFlagDialog(FilterDialog):
+    """Flag rows matching one or more conditions (AND/OR) with a new
+    column, instead of removing non-matching rows like Filter does.
+    Reuses FilterDialog's condition-builder UI since both dialogs solve
+    the same "build a condition" problem."""
+
+    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None):
+        self.original_df = dataframe
+        self.conditions = []
+        BaseModal.__init__(self, "Audit Flag", dataframe, parent, selected_column=selected_column)
+        self.setMinimumSize(700, 650)
+        if selected_column:
+            self.set_selected_column(selected_column)
+
+    def _setup_ui(self):
+        super()._setup_ui()
+        flag_name_layout = QHBoxLayout()
+        flag_name_layout.addWidget(QLabel("Flag Column Name:"))
+        self.flag_column_edit = QLineEdit("flagged")
+        flag_name_layout.addWidget(self.flag_column_edit)
+        self.layout().insertLayout(0, flag_name_layout)
+
+    def get_parameters(self) -> dict:
+        params = super().get_parameters()
+        params["flag_column"] = self.flag_column_edit.text().strip() or "flagged"
+        return params

@@ -1,7 +1,6 @@
 """
 Unpivot Dialog for CAATmaster
-Power Query-style unpivot (melt) operation
-Converts wide format to long format
+Unpivot (melt) operation — converts wide format to long format
 """
 import polars as pl
 from typing import Optional, List, Dict, Any
@@ -10,16 +9,16 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
     QPushButton, QRadioButton, QButtonGroup, QGroupBox, QTableWidget,
     QTableWidgetItem, QHeaderView, QScrollArea, QWidget, QMessageBox,
-    QLineEdit
+    QLineEdit, QCheckBox
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 
 from ..components.common_modals import BaseModal, PreviewTable, MultiColumnSelector
 
 
 class UnpivotDialog(BaseModal):
     """
-    Power Query-style Unpivot dialog
+    Unpivot dialog
     Converts wide format (many columns) to long format (attribute/value pairs)
     """
 
@@ -229,9 +228,9 @@ class UnpivotDialog(BaseModal):
             return None
 
 
-class PowerPivotDialog(BaseModal):
+class PivotColumnDialog(BaseModal):
     """
-    Power Query-style Pivot dialog
+    Pivot dialog
     Pivots a single column into multiple columns
     """
 
@@ -241,7 +240,7 @@ class PowerPivotDialog(BaseModal):
         self.setMinimumSize(600, 500)
 
     def _setup_ui(self):
-        """Setup the Power Pivot dialog UI"""
+        """Setup the pivot column dialog UI"""
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
 
@@ -287,7 +286,8 @@ class PowerPivotDialog(BaseModal):
 
         for label, value in agg_options:
             radio = QRadioButton(label)
-            self.agg_group.addButton(radio, value)
+            radio.setProperty("agg_value", value)
+            self.agg_group.addButton(radio)
             agg_layout.addWidget(radio)
             if value == "sum":
                 radio.setChecked(True)
@@ -377,7 +377,8 @@ class PowerPivotDialog(BaseModal):
         return {
             "columns": self.source_combo.currentText(),  # Column to pivot (becomes headers)
             "values": self.values_combo.currentText(),   # Column to aggregate
-            "aggregation": self.agg_group.checkedId() or "sum",
+            "aggregation": (self.agg_group.checkedButton().property("agg_value")
+                            if self.agg_group.checkedButton() else "sum"),
             "ignore_errors": self.ignore_errors.isChecked(),
             "fill_missing": self.fill_missing.isChecked(),
             "default_value": self.default_value.text(),

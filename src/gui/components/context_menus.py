@@ -1,7 +1,7 @@
 """
 Column Context Menu for CAATmaster
-Power Query-style right-click menu with 50+ transformation operations
-Organized with logical groupings following Power Query conventions
+Right-click menu with 50+ transformation operations, organized into
+logical groupings.
 """
 
 from PySide6.QtCore import Qt, Signal, QTimer
@@ -17,8 +17,8 @@ from src.core.operation_registry import OPERATION_REGISTRY, TransformationStepTy
 
 class ColumnContextMenu(QMenu):
     """
-    Context menu for column transformations
-    Structure follows Power Query conventions with logical groupings
+    Context menu for column transformations, organized into logical
+    groupings.
     """
 
     # Signals
@@ -44,7 +44,7 @@ class ColumnContextMenu(QMenu):
         self._build_menu()
 
     def _build_menu(self):
-        """Build the complete menu structure with Power Query-style organization"""
+        """Build the complete menu structure with logical groupings"""
 
         # === SORT ===
         self._add_sort_section()
@@ -110,7 +110,7 @@ class ColumnContextMenu(QMenu):
         self.addAction(filter_action)
 
     def _add_split_section(self):
-        """Add Split Column options - Power Query style"""
+        """Add Split Column options"""
         split_menu = self._create_submenu("Split Column", "split")
 
         # By Delimiter
@@ -153,7 +153,7 @@ class ColumnContextMenu(QMenu):
         self.addMenu(split_menu)
 
     def _add_extract_section(self):
-        """Add Extract operations - Power Query style"""
+        """Add Extract operations"""
         extract_menu = self._create_submenu("Extract", "extract")
 
         # Text Extract
@@ -174,7 +174,7 @@ class ColumnContextMenu(QMenu):
             text_extract_menu.addAction(action)
         extract_menu.addMenu(text_extract_menu)
 
-        # Date/Time Extract - following Power Query pattern
+        # Date/Time Extract
         date_extract_menu = self._create_submenu("Date", "calendar")
         date_parts = [
             ("Year", "datetime_year", "Year"),
@@ -229,7 +229,7 @@ class ColumnContextMenu(QMenu):
         self.addMenu(extract_menu)
 
     def _add_transform_section(self):
-        """Add Transform operations - Power Query style"""
+        """Add Transform operations"""
         transform_menu = self._create_submenu("Transform", "transform")
 
         # Text Transforms
