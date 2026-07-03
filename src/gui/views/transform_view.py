@@ -5,9 +5,10 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QTableWidget, QTableWidgetItem, QHeaderView,
     QSplitter, QMessageBox, QMenu, QListWidget, QListWidgetItem,
-    QGroupBox, QTextEdit, QTreeWidget, QTreeWidgetItem, QTabWidget, QScrollArea, QDialog
+    QGroupBox, QTextEdit, QTreeWidget, QTreeWidgetItem, QTabWidget, QScrollArea, QDialog,
+    QCheckBox
 )
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal, Slot, QSize
 import polars as pl
 from collections import defaultdict
 from typing import Dict, Any
@@ -18,6 +19,8 @@ from core.operation_registry import OPERATION_REGISTRY, TransformationStepType
 
 # Import dialog factory
 from gui.dialogs.transformation_dialog_factory import TransformationDialogFactory
+from gui.theme import Colors
+from gui.components.column_filter import FilterableHeaderView, ColumnFilterPopup, BLANKS_LABEL
 
 
 
@@ -204,11 +207,20 @@ class TransformView(QWidget):
         self.data_table = QTableWidget()
         self.data_table.setAlternatingRowColors(True)
         self.data_table.setEditTriggers(QTableWidget.NoEditTriggers)
+
+        filterable_header = FilterableHeaderView(self.data_table)
+        filterable_header.filterButtonClicked.connect(self._on_filter_button_clicked)
+        self.data_table.setHorizontalHeader(filterable_header)
         self.data_table.horizontalHeader().setStretchLastSection(False)
         self.data_table.setHorizontalScrollMode(QTableWidget.ScrollPerPixel)
 
         self.data_table.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
         self.data_table.horizontalHeader().customContextMenuRequested.connect(self.show_header_context_menu)
+
+        # Excel-style AutoFilter state: column name -> set of allowed values
+        # (as displayed strings; None key absent = no filter on that column)
+        self.column_filters = {}
+        self._last_full_df = None
 
         data_scroll.setWidget(self.data_table)
         preview_layout.addWidget(data_scroll)
@@ -235,16 +247,68 @@ class TransformView(QWidget):
         else:
             self.pipeline = TransformationPipeline(initial_df=self.original_dataframe)
 
-        self.steps_list_widget.clear()
-
         # Restore steps list from pipeline
-        for step in self.pipeline.get_steps():
-            op_name = OPERATION_REGISTRY.get(step.operation_id, {}).get('display_name', step.operation_id)
-            step_text = f"{self.steps_list_widget.count() + 1}. {op_name}"
-            QListWidgetItem(step_text, self.steps_list_widget)
+        self._refresh_steps_list()
 
         self.populate_table(self.pipeline.apply())  # Use apply() to show transformed data
         self.update_info()
+
+    def _add_step_list_item(self, step, index: int):
+        """Add a row to the Applied Steps list with an enable/disable checkbox
+        and, once it's run, how long it took — lets a user turn a step off
+        without deleting it, and see which steps are expensive."""
+        op_name = OPERATION_REGISTRY.get(step.operation_id, {}).get('display_name', step.operation_id)
+        step_text = f"{index}. {op_name}"
+
+        item = QListWidgetItem(step_text)
+        item.setSizeHint(QSize(0, 30))
+        self.steps_list_widget.addItem(item)
+
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(6, 2, 6, 2)
+        row_layout.setSpacing(6)
+
+        checkbox = QCheckBox()
+        checkbox.setChecked(step.enabled)
+        checkbox.setToolTip("Disable this step without deleting it")
+        checkbox.toggled.connect(lambda checked, idx=index: self._on_step_toggled(idx, checked))
+        row_layout.addWidget(checkbox)
+
+        label = QLabel(step_text)
+        if not step.enabled:
+            label.setStyleSheet(f"color: {Colors.TEXT_DISABLED};")
+        row_layout.addWidget(label, 1)
+
+        if step.execution_time is not None:
+            time_label = QLabel(f"{step.execution_time * 1000:.0f} ms")
+            time_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; font-size: 10px;")
+            row_layout.addWidget(time_label)
+
+        self.steps_list_widget.setItemWidget(item, row)
+
+    def _refresh_steps_list(self):
+        """Rebuild the Applied Steps list from the current pipeline state."""
+        self.steps_list_widget.clear()
+        if not self.pipeline:
+            return
+        for i, step in enumerate(self.pipeline.get_steps(), start=1):
+            self._add_step_list_item(step, i)
+
+    def _on_step_toggled(self, step_number: int, enabled: bool):
+        """Handle a step's enable/disable checkbox being toggled."""
+        if not self.pipeline:
+            return
+        try:
+            self.pipeline.set_step_enabled(step_number, enabled)
+            transformed_df = self.pipeline.apply()
+            self.populate_table(transformed_df)
+            self.update_info()
+            self._refresh_steps_list()
+            self.dataChanged.emit(transformed_df)
+            self.pipelineChanged.emit(self.pipeline)
+        except Exception as e:
+            QMessageBox.critical(self, "Toggle Error", f"Failed to toggle step:\n{str(e)}")
 
     def show_header_context_menu(self, pos):
         """Shows a context menu when right-clicking a table header."""
@@ -842,9 +906,8 @@ class TransformView(QWidget):
             self.update_info()
 
             # Update the "Applied Steps" list
-            op_name = OPERATION_REGISTRY[operation_id]['display_name']
-            step_text = f"{self.steps_list_widget.count() + 1}. {op_name}"
-            QListWidgetItem(step_text, self.steps_list_widget)
+            new_step = self.pipeline.get_steps()[-1]
+            self._add_step_list_item(new_step, len(self.pipeline.get_steps()))
 
             # Clear inspector when new step is added
             self.clear_inspector()
@@ -868,9 +931,8 @@ class TransformView(QWidget):
             self.pipeline.remove_last_step()
             transformed_df = self.pipeline.apply()
 
-            # Remove last item from list
-            last_row = self.steps_list_widget.count() - 1
-            self.steps_list_widget.takeItem(last_row)
+            # Rebuild the steps list (also cleans up the removed row's checkbox widget)
+            self._refresh_steps_list()
 
             # Clear inspector
             self.clear_inspector()
@@ -909,13 +971,17 @@ class TransformView(QWidget):
                 )
 
     def populate_table(self, df: pl.DataFrame):
-        """Populates the table with data from a Polars DataFrame."""
+        """Populates the table with data from a Polars DataFrame, applying
+        any active Excel-style column AutoFilters first."""
         if df is None:
+            self._last_full_df = None
             self.data_table.setRowCount(0)
             self.data_table.setColumnCount(0)
             return
 
-        display_df = df.head(1000)
+        self._last_full_df = df
+        filtered_df = self._apply_column_filters(df)
+        display_df = filtered_df.head(1000)
 
         self.data_table.setRowCount(display_df.height)
         self.data_table.setColumnCount(display_df.width)
@@ -927,6 +993,82 @@ class TransformView(QWidget):
                 self.data_table.setItem(row_idx, col_idx, item)
 
         self.data_table.resizeColumnsToContents()
+
+        header = self.data_table.horizontalHeader()
+        if hasattr(header, "set_filtered_columns"):
+            filtered_indices = {
+                display_df.columns.index(col) for col in self.column_filters
+                if col in display_df.columns
+            }
+            header.set_filtered_columns(filtered_indices)
+
+        if filtered_df.height != df.height:
+            self.info_label.setText(
+                f"Showing {filtered_df.height:,} of {df.height:,} rows (AutoFilter active) — "
+                f"click a header's funnel icon to change it."
+            )
+
+    def _apply_column_filters(self, df: pl.DataFrame) -> pl.DataFrame:
+        """Apply active AutoFilter selections (view-level only — does not
+        modify the pipeline or its steps, matching Excel's AutoFilter)."""
+        if not self.column_filters:
+            return df
+
+        import polars as pl
+        mask = None
+        for col, allowed in self.column_filters.items():
+            if col not in df.columns:
+                continue
+            allow_blank = BLANKS_LABEL in allowed
+            text_allowed = [v for v in allowed if v != BLANKS_LABEL]
+            col_expr = pl.col(col).cast(pl.Utf8, strict=False)
+            col_mask = col_expr.is_in(text_allowed)
+            if allow_blank:
+                col_mask = col_mask | col_expr.is_null()
+            mask = col_mask if mask is None else (mask & col_mask)
+
+        return df.filter(mask) if mask is not None else df
+
+    def _get_unique_display_values(self, column_name: str):
+        """Unique values for a column, as displayed strings, for the filter popup."""
+        if self._last_full_df is None or column_name not in self._last_full_df.columns:
+            return []
+        series = self._last_full_df[column_name]
+        raw_values = series.cast(pl.Utf8, strict=False).unique().to_list()
+        values = [v if v is not None else BLANKS_LABEL for v in raw_values]
+        return sorted(values, key=str)
+
+    @Slot(int)
+    def _on_filter_button_clicked(self, column_index: int):
+        """Show the AutoFilter checklist popup for the clicked column."""
+        if self._last_full_df is None or column_index >= len(self._last_full_df.columns):
+            return
+
+        column_name = self._last_full_df.columns[column_index]
+        values = self._get_unique_display_values(column_name)
+        if not values:
+            return
+
+        current_selection = self.column_filters.get(column_name)
+
+        popup = ColumnFilterPopup(column_name, values, current_selection, parent=self)
+        popup.filtersApplied.connect(self._on_column_filter_applied)
+
+        header = self.data_table.horizontalHeader()
+        section_pos = header.sectionViewportPosition(column_index)
+        global_pos = header.mapToGlobal(header.rect().bottomLeft())
+        global_pos.setX(global_pos.x() + section_pos)
+        popup.show_at(global_pos)
+
+    def _on_column_filter_applied(self, column_name: str, selected):
+        """Apply or clear a column's filter and refresh the grid."""
+        if selected is None:
+            self.column_filters.pop(column_name, None)
+        else:
+            self.column_filters[column_name] = selected
+
+        if self._last_full_df is not None:
+            self.populate_table(self._last_full_df)
 
     def update_info(self):
         """Updates the info label with details about the current DataFrame."""

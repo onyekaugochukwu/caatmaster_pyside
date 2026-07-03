@@ -88,7 +88,7 @@ class ComplianceReportDialog(QDialog):
         self.setMinimumSize(800, 600)
         self.setStyleSheet("""
             QDialog {
-                background-color: #f9fafb;
+                background-color: #f3f2f1;
             }
         """)
 
@@ -107,7 +107,7 @@ class ComplianceReportDialog(QDialog):
             QLabel {
                 font-size: 18px;
                 font-weight: 700;
-                color: #1f2937;
+                color: #201f1e;
             }
         """)
         title_layout.addWidget(title)
@@ -120,8 +120,8 @@ class ComplianceReportDialog(QDialog):
             dataset_group.setStyleSheet("""
                 QGroupBox {
                     font-weight: 600;
-                    color: #374151;
-                    border: 1px solid #e5e7eb;
+                    color: #605e5c;
+                    border: 1px solid #e1dfdd;
                     border-radius: 8px;
                     padding-top: 10px;
                 }
@@ -139,7 +139,7 @@ class ComplianceReportDialog(QDialog):
             self.dataset_combo.setStyleSheet("""
                 QComboBox {
                     padding: 8px 12px;
-                    border: 1px solid #d1d5db;
+                    border: 1px solid #d2d0ce;
                     border-radius: 6px;
                     font-size: 13px;
                     min-width: 200px;
@@ -158,7 +158,7 @@ class ComplianceReportDialog(QDialog):
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet("""
             QTabWidget::pane {
-                border: 1px solid #e5e7eb;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 background-color: white;
             }
@@ -191,13 +191,13 @@ class ComplianceReportDialog(QDialog):
             QPushButton {
                 padding: 10px 20px;
                 background-color: white;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 font-size: 13px;
-                color: #374151;
+                color: #605e5c;
             }
             QPushButton:hover {
-                background-color: #f9fafb;
+                background-color: #f3f2f1;
             }
         """)
         close_btn.clicked.connect(self.reject)
@@ -217,8 +217,8 @@ class ComplianceReportDialog(QDialog):
         policy_group.setStyleSheet("""
             QGroupBox {
                 font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
+                color: #605e5c;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 padding-top: 10px;
             }
@@ -243,7 +243,7 @@ class ComplianceReportDialog(QDialog):
         )
         self.policy_edit.setStyleSheet("""
             QTextEdit {
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 padding: 10px;
                 font-size: 13px;
@@ -251,7 +251,7 @@ class ComplianceReportDialog(QDialog):
                 min-height: 150px;
             }
             QTextEdit:focus {
-                border-color: #3b82f6;
+                border-color: #0078d4;
             }
         """)
         policy_layout.addWidget(self.policy_edit)
@@ -263,8 +263,8 @@ class ComplianceReportDialog(QDialog):
         templates_group.setStyleSheet("""
             QGroupBox {
                 font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
+                color: #605e5c;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 padding-top: 10px;
             }
@@ -290,14 +290,14 @@ class ComplianceReportDialog(QDialog):
             btn.setStyleSheet("""
                 QPushButton {
                     padding: 8px 16px;
-                    background-color: #eff6ff;
-                    border: 1px solid #bfdbfe;
+                    background-color: #deecf9;
+                    border: 1px solid #c7e0f4;
                     border-radius: 4px;
                     font-size: 12px;
-                    color: #1e40af;
+                    color: #005a9e;
                 }
                 QPushButton:hover {
-                    background-color: #dbeafe;
+                    background-color: #deecf9;
                 }
             """)
             btn.clicked.connect(lambda checked, t=template: self.policy_edit.setText(t))
@@ -311,7 +311,7 @@ class ComplianceReportDialog(QDialog):
         self.run_check_btn.setStyleSheet("""
             QPushButton {
                 padding: 12px 24px;
-                background-color: #3b82f6;
+                background-color: #0078d4;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -319,7 +319,7 @@ class ComplianceReportDialog(QDialog):
                 font-weight: 600;
             }
             QPushButton:hover {
-                background-color: #2563eb;
+                background-color: #106ebe;
             }
         """)
         self.run_check_btn.clicked.connect(self.run_policy_check)
@@ -341,10 +341,10 @@ class ComplianceReportDialog(QDialog):
         self.policy_status.setStyleSheet("""
             QLabel {
                 font-size: 12px;
-                color: #6b7280;
+                color: #605e5c;
                 padding: 8px;
                 border-radius: 4px;
-                background-color: #f3f4f6;
+                background-color: #edebe9;
             }
         """)
         self.policy_status.setVisible(False)
@@ -365,8 +365,8 @@ class ComplianceReportDialog(QDialog):
         rules_group.setStyleSheet("""
             QGroupBox {
                 font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
+                color: #605e5c;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 padding-top: 10px;
             }
@@ -391,7 +391,7 @@ class ComplianceReportDialog(QDialog):
         )
         self.rules_edit.setStyleSheet("""
             QTextEdit {
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 padding: 10px;
                 font-size: 13px;
@@ -399,7 +399,7 @@ class ComplianceReportDialog(QDialog):
                 min-height: 150px;
             }
             QTextEdit:focus {
-                border-color: #3b82f6;
+                border-color: #0078d4;
             }
         """)
         rules_layout.addWidget(self.rules_edit)
@@ -411,7 +411,7 @@ class ComplianceReportDialog(QDialog):
         sample_rules.setStyleSheet("""
             QLabel {
                 font-size: 11px;
-                color: #6b7280;
+                color: #605e5c;
                 font-style: italic;
             }
         """)
@@ -462,8 +462,8 @@ class ComplianceReportDialog(QDialog):
         options_group.setStyleSheet("""
             QGroupBox {
                 font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
+                color: #605e5c;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 padding-top: 10px;
             }
@@ -490,7 +490,7 @@ class ComplianceReportDialog(QDialog):
         self.engagement_combo.setStyleSheet("""
             QComboBox {
                 padding: 8px 12px;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 font-size: 13px;
                 min-width: 200px;
@@ -505,7 +505,7 @@ class ComplianceReportDialog(QDialog):
         self.tone_combo.setStyleSheet("""
             QComboBox {
                 padding: 8px 12px;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 font-size: 13px;
                 min-width: 200px;
@@ -520,8 +520,8 @@ class ComplianceReportDialog(QDialog):
         findings_group.setStyleSheet("""
             QGroupBox {
                 font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
+                color: #605e5c;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 padding-top: 10px;
             }
@@ -541,7 +541,7 @@ class ComplianceReportDialog(QDialog):
         )
         self.findings_edit.setStyleSheet("""
             QTextEdit {
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 padding: 10px;
                 font-size: 13px;
@@ -549,7 +549,7 @@ class ComplianceReportDialog(QDialog):
                 min-height: 120px;
             }
             QTextEdit:focus {
-                border-color: #3b82f6;
+                border-color: #0078d4;
             }
         """)
         findings_layout.addWidget(self.findings_edit)
@@ -592,7 +592,7 @@ class ComplianceReportDialog(QDialog):
         self.report_output.setReadOnly(True)
         self.report_output.setStyleSheet("""
             QTextEdit {
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 padding: 10px;
                 font-size: 12px;

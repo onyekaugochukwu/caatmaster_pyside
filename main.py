@@ -15,6 +15,7 @@ src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
 from gui.main_window import MainWindow
+from gui.theme import get_stylesheet
 from core.database import init_db
 
 
@@ -34,13 +35,9 @@ def main():
     # Set application style
     app.setStyle("Fusion")
 
-    # Load and apply the dark theme stylesheet
-    try:
-        theme_path = Path(__file__).parent / "src" / "gui" / "themes" / "dark_theme.qss"
-        with open(theme_path, "r") as f:
-            app.setStyleSheet(f.read())
-    except FileNotFoundError:
-        print("Warning: Stylesheet 'dark_theme.qss' not found. Using default style.")
+    # Apply the CaatMaster light theme (Power Query-style) — single source of
+    # truth for the whole app's styling, see src/gui/theme.py
+    app.setStyleSheet(get_stylesheet())
 
     # Initialize database
     try:

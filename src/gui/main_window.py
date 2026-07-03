@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QPushButton, QScrollArea
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize, QThreadPool
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QShortcut, QKeySequence
 
 # Import project management
 from core.project_manager import Project, Dataset, ProjectExporter
@@ -40,6 +40,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.current_project: Optional[Project] = None
+        self.current_project_path: Optional[str] = None  # .caat file this project was opened from / last saved to
         self.current_dataset: Optional[Dataset] = None
         self.auth_service = None
         self.ai_manager: Optional[AIManager] = None
@@ -53,29 +54,17 @@ class MainWindow(QMainWindow):
         self.setup_ui()
         self.setup_backstage()
         self.create_statusbar()
+        self.setup_autosave()
         # Hide window until login is complete
         self.hide()
         self.show_login_dialog()
 
     def _apply_theme(self):
-        """Apply the modern CaatMaster theme"""
-        # Set application-wide font
-        font = QFont("Inter", 10)
-        if not font.exactMatch():
-            font = QFont("Segoe UI", 10)
+        """Set the application-wide font. Colors/borders come from the global
+        stylesheet (src/gui/theme.py), applied once in main.py — this method
+        intentionally does not set its own stylesheet so it can't drift from it."""
+        font = QFont("Segoe UI", 10)
         QApplication.instance().setFont(font)
-
-        # Apply base stylesheet
-        self.setStyleSheet("""
-            QMainWindow {
-                background-color: #ffffff;
-            }
-            QStatusBar {
-                background-color: #f9fafb;
-                border-top: 1px solid #e5e7eb;
-                color: #111827;
-            }
-        """)
 
     def setup_auth(self):
         """Initialize authentication service"""
@@ -163,44 +152,8 @@ class MainWindow(QMainWindow):
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                background-color: #ffffff;
-                border: none;
-            }
-            QScrollBar:horizontal {
-                background-color: #f3f4f6;
-                height: 12px;
-                border-radius: 6px;
-            }
-            QScrollBar::handle:horizontal {
-                background-color: #d1d5db;
-                border-radius: 6px;
-                min-width: 30px;
-            }
-            QScrollBar::handle:horizontal:hover {
-                background-color: #9ca3af;
-            }
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-                background: none;
-            }
-            QScrollBar:vertical {
-                background-color: #f3f4f6;
-                width: 12px;
-                border-radius: 6px;
-            }
-            QScrollBar::handle:vertical {
-                background-color: #d1d5db;
-                border-radius: 6px;
-                min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background-color: #9ca3af;
-            }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background: none;
-            }
-        """)
+        # Styling (background, scrollbars) comes from the global stylesheet
+        # (src/gui/theme.py) — QScrollArea/QScrollBar rules are defined there.
 
         # Thread pool for async AI operations (no parent to avoid thread issues)
         self.thread_pool = QThreadPool()
@@ -220,39 +173,23 @@ class MainWindow(QMainWindow):
         self.sidebar.dataset_duplicate_requested.connect(self.on_dataset_duplicate_requested)
         self.sidebar.dataset_delete_requested.connect(self.on_dataset_delete_requested)
         self.sidebar.dataset_split_sheet_requested.connect(self.on_dataset_split_sheet_requested)
+        self.sidebar.dataset_refresh_requested.connect(self.on_dataset_refresh_requested)
         self.sidebar.join_datasets_requested.connect(self.on_join_datasets_requested)
         self.sidebar.append_datasets_requested.connect(self.on_append_datasets_requested)
         self.sidebar.upload_requested.connect(self.on_upload_requested)
+        self.sidebar.paste_requested.connect(self.on_paste_requested)
         self.sidebar.project_edit_requested.connect(self.edit_current_project)
         self.sidebar.project_delete_requested.connect(self.delete_current_project)
         self.sidebar.toggle_ai_panel.connect(self.toggle_ai_panel)
         self.sidebar.ai_chat_requested.connect(self._on_ai_chat_requested)
+        self.sidebar.audit_programs_requested.connect(self._on_audit_programs_requested)
         middle_layout.addWidget(self.sidebar)
 
         # Content area (right side) - Light mode
         content_area = QWidget()
         content_area.setObjectName("ContentArea")
-        content_area.setStyleSheet("""
-            QWidget#ContentArea {
-                background-color: #ffffff;
-            }
-            QTableWidget {
-                background-color: white;
-                gridline-color: #e5e7eb;
-                color: #111827;
-            }
-            QTableWidget::item {
-                color: #111827;
-            }
-            QTableWidget::item:selected {
-                background-color: #dbeafe;
-                color: #111827;
-            }
-            QHeaderView::section {
-                background-color: #f9fafb;
-                color: #374151;
-            }
-        """)
+        # Styling (background, table/header colors) comes from the global
+        # stylesheet (src/gui/theme.py) — no local override here.
         content_layout = QVBoxLayout(content_area)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
@@ -287,6 +224,14 @@ class MainWindow(QMainWindow):
 
         # Create main views
         self.create_views()
+
+        # Paste an Excel/clipboard range directly into a new dataset
+        paste_shortcut = QShortcut(QKeySequence("Ctrl+Shift+V"), self)
+        paste_shortcut.activated.connect(self.on_paste_requested)
+
+        # Command palette: search every transformation/report/nav action
+        palette_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
+        palette_shortcut.activated.connect(self.show_command_palette)
 
     def setup_backstage(self):
         """Setup the backstage view overlay"""
@@ -591,6 +536,44 @@ class MainWindow(QMainWindow):
         dialog = AIChatDialog(current_df, self)
         dialog.exec()
 
+    @Slot()
+    def _on_audit_programs_requested(self):
+        """Open the Audit Programs gallery: save the current dataset's
+        Applied Steps as a reusable template, or apply a saved one."""
+        from gui.dialogs.audit_programs_dialog import AuditProgramsDialog
+
+        current_steps = []
+        if self.current_dataset and self.current_dataset.transformation_pipeline:
+            current_steps = [
+                {"operation_id": s.operation_id, "params": s.params}
+                for s in self.current_dataset.transformation_pipeline.get_steps()
+            ]
+
+        dialog = AuditProgramsDialog(current_steps, self)
+        dialog.programApplied.connect(self._on_audit_program_applied)
+        dialog.exec()
+
+    def _on_audit_program_applied(self, steps):
+        """Replay a saved Audit Program's steps against the active dataset."""
+        transform_view = self.views.get("transform")
+        if not transform_view or not transform_view.pipeline:
+            QMessageBox.warning(self, "No Data", "Please load a dataset first.")
+            return
+
+        applied = 0
+        for step in steps:
+            try:
+                transform_view.apply_transformation(step["operation_id"], step["params"])
+                applied += 1
+            except Exception as e:
+                QMessageBox.warning(
+                    self, "Step Failed",
+                    f"Stopped after {applied} step(s) — '{step['operation_id']}' failed:\n{str(e)}"
+                )
+                break
+
+        self.statusBar().showMessage(f"Applied {applied} step(s) from Audit Program")
+
     def _on_column_applied(self, data: dict):
         """Handle when a column is applied"""
         if not self.current_dataset:
@@ -700,11 +683,13 @@ class MainWindow(QMainWindow):
         from gui.views.query_view import QueryView
         from gui.views.ml_models_view import MLModelInventoryView
         from gui.views.projects_view import ProjectsView
-        from gui.views.sessions_view import SessionsView
         from gui.views.reports_view import ReportsView
         from gui.views.settings_view import SettingsView
 
         # Create and add views
+        # Note: there is no separate "Sessions" concept — a Project *is* the
+        # unit of work and its .caat file *is* the session (opening it
+        # resumes where you left off). See claude_plan.md §7.
         self.views = {
             "dashboard": DashboardView(),
             "data": DataView(),
@@ -715,7 +700,6 @@ class MainWindow(QMainWindow):
             "query": QueryView(),
             "ml models": MLModelInventoryView(),
             "projects": ProjectsView(),
-            "sessions": SessionsView(),
             "reports": ReportsView(),
             "settings": SettingsView(self),
         }
@@ -748,6 +732,7 @@ class MainWindow(QMainWindow):
         data_view.dataset_added.connect(lambda d: self.views["dashboard"].refresh() if "dashboard" in self.views else None)
         data_view.show_transform_requested.connect(self._on_show_transform_after_upload)
         transform_view.pipelineChanged.connect(self._on_pipeline_changed)
+        sql_view.applyToPipelineRequested.connect(self._on_sql_apply_to_pipeline)
 
         # Set project on data_view
         data_view.set_project(self.current_project) if self.current_project else None
@@ -769,7 +754,7 @@ class MainWindow(QMainWindow):
         # Views that show ribbon (data transformation modes)
         ribbon_views = {"data", "transform", "visualizations", "reports", "query"}
         # Views that hide ribbon (SQL and other modes)
-        no_ribbon_views = {"sql", "dashboard", "ml models", "projects", "sessions", "settings"}
+        no_ribbon_views = {"sql", "dashboard", "ml models", "projects", "settings"}
 
         if view_name in self.views:
             self.content_stack.setCurrentWidget(self.views[view_name])
@@ -805,6 +790,8 @@ class MainWindow(QMainWindow):
         dataset = self.current_project.datasets.get(dataset_id)
         if dataset:
             self.current_dataset = dataset
+            if dataset.transformation_pipeline:
+                dataset.transformation_pipeline.set_parameters(self.current_project.parameters)
             df = dataset.get_current_dataframe()
             if df is not None:
                 # Navigate to transform view
@@ -977,6 +964,49 @@ class MainWindow(QMainWindow):
             # Update status
             num_splits = len(split_datasets)
             self.statusBar().showMessage(f"Split dataset into {num_splits} new datasets")
+
+    @Slot(str)
+    def on_dataset_refresh_requested(self, dataset_id):
+        """Re-read a dataset's original source file and replay all of its
+        transformation steps against the fresh data — Power Query's
+        "Refresh" for a dataset whose source file has changed since import."""
+        if not self.current_project:
+            return
+
+        dataset = self.current_project.datasets.get(dataset_id)
+        if not dataset:
+            return
+
+        if not dataset.can_refresh():
+            QMessageBox.information(
+                self, "Cannot Refresh",
+                f"'{dataset.name}' has no known source file to refresh from "
+                "(e.g. it was pasted, generated, or produced by a join/append/split)."
+            )
+            return
+
+        try:
+            refreshed_df = dataset.refresh_from_source()
+        except (FileNotFoundError, ValueError) as e:
+            QMessageBox.warning(self, "Refresh Failed", str(e))
+            return
+        except Exception as e:
+            QMessageBox.critical(self, "Refresh Failed", f"Failed to refresh dataset:\n{str(e)}")
+            return
+
+        # If this is the active dataset, update the views showing it
+        if self.current_dataset and self.current_dataset.id == dataset_id:
+            transform_view = self.views.get("transform")
+            sql_view = self.views.get("sql")
+            if transform_view:
+                transform_view.set_dataframe(refreshed_df, dataset.transformation_pipeline)
+            if sql_view:
+                sql_view.set_dataframe(refreshed_df, dataset.name)
+
+        self.sidebar.set_project(self.current_project)
+        self.statusBar().showMessage(
+            f"Refreshed '{dataset.name}' from source and replayed {len(dataset.transformation_pipeline.get_steps()) if dataset.transformation_pipeline else 0} step(s)"
+        )
 
     @Slot(str)
     def on_join_datasets_requested(self, source_dataset_id):
@@ -1171,6 +1201,22 @@ class MainWindow(QMainWindow):
             self.current_dataset.set_pipeline(pipeline)
             self.statusBar().showMessage(f"Transformations saved to dataset: {self.current_dataset.name}")
 
+    @Slot(str, str)
+    def _on_sql_apply_to_pipeline(self, query: str, table_name: str):
+        """Record a SQL query from the SQL view as a step on the active
+        dataset's pipeline, so it shows up in Applied Steps and replays on
+        refresh like any other transformation."""
+        transform_view = self.views.get("transform")
+        if not transform_view or not transform_view.pipeline:
+            QMessageBox.warning(self, "No Data", "Please load a dataset first.")
+            return
+
+        try:
+            transform_view.apply_transformation('sql_query', {'query': query, 'table_name': table_name})
+            self.statusBar().showMessage("SQL query applied to dataset pipeline")
+        except Exception as e:
+            QMessageBox.critical(self, "Apply Failed", f"Failed to apply SQL query to pipeline:\n{str(e)}")
+
     @Slot()
     def on_upload_requested(self):
         """Handle upload request from sidebar"""
@@ -1179,6 +1225,43 @@ class MainWindow(QMainWindow):
         data_view = self.views.get("data")
         if data_view and hasattr(data_view, "show_import_dialog"):
             data_view.show_import_dialog()
+
+    @Slot()
+    def on_paste_requested(self):
+        """Handle "paste dataset from clipboard" request from the sidebar or Ctrl+Shift+V"""
+        self.content_stack.setCurrentWidget(self.views["data"])
+        self.sidebar.set_active_button("data")
+        data_view = self.views.get("data")
+        if data_view and hasattr(data_view, "paste_from_clipboard"):
+            data_view.paste_from_clipboard()
+
+    def show_command_palette(self):
+        """Open the Ctrl+K command palette — searches every transformation,
+        report, and navigation action in the app by name."""
+        from gui.components.command_palette import CommandPalette, build_ribbon_commands
+
+        commands = build_ribbon_commands(self.handle_ribbon_action)
+
+        for view_key in self.views.keys():
+            commands.append((
+                f"Go to {view_key.title()}", "Navigate",
+                lambda v=view_key: self.on_navigation_requested(v)
+            ))
+
+        commands.extend([
+            ("New Project", "File", self.new_project),
+            ("Open Project", "File", self.open_project),
+            ("Save Project", "File", self.save_project),
+            ("Save Project As...", "File", self.save_project_as),
+            ("Export for Review", "File", self.export_for_review),
+        ])
+
+        palette = CommandPalette(commands, parent=self)
+        palette.move(
+            self.geometry().center().x() - palette.width() // 2,
+            self.geometry().top() + 120
+        )
+        palette.exec()
 
     def _on_show_transform_after_upload(self):
         """Navigate to transform view after dataset upload"""
@@ -1203,6 +1286,8 @@ class MainWindow(QMainWindow):
             datasets = project.list_datasets()
             if datasets:
                 self.current_dataset = datasets[0]
+                if self.current_dataset.transformation_pipeline:
+                    self.current_dataset.transformation_pipeline.set_parameters(project.parameters)
                 # Update views with the dataset - include pipeline to preserve steps
                 current_df = self.current_dataset.get_current_dataframe()
                 if current_df is not None:
@@ -1223,6 +1308,41 @@ class MainWindow(QMainWindow):
         """Create status bar"""
         self.statusBar().setObjectName("StatusBar")
         self.statusBar().showMessage("Ready")
+
+    def setup_autosave(self):
+        """Periodically save a recovery copy of the current project, the way
+        Excel's AutoRecover does — separate from the user's own Save, and
+        never overwrites their actual .caat file."""
+        from PySide6.QtCore import QTimer
+        self.autosave_timer = QTimer(self)
+        self.autosave_timer.setInterval(2 * 60 * 1000)  # 2 minutes
+        self.autosave_timer.timeout.connect(self._autosave)
+        self.autosave_timer.start()
+
+    def _autosave(self):
+        """Write a recovery snapshot to '<project>.caat.autosave' if a
+        project is open and has a known save location. Silent on failure —
+        autosave should never interrupt the user with a dialog."""
+        if not self.current_project or not self.current_project_path:
+            return
+        try:
+            from core.caat_format import save_caat
+            autosave_path = self.current_project_path + ".autosave"
+            save_caat(self.current_project, autosave_path, author=self._current_username())
+            self.statusBar().showMessage("Autosaved recovery copy", 3000)
+        except Exception as e:
+            print(f"Warning: autosave failed: {e}")
+
+    def _current_username(self) -> Optional[str]:
+        """Best-effort current user name for attribution in saved files."""
+        try:
+            if self.auth_service:
+                user = self.auth_service.get_current_user()
+                if user:
+                    return user.username
+        except Exception:
+            pass
+        return None
 
     # ========================================================================
     # Ribbon Actions
@@ -1497,24 +1617,73 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Use 'Audit Flag' transformation to mark suspicious records")
 
     def _on_query_settings(self):
-        """Query settings."""
-        QMessageBox.information(self, "Query Settings", "Query settings available in Transform view sidebar.")
+        """Manage the project's reusable query parameters (materiality
+        threshold, period dates, etc.) that SQL steps can reference."""
+        if not self.current_project:
+            QMessageBox.warning(self, "No Project", "Please create or open a project first.")
+            return
+
+        from gui.dialogs.parameters_dialog import ParametersDialog
+        dialog = ParametersDialog(self.current_project.parameters, self)
+        if dialog.exec():
+            self.current_project.parameters = dialog.get_parameters()
+            self._sync_pipeline_parameters()
+            self.statusBar().showMessage(
+                f"Saved {len(self.current_project.parameters)} query parameter(s)"
+            )
+
+    def _sync_pipeline_parameters(self):
+        """Push the current project's parameters into the active dataset's
+        pipeline so SQL steps referencing {{name}} pick up the latest value."""
+        if not self.current_dataset or not self.current_dataset.transformation_pipeline:
+            return
+        self.current_dataset.transformation_pipeline.set_parameters(self.current_project.parameters)
+        transform_view = self.views.get("transform")
+        if transform_view and transform_view.pipeline is self.current_dataset.transformation_pipeline:
+            transform_view.populate_table(transform_view.pipeline.apply())
+            transform_view.update_info()
 
     def _on_dependencies(self):
         """Show dependencies."""
         QMessageBox.information(self, "Dependencies", "Data lineage and dependencies view coming soon.")
 
     def _on_col_quality(self):
-        """Show column quality."""
-        QMessageBox.information(self, "Column Quality", "Column quality indicators show null value percentages.")
+        """Show column quality (valid/empty bars for every column)."""
+        self._show_column_profile_dialog(initial_tab="quality")
 
     def _on_col_dist(self):
-        """Show column distribution."""
-        QMessageBox.information(self, "Distribution", "Column distribution charts coming soon.")
+        """Show column distribution chart for the selected column."""
+        self._show_column_profile_dialog(initial_tab="profile")
 
     def _on_col_profile(self):
-        """Show column profile."""
-        QMessageBox.information(self, "Column Profile", "Detailed column profiling coming soon.")
+        """Show detailed column profile for the selected column."""
+        self._show_column_profile_dialog(initial_tab="profile")
+
+    def _show_column_profile_dialog(self, initial_tab: str = "quality"):
+        """Open the Column Quality / Distribution / Profile dialog."""
+        if not self._check_data_loaded():
+            return
+
+        transform_view = self.views.get("transform")
+        if not transform_view or not transform_view.pipeline:
+            QMessageBox.information(self, "No Data", "Load a dataset first.")
+            return
+
+        current_df = transform_view.pipeline.apply() if transform_view.pipeline else transform_view.original_dataframe
+        if current_df is None:
+            QMessageBox.information(self, "No Data", "Load a dataset first.")
+            return
+
+        selected_column = None
+        table = transform_view.data_table
+        header = table.horizontalHeader()
+        current_col = header.currentIndex()
+        if current_col.isValid() and table.horizontalHeaderItem(current_col.column()):
+            selected_column = table.horizontalHeaderItem(current_col.column()).text()
+
+        from gui.dialogs.column_profile_dialog import ColumnProfileDialog
+        dialog = ColumnProfileDialog(current_df, self, selected_column=selected_column, initial_tab=initial_tab)
+        dialog.exec()
 
     def _on_formula_bar(self):
         """Toggle formula bar."""
@@ -1570,47 +1739,27 @@ class MainWindow(QMainWindow):
             self.ribbon_bar.setVisible(False)
 
     def _save_new_project(self, project):
-        """Save a newly created project to the default projects directory"""
-        from core.project_manager import ProjectExporter
+        """Save a newly created project as a native .caat file to the
+        default projects directory, so it has a real home from creation —
+        including its (currently empty) datasets, not just name/metadata."""
+        from core.caat_format import save_caat
         from pathlib import Path
-        import json
 
-        # Create projects directory if it doesn't exist
         projects_dir = Path.home() / "Documents" / "CaatMaster" / "Projects"
         projects_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create project metadata
-        project_metadata = {
-            'id': project.id,
-            'name': project.name,
-            'description': project.description,
-            'client_name': project.client_name,
-            'phase': project.phase,
-            'engagement_type': project.engagement_type,
-            'risk_score': project.risk_score,
-            'objectives': project.objectives,
-            'datasets': {},  # Empty datasets dict
-            'metadata': {
-                'created_at': project.metadata.get('created_at', ''),
-                'last_modified': project.metadata.get('last_modified', ''),
-                'version': '1.0'
-            }
-        }
-
-        # Save as JSON
         safe_name = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in project.name)
-        project_file = projects_dir / f"{safe_name}.json"
+        project_file = projects_dir / f"{safe_name}.caat"
 
-        with open(project_file, 'w') as f:
-            json.dump(project_metadata, f, indent=2)
+        try:
+            saved_path = save_caat(project, str(project_file), author=self._current_username())
+            self.current_project_path = saved_path
+            from core.recent_projects import add_recent
+            add_recent(saved_path, project.name)
+            self.statusBar().showMessage(f"Created and saved project: {project.name} to {saved_path}")
+        except Exception as e:
+            QMessageBox.warning(self, "Save Warning", f"Project created, but the initial save failed:\n{str(e)}")
 
-        self.statusBar().showMessage(f"Created and saved project: {project.name} to {project_file}")
-
-    def new_session(self):
-        """Create a new session"""
-        QMessageBox.information(self, "New Session",
-                               "Session management will be available in a future update.\n"
-                               "For now, use projects to organize your work.")
 
     def open_project(self):
         """Open an existing project"""
@@ -1621,8 +1770,16 @@ class MainWindow(QMainWindow):
 
             # Load project from the specified path
             from core.project_manager import ProjectExporter
+            from core.caat_format import load_caat, is_caat_file
             try:
-                project = ProjectExporter.import_project(project_path)
+                if is_caat_file(project_path):
+                    project = load_caat(project_path)
+                    self.current_project_path = project_path
+                    from core.recent_projects import add_recent
+                    add_recent(project_path, project.name)
+                else:
+                    project = ProjectExporter.import_project(project_path)
+                    self.current_project_path = None
                 if project:
                     self.current_project = project
                     self.set_project(self.current_project)
@@ -1654,6 +1811,14 @@ class MainWindow(QMainWindow):
             project = dialog.get_selected_project()
             if project:
                 self.current_project = project
+                opened_path = dialog.file_path_edit.text().strip()
+                from core.caat_format import is_caat_file
+                if opened_path and is_caat_file(opened_path):
+                    self.current_project_path = opened_path
+                    from core.recent_projects import add_recent
+                    add_recent(opened_path, project.name)
+                else:
+                    self.current_project_path = None
                 self.set_project(self.current_project)
                 self.refresh_dashboard_stats()
                 self.statusBar().showMessage(f"Opened project: {project.name}")
@@ -1725,24 +1890,49 @@ class MainWindow(QMainWindow):
 
             self.statusBar().showMessage(f"Project '{project_name}' deleted")
 
-    def save_project(self):
-        """Save the current project"""
+    def save_project(self, save_as: bool = False):
+        """Save the current project as a native .caat file.
+
+        Saves silently to the known file if one exists (like Ctrl+S in any
+        normal app); prompts for a location on first save or "Save As".
+        """
         if not self.current_project:
             QMessageBox.warning(self, "No Project", "No project is currently open.")
             return
 
-        dialog = SaveProjectDialog(self.current_project, self)
-        if dialog.exec():
-            save_options = dialog.get_save_options()
-            try:
-                exported_path = ProjectExporter.export_project(
-                    self.current_project,
-                    str(save_options["file_path"].parent),
-                    save_options["format"]
-                )
-                self.statusBar().showMessage(f"Project saved to: {exported_path}")
-            except Exception as e:
-                QMessageBox.critical(self, "Save Error", f"Failed to save project: {str(e)}")
+        from core.caat_format import save_caat
+
+        target_path = self.current_project_path
+        if save_as or not target_path:
+            from PySide6.QtWidgets import QFileDialog
+            from pathlib import Path
+            default_name = f"{self.current_project.name.replace(' ', '_')}.caat"
+            default_dir = Path(self.current_project_path).parent if self.current_project_path \
+                else Path.home() / "Documents" / "CaatMaster" / "Projects"
+            default_dir.mkdir(parents=True, exist_ok=True)
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Save Project",
+                str(default_dir / default_name),
+                "CaatMaster Project (*.caat)"
+            )
+            if not file_path:
+                return
+            if not file_path.endswith(".caat"):
+                file_path += ".caat"
+            target_path = file_path
+
+        try:
+            saved_path = save_caat(self.current_project, target_path, author=self._current_username())
+            self.current_project_path = saved_path
+            from core.recent_projects import add_recent
+            add_recent(saved_path, self.current_project.name)
+            self.statusBar().showMessage(f"Project saved to: {saved_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Failed to save project:\n{str(e)}")
+
+    def save_project_as(self):
+        """Save the current project to a new .caat file location."""
+        self.save_project(save_as=True)
 
     def manage_datasets(self):
         """Open dataset management dialog"""

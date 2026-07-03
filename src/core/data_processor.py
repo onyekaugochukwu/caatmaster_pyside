@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 import re
 import hashlib
+import time
 from datetime import datetime
 import numpy as np
 import inspect
@@ -234,8 +235,14 @@ class DataProcessor:
                     params['output_col'] = output_col
 
         # Dispatch based on operation type or specific ID
+        # SQL (DuckDB)
+        if operation_id == 'sql_query':
+            return self.sql_query(
+                df, params.get('query', ''), params.get('table_name', 'df'),
+                params.get('_pipeline_parameters')
+            )
         # Text transformations
-        if operation_id == 'text_uppercase':
+        elif operation_id == 'text_uppercase':
             return self._call_mapped_method(self.uppercase, df, params)
         elif operation_id == 'text_lowercase':
             return self._call_mapped_method(self.lowercase, df, params)
@@ -554,6 +561,32 @@ class DataProcessor:
     # ============================================================================
     # TEXT TRANSFORMATION IMPLEMENTATIONS
     # ============================================================================
+
+    def sql_query(self, df: pl.DataFrame, query: str, table_name: str = 'df',
+                  parameters: Dict[str, Any] = None) -> pl.DataFrame:
+        """Run a DuckDB SQL query against the dataframe (registered under
+        `table_name`, 'df' by default) and return the result. Lets SQL
+        transformations be recorded as an ordinary pipeline step alongside
+        ribbon transformations, so they show up in Applied Steps and replay
+        on refresh. `{{param_name}}` placeholders in the query are resolved
+        against `parameters` (the project's query parameters) at each run,
+        so the same recorded step adapts to a new engagement automatically."""
+        if not query or not query.strip():
+            raise ValueError("SQL query is empty.")
+        if parameters:
+            query = substitute_parameters(query, parameters)
+        try:
+            import duckdb
+        except ImportError:
+            raise ImportError("duckdb is required for SQL steps. Install it with: pip install duckdb")
+
+        conn = duckdb.connect(':memory:')
+        try:
+            conn.register(table_name or 'df', df.to_pandas())
+            result = conn.execute(query).fetchdf()
+            return pl.from_pandas(result)
+        finally:
+            conn.close()
 
     def uppercase(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
         """Convert text to uppercase"""
@@ -2640,12 +2673,14 @@ class DataProcessor:
 class TransformationStep:
     """Represents a single transformation step in the pipeline."""
 
-    def __init__(self, operation_id: str, params: Dict[str, Any], step_number: int):
+    def __init__(self, operation_id: str, params: Dict[str, Any], step_number: int, enabled: bool = True):
         self.operation_id = operation_id
         self.params = params
         self.step_number = step_number
         self.created_columns: List[str] = []
         self.timestamp = datetime.now()
+        self.enabled = enabled
+        self.execution_time: Optional[float] = None  # seconds, set on apply()
 
 
 class TransformationPipeline:
@@ -2661,6 +2696,19 @@ class TransformationPipeline:
         self._data_processor = DataProcessor()
         self._cache: Dict[int, pl.DataFrame] = {0: initial_df}
         self._column_tracking: Dict[str, Dict] = {}  # column_name -> {'created_by_step': int, 'operation': str}
+        # Project-level query parameters (materiality threshold, period dates,
+        # etc.) — not persisted per-step, set from the owning Project each
+        # time this pipeline becomes active. See set_parameters().
+        self.parameters: Dict[str, Any] = {}
+
+    def set_parameters(self, parameters: Dict[str, Any]):
+        """Set the project-level parameters available to steps (e.g. SQL
+        queries referencing {{materiality_threshold}}) and invalidate the
+        cache, since a parameter change can change every step's output."""
+        if parameters == self.parameters:
+            return
+        self.parameters = dict(parameters) if parameters else {}
+        self._cache = {k: v for k, v in self._cache.items() if k == 0}
 
     def add_step(self, operation_id: str, params: Dict[str, Any]) -> List[str]:
         """
@@ -2742,11 +2790,24 @@ class TransformationPipeline:
         # Apply steps from the cached point up to the target
         for i in range(start_step_idx, target_step_idx):
             step = self.steps[i]
-            current_df = self._data_processor.apply_operation(
-                current_df,
-                step.operation_id,
-                step.params
-            )
+            if step.enabled:
+                start_time = time.perf_counter()
+                # Merge in current parameters without mutating step.params
+                # (which is what gets persisted) — only sql_query reads
+                # '_pipeline_parameters' today.
+                call_params = step.params
+                if self.parameters:
+                    call_params = {**step.params, '_pipeline_parameters': self.parameters}
+                current_df = self._data_processor.apply_operation(
+                    current_df,
+                    step.operation_id,
+                    call_params
+                )
+                step.execution_time = time.perf_counter() - start_time
+            else:
+                # Disabled steps pass the dataframe through unchanged —
+                # lets a user turn a step off without losing/reordering it.
+                step.execution_time = None
             # Cache the result of this step
             self._cache[i + 1] = current_df
 
@@ -2806,6 +2867,25 @@ class TransformationPipeline:
         """
         return {step.step_number: step.created_columns for step in self.steps}
 
+    def set_step_enabled(self, step_number: int, enabled: bool):
+        """Enable or disable a step (1-based step_number) without removing it.
+
+        A disabled step is skipped by apply() — the dataframe passes through
+        unchanged at that point in the pipeline — so later steps still run
+        against whatever columns remain, exactly like re-running the pipeline
+        with that step deleted, but reversible.
+        """
+        if step_number < 1 or step_number > len(self.steps):
+            raise IndexError("Step number is out of range.")
+
+        step = self.steps[step_number - 1]
+        if step.enabled == enabled:
+            return
+        step.enabled = enabled
+        # Invalidate cached results from this step onward — everything after
+        # it may now compute differently.
+        self._cache = {k: v for k, v in self._cache.items() if k < step_number}
+
     def remove_last_step(self):
         """Removes the last transformation step."""
         if self.steps:
@@ -2821,6 +2901,55 @@ class TransformationPipeline:
         self.steps.clear()
         self._column_tracking.clear()
         self._cache = {0: self.original_df}
+
+    def refresh_source(self, new_df: pl.DataFrame):
+        """Replace the original source dataframe (e.g. after re-reading a
+        changed file) and invalidate all cached results, so the next apply()
+        replays every step against the fresh data."""
+        self.original_df = new_df
+        self._cache = {0: new_df}
+
+
+def substitute_parameters(text: str, parameters: Dict[str, Any]) -> str:
+    """Replace {{param_name}} placeholders with their current value.
+
+    Lets a SQL step (or any text-based step param) reference a project-level
+    parameter by name instead of a hardcoded value, so the same recorded
+    step is reusable across engagements — change the parameter once instead
+    of editing every step/query that used the old value.
+    """
+    if not parameters or not text:
+        return text
+    for name, value in parameters.items():
+        text = text.replace(f"{{{{{name}}}}}", str(value))
+    return text
+
+
+def parse_clipboard_text(text: str) -> pl.DataFrame:
+    """Parse tab- or comma-separated clipboard text (e.g. a range copied
+    from Excel) into a DataFrame, so users can paste a quick sample directly
+    into a new dataset without saving a file first. Assumes the first row
+    is a header, matching how CSV import already behaves."""
+    import io
+
+    text = text.strip()
+    if not text:
+        raise ValueError("Clipboard is empty.")
+
+    first_line = text.split('\n', 1)[0]
+    delimiter = '\t' if '\t' in first_line else ','
+
+    try:
+        return pl.read_csv(
+            io.StringIO(text), separator=delimiter,
+            truncate_ragged_lines=True, infer_schema_length=10000
+        )
+    except Exception:
+        # Fall back to treating every column as text if type inference chokes
+        return pl.read_csv(
+            io.StringIO(text), separator=delimiter,
+            truncate_ragged_lines=True, infer_schema_length=0
+        )
 
 
 # ============================================================================

@@ -42,6 +42,10 @@ class BaseModal(QDialog):
         """Alias for dataframe - for backward compatibility with dialogs"""
         return self.dataframe
 
+    @original_df.setter
+    def original_df(self, value):
+        self.dataframe = value
+
     def _setup_ui(self):
         """Setup the dialog UI - override in subclasses"""
         layout = QVBoxLayout(self)

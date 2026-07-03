@@ -3,8 +3,8 @@ Modern Data Table for CAATmaster
 Virtualized table with sorting, filtering, and column operations
 """
 
-from PySide6.QtCore import Qt, Signal, QSize, QTimer, QModelIndex, Property
-from PySide6.QtGui import QFont, QColor, QPainter, QCursor, QIcon, QKeySequence, QAction
+from PySide6.QtCore import Qt, Signal, QSize, QTimer, QModelIndex, Property, QRect
+from PySide6.QtGui import QFont, QColor, QPainter, QCursor, QIcon, QKeySequence, QAction, QPalette
 from PySide6.QtWidgets import (
     QWidget, QTableWidget, QTableWidgetItem, QHeaderView,
     QScrollArea, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
 import polars as pl
 from typing import Optional, List, Callable, Any
 import numpy as np
+
+from gui.theme import Colors
 
 
 class DataTableItem(QTableWidgetItem):
@@ -85,9 +87,11 @@ class ColumnHeaderDelegate(QStyledItemDelegate):
 
         # Draw sort indicator
         if sort_indicator != 0:
-            icon = QIcon.fromTheme(
-                "arrow-up" if sort_indicator == QStyleOptionViewItem.Ascending
-                else "arrow-down"
+            import qtawesome as qta
+            icon = qta.icon(
+                "fa5s.sort-up" if sort_indicator == QStyleOptionViewItem.Ascending
+                else "fa5s.sort-down",
+                color=Colors.TEXT_SECONDARY
             )
             icon.paint(painter, icon_rect)
 
@@ -157,8 +161,9 @@ class ModernDataTable(QFrame):
         header_layout.addWidget(self.filter_input)
 
         # Refresh button
+        import qtawesome as qta
         refresh_btn = QToolButton()
-        refresh_btn.setIcon(QIcon.fromTheme("view-refresh"))
+        refresh_btn.setIcon(qta.icon("fa5s.sync-alt", color=Colors.TEXT_SECONDARY))
         refresh_btn.setToolTip("Refresh Data")
         refresh_btn.clicked.connect(self.refresh_data)
         header_layout.addWidget(refresh_btn)
@@ -201,7 +206,7 @@ class ModernDataTable(QFrame):
 
         # Footer with pagination
         footer = QFrame()
-        footer.setStyleSheet("background: var(--color-bg-tertiary);")
+        footer.setStyleSheet(f"background-color: {Colors.BG_SECONDARY};")
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(12, 8, 12, 8)
 
@@ -213,7 +218,7 @@ class ModernDataTable(QFrame):
 
         # Pagination controls
         self.prev_btn = QToolButton()
-        self.prev_btn.setIcon(QIcon.fromTheme("go-previous"))
+        self.prev_btn.setIcon(qta.icon("fa5s.chevron-left", color=Colors.TEXT_SECONDARY))
         self.prev_btn.setEnabled(False)
         self.prev_btn.clicked.connect(self._on_prev_page)
         footer_layout.addWidget(self.prev_btn)
@@ -222,7 +227,7 @@ class ModernDataTable(QFrame):
         footer_layout.addWidget(self.page_input)
 
         self.next_btn = QToolButton()
-        self.next_btn.setIcon(QIcon.fromTheme("go-next"))
+        self.next_btn.setIcon(qta.icon("fa5s.chevron-right", color=Colors.TEXT_SECONDARY))
         self.next_btn.setEnabled(False)
         self.next_btn.clicked.connect(self._on_next_page)
         footer_layout.addWidget(self.next_btn)

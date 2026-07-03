@@ -43,7 +43,7 @@ class MetricCard(QFrame):
                 QLabel {
                     font-size: 28px;
                     padding: 8px;
-                    background-color: #eff6ff;
+                    background-color: #deecf9;
                     border-radius: 8px;
                 }
             """)
@@ -75,7 +75,7 @@ class MetricCard(QFrame):
         title_label = QLabel(title)
         title_label.setStyleSheet("""
             QLabel {
-                color: #6b7280;
+                color: #605e5c;
                 font-size: 13px;
                 font-weight: 500;
             }
@@ -86,7 +86,7 @@ class MetricCard(QFrame):
         value_label = QLabel(value)
         value_label.setStyleSheet("""
             QLabel {
-                color: #111827;
+                color: #201f1e;
                 font-size: 32px;
                 font-weight: 700;
             }
@@ -98,7 +98,7 @@ class MetricCard(QFrame):
             subtitle_label = QLabel(subtitle)
             subtitle_label.setStyleSheet("""
                 QLabel {
-                    color: #374151;
+                    color: #605e5c;
                     font-size: 12px;
                 }
             """)
@@ -122,7 +122,7 @@ class DatasetCard(QFrame):
                 border: none;
             }
             QFrame:hover {
-                background-color: #f9fafb;
+                background-color: #f3f2f1;
             }
         """)
 
@@ -145,7 +145,7 @@ class DatasetCard(QFrame):
         name_label = QLabel(dataset_name)
         name_label.setStyleSheet("""
             QLabel {
-                color: #111827;
+                color: #201f1e;
                 font-size: 15px;
                 font-weight: 600;
             }
@@ -159,9 +159,9 @@ class DatasetCard(QFrame):
         rows_label = QLabel(f"{row_count:,} rows")
         rows_label.setStyleSheet("""
             QLabel {
-                color: #374151;
+                color: #605e5c;
                 font-size: 12px;
-                background-color: #f3f4f6;
+                background-color: #edebe9;
                 padding: 4px 10px;
                 border-radius: 6px;
             }
@@ -171,9 +171,9 @@ class DatasetCard(QFrame):
         cols_label = QLabel(f"{col_count} cols")
         cols_label.setStyleSheet("""
             QLabel {
-                color: #374151;
+                color: #605e5c;
                 font-size: 12px;
-                background-color: #f3f4f6;
+                background-color: #edebe9;
                 padding: 4px 10px;
                 border-radius: 6px;
             }
@@ -187,7 +187,7 @@ class DatasetCard(QFrame):
         modified_label = QLabel(f"Modified {last_modified}")
         modified_label.setStyleSheet("""
             QLabel {
-                color: #6b7280;
+                color: #605e5c;
                 font-size: 11px;
             }
         """)
@@ -216,7 +216,7 @@ class ActivityItem(QFrame):
             QFrame {
                 background-color: transparent;
                 border: none;
-                border-bottom: 1px solid #f3f4f6;
+                border-bottom: 1px solid #edebe9;
             }
         """)
 
@@ -230,7 +230,7 @@ class ActivityItem(QFrame):
         icon_label.setAlignment(Qt.AlignCenter)
         icon_label.setStyleSheet("""
             QLabel {
-                background-color: #eff6ff;
+                background-color: #deecf9;
                 border-radius: 18px;
                 font-size: 16px;
             }
@@ -244,7 +244,7 @@ class ActivityItem(QFrame):
         action_label = QLabel(f"<b>{action}</b>")
         action_label.setStyleSheet("""
             QLabel {
-                color: #111827;
+                color: #201f1e;
                 font-size: 13px;
             }
         """)
@@ -253,7 +253,7 @@ class ActivityItem(QFrame):
         dataset_label = QLabel(dataset)
         dataset_label.setStyleSheet("""
             QLabel {
-                color: #374151;
+                color: #605e5c;
                 font-size: 12px;
             }
         """)
@@ -265,7 +265,7 @@ class ActivityItem(QFrame):
         time_label = QLabel(time)
         time_label.setStyleSheet("""
             QLabel {
-                color: #9ca3af;
+                color: #8a8886;
                 font-size: 11px;
             }
         """)
@@ -274,7 +274,7 @@ class ActivityItem(QFrame):
 
 class ProgressBar(QWidget):
     """Custom progress bar widget"""
-    def __init__(self, value, max_value, label, color="#3b82f6", parent=None):
+    def __init__(self, value, max_value, label, color="#0078d4", parent=None):
         super().__init__(parent)
         self.value = value
         self.max_value = max_value
@@ -287,7 +287,7 @@ class ProgressBar(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
 
         # Draw label
-        painter.setPen(QColor("#6b7280"))
+        painter.setPen(QColor("#605e5c"))
         font = QFont()
         font.setPixelSize(13)
         font.setWeight(QFont.Medium)
@@ -296,7 +296,7 @@ class ProgressBar(QWidget):
 
         # Draw value
         percentage = int((self.value / self.max_value) * 100) if self.max_value > 0 else 0
-        painter.setPen(QColor("#111827"))
+        painter.setPen(QColor("#201f1e"))
         font.setPixelSize(13)
         font.setWeight(QFont.Bold)
         painter.setFont(font)
@@ -306,7 +306,7 @@ class ProgressBar(QWidget):
         bar_y = 24
         bar_height = 8
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#f3f4f6"))
+        painter.setBrush(QColor("#edebe9"))
         painter.drawRoundedRect(0, bar_y, self.width(), bar_height, 4, 4)
 
         # Draw progress bar
@@ -543,7 +543,7 @@ class DashboardView(QWidget):
             empty_label = QLabel("No datasets yet\nImport data to get started")
             empty_label.setStyleSheet("""
                 QLabel {
-                    color: #6b7280;
+                    color: #605e5c;
                     font-size: 13px;
                     padding: 24px;
                     text-align: center;
@@ -599,10 +599,10 @@ class DashboardView(QWidget):
             reports_pct = 0  # Only when audit is completed
 
             progress_items = [
-                ("Data Collection", collection_pct, 100, "#3b82f6"),
+                ("Data Collection", collection_pct, 100, "#0078d4"),
                 ("Data Validation", validation_pct, 100, "#f59e0b"),
                 ("Analysis Complete", analysis_pct, 100, "#8b5cf6"),
-                ("Reports Generated", reports_pct, 100, "#6b7280"),
+                ("Reports Generated", reports_pct, 100, "#605e5c"),
             ]
 
         for label, value, max_value, color in progress_items:
@@ -626,7 +626,7 @@ class DashboardView(QWidget):
         """Update the visual style of status buttons"""
         active_style = """
             QPushButton {
-                background-color: #3b82f6;
+                background-color: #0078d4;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -636,9 +636,9 @@ class DashboardView(QWidget):
         """
         inactive_style = """
             QPushButton {
-                background-color: #f3f4f6;
-                color: #6b7280;
-                border: 1px solid #e5e7eb;
+                background-color: #edebe9;
+                color: #605e5c;
+                border: 1px solid #e1dfdd;
                 border-radius: 6px;
                 padding: 8px 16px;
                 font-weight: 500;
@@ -727,7 +727,7 @@ class DashboardView(QWidget):
             QLabel {
                 font-size: 28px;
                 font-weight: 700;
-                color: #111827;
+                color: #201f1e;
             }
         """)
         left_layout.addWidget(self.header_title)
@@ -736,7 +736,7 @@ class DashboardView(QWidget):
         self.header_subtitle.setStyleSheet("""
             QLabel {
                 font-size: 14px;
-                color: #374151;
+                color: #605e5c;
             }
         """)
         left_layout.addWidget(self.header_subtitle)
@@ -749,7 +749,7 @@ class DashboardView(QWidget):
 
         # Audit status toggle
         status_label = QLabel("Audit Status:")
-        status_label.setStyleSheet("color: #6b7280; font-size: 13px; font-weight: 500;")
+        status_label.setStyleSheet("color: #605e5c; font-size: 13px; font-weight: 500;")
         right_layout.addWidget(status_label)
 
         self.status_active = QPushButton("In Progress")
@@ -757,7 +757,7 @@ class DashboardView(QWidget):
         self.status_active.setChecked(True)
         self.status_active.setStyleSheet("""
             QPushButton {
-                background-color: #3b82f6;
+                background-color: #0078d4;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -772,9 +772,9 @@ class DashboardView(QWidget):
         self.status_completed.setCheckable(True)
         self.status_completed.setStyleSheet("""
             QPushButton {
-                background-color: #f3f4f6;
-                color: #6b7280;
-                border: 1px solid #e5e7eb;
+                background-color: #edebe9;
+                color: #605e5c;
+                border: 1px solid #e1dfdd;
                 border-radius: 6px;
                 padding: 8px 16px;
                 font-weight: 500;
@@ -789,7 +789,7 @@ class DashboardView(QWidget):
         new_dataset_btn = QPushButton("+ New Dataset")
         new_dataset_btn.setStyleSheet("""
             QPushButton {
-                background-color: #3b82f6;
+                background-color: #0078d4;
                 color: white;
                 border: none;
                 border-radius: 8px;
@@ -798,7 +798,7 @@ class DashboardView(QWidget):
                 font-weight: 600;
             }
             QPushButton:hover {
-                background-color: #2563eb;
+                background-color: #106ebe;
             }
             QPushButton:pressed {
                 background-color: #1d4ed8;
@@ -813,16 +813,16 @@ class DashboardView(QWidget):
         projects_btn.setStyleSheet("""
             QPushButton {
                 background-color: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
+                color: #605e5c;
+                border: 1px solid #d2d0ce;
                 border-radius: 8px;
                 padding: 12px 24px;
                 font-size: 14px;
                 font-weight: 600;
             }
             QPushButton:hover {
-                background-color: #f9fafb;
-                border-color: #9ca3af;
+                background-color: #f3f2f1;
+                border-color: #8a8886;
             }
         """)
         projects_btn.setCursor(Qt.PointingHandCursor)
@@ -900,14 +900,14 @@ class DashboardView(QWidget):
             QLabel {
                 font-size: 18px;
                 font-weight: 700;
-                color: #111827;
+                color: #201f1e;
             }
         """)
         header_layout.addWidget(title)
 
         header_layout.addStretch()
 
-        view_all = QLabel("<a href='#' style='color: #3b82f6; text-decoration: none;'>View all →</a>")
+        view_all = QLabel("<a href='#' style='color: #0078d4; text-decoration: none;'>View all →</a>")
         view_all.setStyleSheet("font-size: 13px; font-weight: 600;")
         view_all.setOpenExternalLinks(False)
         view_all.setCursor(Qt.PointingHandCursor)
@@ -924,7 +924,7 @@ class DashboardView(QWidget):
         empty_label = QLabel("No datasets yet\nImport data to get started")
         empty_label.setStyleSheet("""
             QLabel {
-                color: #6b7280;
+                color: #605e5c;
                 font-size: 13px;
                 padding: 24px;
                 text-align: center;
@@ -964,7 +964,7 @@ class DashboardView(QWidget):
             QLabel {
                 font-size: 18px;
                 font-weight: 700;
-                color: #111827;
+                color: #201f1e;
                 padding-bottom: 16px;
             }
         """)
@@ -1017,7 +1017,7 @@ class DashboardView(QWidget):
             QLabel {
                 font-size: 18px;
                 font-weight: 700;
-                color: #111827;
+                color: #201f1e;
             }
         """)
         layout.addWidget(title)
@@ -1029,7 +1029,7 @@ class DashboardView(QWidget):
 
         # Initial empty progress bars
         for label in ["Data Collection", "Data Validation", "Analysis Complete", "Reports Generated"]:
-            progress = ProgressBar(0, 100, label, "#3b82f6")
+            progress = ProgressBar(0, 100, label, "#0078d4")
             self.progress_layout.addWidget(progress)
 
         return container

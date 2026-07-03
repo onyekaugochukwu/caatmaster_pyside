@@ -73,7 +73,7 @@ class SplitSheetDialog(BaseModal):
         self.info_label = QLabel("Select a column to see unique values")
         self.info_label.setStyleSheet("""
             QLabel {
-                color: #6b7280;
+                color: #605e5c;
                 font-size: 12px;
                 padding: 8px;
             }
@@ -349,17 +349,17 @@ class JoinDatasetsDialog(BaseModal):
                 border: none;
             }
             QScrollBar:vertical {
-                background-color: #e0e0e0;
+                background-color: #e1dfdd;
                 width: 12px;
                 border-radius: 6px;
             }
             QScrollBar::handle:vertical {
-                background-color: #a0a0a0;
+                background-color: #8a8886;
                 border-radius: 5px;
                 min-height: 20px;
             }
             QScrollBar::handle:vertical:hover {
-                background-color: #808080;
+                background-color: #605e5c;
             }
         """)
 
@@ -554,17 +554,17 @@ class AppendDatasetsDialog(BaseModal):
                 border: none;
             }
             QScrollBar:vertical {
-                background-color: #e0e0e0;
+                background-color: #e1dfdd;
                 width: 12px;
                 border-radius: 6px;
             }
             QScrollBar::handle:vertical {
-                background-color: #a0a0a0;
+                background-color: #8a8886;
                 border-radius: 5px;
                 min-height: 20px;
             }
             QScrollBar::handle:vertical:hover {
-                background-color: #808080;
+                background-color: #605e5c;
             }
         """)
 
@@ -582,7 +582,7 @@ class AppendDatasetsDialog(BaseModal):
         self.source_label = QLabel(f"{self.source_dataset_name}: {len(self.original_df)} rows, {len(self.original_df.columns)} columns")
         self.source_label.setStyleSheet("""
             QLabel {
-                background-color: #e8f4fd;
+                background-color: #deecf9;
                 padding: 12px;
                 border-radius: 4px;
                 font-weight: bold;
@@ -668,7 +668,7 @@ class AppendDatasetsDialog(BaseModal):
                 color: #0078d4;
                 font-size: 11px;
                 padding: 8px;
-                background-color: #e8f4fd;
+                background-color: #deecf9;
                 border-radius: 4px;
             }
         """)
@@ -684,7 +684,7 @@ class AppendDatasetsDialog(BaseModal):
         self.result_preview = QLabel("Select datasets to see preview")
         self.result_preview.setStyleSheet("""
             QLabel {
-                background-color: #f5f5f5;
+                background-color: #f3f2f1;
                 padding: 10px;
                 border-radius: 4px;
                 font-size: 12px;
@@ -896,7 +896,7 @@ class CombineSheetsDialog(BaseModal):
         self.preview_label = QLabel(f"Current dataset: {len(self.original_df)} rows, {len(self.original_df.columns)} columns")
         self.preview_label.setStyleSheet("""
             QLabel {
-                background-color: #f5f5f5;
+                background-color: #f3f2f1;
                 padding: 10px;
                 border-radius: 4px;
             }

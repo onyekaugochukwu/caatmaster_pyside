@@ -5,6 +5,7 @@ Power BI / Microsoft Office-style backstage view that slides in from the left.
 Used for File menu operations like New, Open, Save, Export, etc.
 """
 
+import qtawesome as qta
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QFrame, QScrollArea, QFileDialog
@@ -12,17 +13,17 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QFont, QIcon
 from pathlib import Path
-import json
+
+from gui.theme import Colors
 
 
 class BackstageItem(QListWidgetItem):
     """Custom list item for backstage navigation"""
 
-    def __init__(self, text, icon_text="", parent=None):
-        # Store original text in UserRole, display text with icon
-        display_text = f"{icon_text} {text}" if icon_text else text
-        super().__init__(display_text, parent)
-        self.icon_text = icon_text
+    def __init__(self, text, icon_name="", parent=None):
+        super().__init__(text, parent)
+        if icon_name:
+            self.setIcon(qta.icon(icon_name, color=Colors.TEXT_SECONDARY))
         self.setData(Qt.UserRole, text)  # Store original text for mapping
         self.setSizeHint(QSize(200, 48))
 
@@ -58,63 +59,64 @@ class BackstageView(QFrame):
 
     def _setup_ui(self):
         """Setup the backstage UI - Power Query style"""
-        self.setStyleSheet("""
-            QFrame#BackstageView {
-                background-color: #ffffff;
-                border-right: 1px solid #e5e7eb;
-            }
-            QWidget#NavContainer {
-                background-color: #0f172a;
-            }
-            QListWidget {
+        self.setStyleSheet(f"""
+            QFrame#BackstageView {{
+                background-color: {Colors.BG_PRIMARY};
+                border-right: 1px solid {Colors.BORDER};
+            }}
+            QWidget#NavContainer {{
+                background-color: {Colors.BG_SECONDARY};
+                border-right: 1px solid {Colors.BORDER};
+            }}
+            QListWidget {{
                 background-color: transparent;
                 border: none;
                 padding: 8px 0px;
                 outline: none;
-            }
-            QListWidget::item {
+            }}
+            QListWidget::item {{
                 background-color: transparent;
                 border: none;
                 padding: 0px 16px;
-                color: #d1d5db;
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 14px;
                 min-height: 44px;
                 border-radius: 4px;
                 margin: 2px 8px;
-            }
-            QListWidget::item:hover {
-                background-color: #1f2937;
-            }
-            QListWidget::item:selected {
-                background-color: #1e3a8a;
-                color: white;
-                font-weight: 500;
-            }
-            QListWidget::item:disabled {
+            }}
+            QListWidget::item:hover {{
+                background-color: {Colors.BG_TERTIARY};
+            }}
+            QListWidget::item:selected {{
+                background-color: {Colors.ACCENT_SOFT};
+                color: {Colors.ACCENT_PRESSED};
+                font-weight: 600;
+            }}
+            QListWidget::item:disabled {{
                 background-color: transparent;
                 height: 1px;
                 min-height: 1px;
                 max-height: 1px;
                 padding: 0px;
                 margin: 8px 16px;
-                border-top: 1px solid #374151;
-            }
-            QLabel#SectionTitle {
-                color: #6b7280;
+                border-top: 1px solid {Colors.BORDER_STRONG};
+            }}
+            QLabel#SectionTitle {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 12px;
                 font-weight: 600;
                 text-transform: uppercase;
                 letter-spacing: 1px;
-            }
-            QLabel#ProjectName {
-                color: #111827;
+            }}
+            QLabel#ProjectName {{
+                color: {Colors.TEXT_PRIMARY};
                 font-size: 18px;
                 font-weight: 600;
-            }
-            QLabel#ProjectMeta {
-                color: #6b7280;
+            }}
+            QLabel#ProjectMeta {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 12px;
-            }
+            }}
         """)
 
         # Main layout
@@ -137,18 +139,18 @@ class BackstageView(QFrame):
 
         # Add items
         items = [
-            ("Home", "🏠"),
-            ("Dashboard", "📊"),
+            ("Home", "fa5s.home"),
+            ("Dashboard", "fa5s.chart-bar"),
             ("", ""),  # Separator
-            ("New", "➕"),
-            ("Open", "📂"),
-            ("Save", "💾"),
-            ("Export", "📤"),
+            ("New", "fa5s.plus"),
+            ("Open", "fa5s.folder-open"),
+            ("Save", "fa5s.save"),
+            ("Export", "fa5s.file-export"),
             ("", ""),  # Separator
-            ("Settings", "⚙"),
-            ("Help", "❓"),
+            ("Settings", "fa5s.cog"),
+            ("Help", "fa5s.question-circle"),
             ("", ""),  # Separator
-            ("Close", "✕"),
+            ("Close", "fa5s.times"),
         ]
 
         for text, icon in items:
@@ -173,7 +175,7 @@ class BackstageView(QFrame):
         right_container.setStyleSheet("""
             QWidget#RightContainer {
                 background-color: #ffffff;
-                border-left: 1px solid #e5e7eb;
+                border-left: 1px solid #e1dfdd;
             }
         """)
         right_layout = QVBoxLayout(right_container)
@@ -181,19 +183,17 @@ class BackstageView(QFrame):
         right_layout.setSpacing(24)
 
         # Close button at top right - Light mode
-        close_btn = QPushButton("✕")
-        close_btn.setStyleSheet("""
-            QPushButton {
+        close_btn = QPushButton()
+        close_btn.setIcon(qta.icon("fa5s.times", color=Colors.TEXT_SECONDARY))
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
                 background-color: transparent;
-                color: #6b7280;
                 border: none;
-                font-size: 18px;
                 padding: 8px;
-            }
-            QPushButton:hover {
-                color: #111827;
-                background-color: #f3f4f6;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.BG_TERTIARY};
+            }}
         """)
         close_btn.setCursor(Qt.PointingHandCursor)
         close_btn.clicked.connect(self.close.emit)
@@ -241,7 +241,7 @@ class BackstageView(QFrame):
         title.setStyleSheet("""
             QLabel#SectionTitle {
                 font-size: 28px;
-                color: #111827;
+                color: #201f1e;
                 font-weight: 600;
                 text-transform: none;
                 letter-spacing: 0;
@@ -252,7 +252,7 @@ class BackstageView(QFrame):
         subtitle = QLabel("Professional Audit Analytics")
         subtitle.setStyleSheet("""
             QLabel {
-                color: #6b7280;
+                color: #605e5c;
                 font-size: 14px;
             }
         """)
@@ -267,40 +267,41 @@ class BackstageView(QFrame):
 
         # Action buttons - Light mode
         actions = [
-            ("📄 New Project", "Create a new audit project", self.new_project.emit),
-            ("📂 Open Project", "Open an existing project", self.open_project.emit),
-            ("💾 Save Project", "Save current project", self.save_project.emit),
-            ("📤 Export Data", "Export data for review", self.export_data.emit),
+            ("fa5s.file", "New Project", "Create a new audit project", self.new_project.emit),
+            ("fa5s.folder-open", "Open Project", "Open an existing project", self.open_project.emit),
+            ("fa5s.save", "Save Project", "Save current project", self.save_project.emit),
+            ("fa5s.file-export", "Export Data", "Export data for review", self.export_data.emit),
         ]
 
-        for btn_text, desc, callback in actions:
-            btn = QPushButton(btn_text)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #f3f4f6;
-                    color: #111827;
-                    border: 1px solid #e5e7eb;
+        for icon_name, btn_text, desc, callback in actions:
+            btn = QPushButton(f"  {btn_text}")
+            btn.setIcon(qta.icon(icon_name, color=Colors.TEXT_PRIMARY))
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {Colors.BG_TERTIARY};
+                    color: {Colors.TEXT_PRIMARY};
+                    border: 1px solid {Colors.BORDER};
                     border-radius: 6px;
                     padding: 16px 20px;
                     text-align: left;
                     font-size: 14px;
-                }
-                QPushButton:hover {
-                    background-color: #dbeafe;
-                    border-color: #3b82f6;
-                }
+                }}
+                QPushButton:hover {{
+                    background-color: {Colors.ACCENT_SOFT};
+                    border-color: {Colors.ACCENT};
+                }}
             """)
             btn.setCursor(Qt.PointingHandCursor)
             btn.clicked.connect(callback)
             self.content_layout.addWidget(btn)
 
             desc_label = QLabel(desc)
-            desc_label.setStyleSheet("""
-                QLabel {
-                    color: #6b7280;
+            desc_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {Colors.TEXT_SECONDARY};
                     font-size: 12px;
                     margin-bottom: 16px;
-                }
+                }}
             """)
             self.content_layout.addWidget(desc_label)
 
@@ -314,7 +315,7 @@ class BackstageView(QFrame):
         title.setStyleSheet("""
             QLabel {
                 font-size: 24px;
-                color: #111827;
+                color: #201f1e;
                 font-weight: 600;
                 margin-bottom: 8px;
             }
@@ -322,25 +323,25 @@ class BackstageView(QFrame):
         self.content_layout.addWidget(title)
 
         info = QLabel("Create a new audit analytics project with all necessary settings.")
-        info.setStyleSheet("color: #6b7280; font-size: 14px; margin-bottom: 24px;")
+        info.setStyleSheet("color: #605e5c; font-size: 14px; margin-bottom: 24px;")
         self.content_layout.addWidget(info)
 
         # Feature highlights
         features = [
-            ("📋", "Comprehensive project setup with client details, objectives, and scope"),
-            ("⚠️", "Risk assessment scoring from 1-10"),
-            ("📊", "Multiple engagement types including Financial Audit, Compliance, and more"),
-            ("🔄", "Project phase tracking from Planning through Completion"),
+            ("fa5s.clipboard-list", "Comprehensive project setup with client details, objectives, and scope"),
+            ("fa5s.exclamation-triangle", "Risk assessment scoring from 1-10"),
+            ("fa5s.chart-bar", "Multiple engagement types including Financial Audit, Compliance, and more"),
+            ("fa5s.sync-alt", "Project phase tracking from Planning through Completion"),
         ]
 
-        for icon, text in features:
+        for icon_name, text in features:
             feature_layout = QHBoxLayout()
-            icon_label = QLabel(icon)
-            icon_label.setStyleSheet("font-size: 20px;")
+            icon_label = QLabel()
+            icon_label.setPixmap(qta.icon(icon_name, color=Colors.TEXT_SECONDARY).pixmap(20, 20))
             feature_layout.addWidget(icon_label)
 
             text_label = QLabel(text)
-            text_label.setStyleSheet("color: #374151; font-size: 13px;")
+            text_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 13px;")
             text_label.setWordWrap(True)
             feature_layout.addWidget(text_label, 1)
 
@@ -351,20 +352,21 @@ class BackstageView(QFrame):
         self.content_layout.addSpacing(24)
 
         # Create button
-        btn = QPushButton("📄 Create New Project")
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
+        btn = QPushButton("  Create New Project")
+        btn.setIcon(qta.icon("fa5s.file", color=Colors.TEXT_ON_ACCENT))
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.ACCENT};
+                color: {Colors.TEXT_ON_ACCENT};
                 border: none;
                 border-radius: 6px;
                 padding: 12px 24px;
                 font-size: 14px;
                 font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.ACCENT_HOVER};
+            }}
         """)
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(self.new_project.emit)
@@ -380,7 +382,7 @@ class BackstageView(QFrame):
         title.setStyleSheet("""
             QLabel {
                 font-size: 24px;
-                color: #111827;
+                color: #201f1e;
                 font-weight: 600;
                 margin-bottom: 8px;
             }
@@ -388,25 +390,26 @@ class BackstageView(QFrame):
         self.content_layout.addWidget(title)
 
         info = QLabel("Open an existing project from file or recent locations")
-        info.setStyleSheet("color: #6b7280; font-size: 14px; margin-bottom: 24px;")
+        info.setStyleSheet("color: #605e5c; font-size: 14px; margin-bottom: 24px;")
         self.content_layout.addWidget(info)
 
         # Browse button
-        btn = QPushButton("📂 Browse for Project")
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
+        btn = QPushButton("  Browse for Project")
+        btn.setIcon(qta.icon("fa5s.folder-open", color=Colors.TEXT_ON_ACCENT))
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.ACCENT};
+                color: {Colors.TEXT_ON_ACCENT};
                 border: none;
                 border-radius: 6px;
                 padding: 12px 24px;
                 font-size: 14px;
                 font-weight: 500;
                 margin-bottom: 24px;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.ACCENT_HOVER};
+            }}
         """)
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(self.open_project.emit)
@@ -417,51 +420,74 @@ class BackstageView(QFrame):
         recent_label.setStyleSheet("""
             QLabel {
                 font-size: 16px;
-                color: #111827;
+                color: #201f1e;
                 font-weight: 600;
                 margin-bottom: 12px;
             }
         """)
         self.content_layout.addWidget(recent_label)
 
-        # Get recent projects from storage
+        # Get recent projects from the local recents index (pinned first)
         recent_projects = self._get_recent_projects()
 
         if recent_projects:
-            for project_path, project_name in recent_projects:
-                project_btn = QPushButton(f"📁 {project_name}")
-                project_btn.setStyleSheet("""
-                    QPushButton {
-                        background-color: #f9fafb;
-                        color: #111827;
-                        border: 1px solid #e5e7eb;
+            for entry in recent_projects:
+                project_path = entry["path"]
+                project_name = entry["name"]
+                pinned = entry.get("pinned", False)
+
+                row = QHBoxLayout()
+
+                pin_btn = QPushButton()
+                pin_btn.setFixedSize(28, 28)
+                pin_btn.setIcon(qta.icon("fa5s.thumbtack", color=Colors.ACCENT if pinned else Colors.TEXT_TERTIARY))
+                pin_btn.setToolTip("Unpin" if pinned else "Pin so this never ages out of Recent")
+                pin_btn.setCursor(Qt.PointingHandCursor)
+                pin_btn.setStyleSheet(f"""
+                    QPushButton {{ background-color: transparent; border: none; border-radius: 4px; }}
+                    QPushButton:hover {{ background-color: {Colors.BG_TERTIARY}; }}
+                """)
+                pin_btn.clicked.connect(lambda checked, path=project_path: self._on_toggle_pin(path))
+                row.addWidget(pin_btn)
+
+                project_btn = QPushButton(f"  {project_name}")
+                project_btn.setIcon(qta.icon("fa5s.folder", color=Colors.TEXT_PRIMARY))
+                project_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {Colors.BG_SECONDARY};
+                        color: {Colors.TEXT_PRIMARY};
+                        border: 1px solid {Colors.BORDER};
                         border-radius: 6px;
                         padding: 12px 16px;
                         text-align: left;
                         font-size: 13px;
-                        margin-bottom: 8px;
-                    }
-                    QPushButton:hover {
-                        background-color: #dbeafe;
-                        border-color: #3b82f6;
-                    }
+                    }}
+                    QPushButton:hover {{
+                        background-color: {Colors.ACCENT_SOFT};
+                        border-color: {Colors.ACCENT};
+                    }}
                 """)
                 project_btn.setCursor(Qt.PointingHandCursor)
                 project_btn.clicked.connect(lambda checked, path=project_path: self._open_project_by_path(path))
-                self.content_layout.addWidget(project_btn)
+                row.addWidget(project_btn, 1)
+
+                row_widget = QWidget()
+                row_widget.setLayout(row)
+                self.content_layout.addWidget(row_widget)
 
                 path_label = QLabel(project_path)
-                path_label.setStyleSheet("""
-                    QLabel {
-                        color: #9ca3af;
+                path_label.setStyleSheet(f"""
+                    QLabel {{
+                        color: {Colors.TEXT_TERTIARY};
                         font-size: 11px;
                         margin-bottom: 12px;
-                    }
+                        padding-left: 36px;
+                    }}
                 """)
                 self.content_layout.addWidget(path_label)
         else:
             no_recent = QLabel("No recent projects found")
-            no_recent.setStyleSheet("color: #9ca3af; font-size: 13px; font-style: italic; margin-bottom: 24px;")
+            no_recent.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; font-size: 13px; font-style: italic; margin-bottom: 24px;")
             self.content_layout.addWidget(no_recent)
 
         self.content_layout.addStretch()
@@ -475,7 +501,7 @@ class BackstageView(QFrame):
         title.setStyleSheet("""
             QLabel#SectionTitle {
                 font-size: 24px;
-                color: #111827;
+                color: #201f1e;
                 font-weight: 600;
                 text-transform: none;
                 letter-spacing: 0;
@@ -488,8 +514,8 @@ class BackstageView(QFrame):
             info_frame = QFrame()
             info_frame.setStyleSheet("""
                 QFrame {
-                    background-color: #f3f4f6;
-                    border: 1px solid #e5e7eb;
+                    background-color: #edebe9;
+                    border: 1px solid #e1dfdd;
                     border-radius: 8px;
                     padding: 16px;
                     margin: 16px 0px;
@@ -507,20 +533,21 @@ class BackstageView(QFrame):
 
             self.content_layout.addWidget(info_frame)
 
-        btn = QPushButton("💾 Save Project")
-        btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
+        btn = QPushButton("  Save Project")
+        btn.setIcon(qta.icon("fa5s.save", color=Colors.TEXT_ON_ACCENT))
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.ACCENT};
+                color: {Colors.TEXT_ON_ACCENT};
                 border: none;
                 border-radius: 6px;
                 padding: 12px 24px;
                 font-size: 14px;
                 font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.ACCENT_HOVER};
+            }}
         """)
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(self.save_project.emit)
@@ -535,7 +562,7 @@ class BackstageView(QFrame):
         title.setStyleSheet("""
             QLabel#SectionTitle {
                 font-size: 24px;
-                color: #111827;
+                color: #201f1e;
                 font-weight: 600;
                 text-transform: none;
                 letter-spacing: 0;
@@ -544,33 +571,34 @@ class BackstageView(QFrame):
         self.content_layout.addWidget(title)
 
         info = QLabel("Export your data and analysis results")
-        info.setStyleSheet("color: #6b7280; font-size: 14px; margin-bottom: 24px;")
+        info.setStyleSheet("color: #605e5c; font-size: 14px; margin-bottom: 24px;")
         self.content_layout.addWidget(info)
 
         export_options = [
-            ("📊 Export for Review", "Export complete package for senior auditor review"),
-            ("📄 Export to Excel", "Export data to Excel with formatting"),
-            ("📋 Export to CSV", "Export data to CSV format"),
-            ("📈 Export Visualizations", "Export charts and graphs"),
+            ("fa5s.chart-bar", "Export for Review", "Export complete package for senior auditor review"),
+            ("fa5s.file-excel", "Export to Excel", "Export data to Excel with formatting"),
+            ("fa5s.file-csv", "Export to CSV", "Export data to CSV format"),
+            ("fa5s.chart-line", "Export Visualizations", "Export charts and graphs"),
         ]
 
-        for btn_text, desc in export_options:
-            btn = QPushButton(btn_text)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #f3f4f6;
-                    color: #111827;
-                    border: 1px solid #e5e7eb;
+        for icon_name, btn_text, desc in export_options:
+            btn = QPushButton(f"  {btn_text}")
+            btn.setIcon(qta.icon(icon_name, color=Colors.TEXT_PRIMARY))
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {Colors.BG_TERTIARY};
+                    color: {Colors.TEXT_PRIMARY};
+                    border: 1px solid {Colors.BORDER};
                     border-radius: 6px;
                     padding: 14px 20px;
                     text-align: left;
                     font-size: 14px;
                     margin-bottom: 8px;
-                }
-                QPushButton:hover {
-                    background-color: #dbeafe;
-                    border-color: #3b82f6;
-                }
+                }}
+                QPushButton:hover {{
+                    background-color: {Colors.ACCENT_SOFT};
+                    border-color: {Colors.ACCENT};
+                }}
             """)
             btn.setCursor(Qt.PointingHandCursor)
             if "Review" in btn_text:
@@ -580,12 +608,12 @@ class BackstageView(QFrame):
             self.content_layout.addWidget(btn)
 
             desc_label = QLabel(desc)
-            desc_label.setStyleSheet("""
-                QLabel {
-                    color: #6b7280;
+            desc_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {Colors.TEXT_SECONDARY};
                     font-size: 12px;
                     margin-bottom: 16px;
-                }
+                }}
             """)
             self.content_layout.addWidget(desc_label)
 
@@ -598,7 +626,7 @@ class BackstageView(QFrame):
         title.setStyleSheet("""
             QLabel#SectionTitle {
                 font-size: 24px;
-                color: #111827;
+                color: #201f1e;
                 font-weight: 600;
                 text-transform: none;
                 letter-spacing: 0;
@@ -607,44 +635,45 @@ class BackstageView(QFrame):
         self.content_layout.addWidget(title)
 
         settings_options = [
-            ("🔔 Notifications", "Configure notification preferences"),
-            ("🎨 Appearance", "Customize theme and colors"),
-            ("📁 Default Locations", "Set default directories"),
-            ("📊 Data Settings", "Configure data processing options"),
-            ("⌨️ Keyboard Shortcuts", "Configure keyboard shortcuts"),
-            ("🔌 Connection Settings", "Manage database and API connections"),
-            ("🔒 Security", "Manage security settings"),
+            ("fa5s.bell", "Notifications", "Configure notification preferences"),
+            ("fa5s.palette", "Appearance", "Customize theme and colors"),
+            ("fa5s.folder", "Default Locations", "Set default directories"),
+            ("fa5s.database", "Data Settings", "Configure data processing options"),
+            ("fa5s.keyboard", "Keyboard Shortcuts", "Configure keyboard shortcuts"),
+            ("fa5s.plug", "Connection Settings", "Manage database and API connections"),
+            ("fa5s.lock", "Security", "Manage security settings"),
         ]
 
-        for btn_text, desc in settings_options:
-            btn = QPushButton(btn_text)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #f3f4f6;
-                    color: #111827;
-                    border: 1px solid #e5e7eb;
+        for icon_name, btn_text, desc in settings_options:
+            btn = QPushButton(f"  {btn_text}")
+            btn.setIcon(qta.icon(icon_name, color=Colors.TEXT_PRIMARY))
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {Colors.BG_TERTIARY};
+                    color: {Colors.TEXT_PRIMARY};
+                    border: 1px solid {Colors.BORDER};
                     border-radius: 6px;
                     padding: 14px 20px;
                     text-align: left;
                     font-size: 14px;
                     margin-bottom: 8px;
-                }
-                QPushButton:hover {
-                    background-color: #dbeafe;
-                    border-color: #3b82f6;
-                }
+                }}
+                QPushButton:hover {{
+                    background-color: {Colors.ACCENT_SOFT};
+                    border-color: {Colors.ACCENT};
+                }}
             """)
             btn.setCursor(Qt.PointingHandCursor)
             btn.clicked.connect(self.settings.emit)
             self.content_layout.addWidget(btn)
 
             desc_label = QLabel(desc)
-            desc_label.setStyleSheet("""
-                QLabel {
-                    color: #6b7280;
+            desc_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {Colors.TEXT_SECONDARY};
                     font-size: 12px;
                     margin-bottom: 16px;
-                }
+                }}
             """)
             self.content_layout.addWidget(desc_label)
 
@@ -657,7 +686,7 @@ class BackstageView(QFrame):
         title.setStyleSheet("""
             QLabel#SectionTitle {
                 font-size: 24px;
-                color: #111827;
+                color: #201f1e;
                 font-weight: 600;
                 text-transform: none;
                 letter-spacing: 0;
@@ -666,34 +695,35 @@ class BackstageView(QFrame):
         self.content_layout.addWidget(title)
 
         info = QLabel("Get assistance and learn how to use CaatMaster")
-        info.setStyleSheet("color: #6b7280; font-size: 14px; margin-bottom: 24px;")
+        info.setStyleSheet("color: #605e5c; font-size: 14px; margin-bottom: 24px;")
         self.content_layout.addWidget(info)
 
         help_options = [
-            ("📖 User Guide", "Browse the complete user guide and documentation"),
-            ("🎓 Tutorials", "Step-by-step tutorials for common tasks"),
-            ("⌨️ Keyboard Shortcuts", "View all keyboard shortcuts for faster work"),
-            ("🔄 Check for Updates", "Check for new versions of CaatMaster"),
-            ("ℹ️ About", "Version information and credits"),
+            ("fa5s.book", "User Guide", "Browse the complete user guide and documentation"),
+            ("fa5s.graduation-cap", "Tutorials", "Step-by-step tutorials for common tasks"),
+            ("fa5s.keyboard", "Keyboard Shortcuts", "View all keyboard shortcuts for faster work"),
+            ("fa5s.sync-alt", "Check for Updates", "Check for new versions of CaatMaster"),
+            ("fa5s.info-circle", "About", "Version information and credits"),
         ]
 
-        for btn_text, desc in help_options:
-            btn = QPushButton(btn_text)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #f3f4f6;
-                    color: #111827;
-                    border: 1px solid #e5e7eb;
+        for icon_name, btn_text, desc in help_options:
+            btn = QPushButton(f"  {btn_text}")
+            btn.setIcon(qta.icon(icon_name, color=Colors.TEXT_PRIMARY))
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {Colors.BG_TERTIARY};
+                    color: {Colors.TEXT_PRIMARY};
+                    border: 1px solid {Colors.BORDER};
                     border-radius: 6px;
                     padding: 14px 20px;
                     text-align: left;
                     font-size: 14px;
                     margin-bottom: 8px;
-                }
-                QPushButton:hover {
-                    background-color: #dbeafe;
-                    border-color: #3b82f6;
-                }
+                }}
+                QPushButton:hover {{
+                    background-color: {Colors.ACCENT_SOFT};
+                    border-color: {Colors.ACCENT};
+                }}
             """)
             btn.setCursor(Qt.PointingHandCursor)
             # Connect to help requested signal
@@ -701,12 +731,12 @@ class BackstageView(QFrame):
             self.content_layout.addWidget(btn)
 
             desc_label = QLabel(desc)
-            desc_label.setStyleSheet("""
-                QLabel {
-                    color: #6b7280;
+            desc_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {Colors.TEXT_SECONDARY};
                     font-size: 12px;
                     margin-bottom: 16px;
-                }
+                }}
             """)
             self.content_layout.addWidget(desc_label)
 
@@ -752,25 +782,15 @@ class BackstageView(QFrame):
                     self._create_save_content()
 
     def _get_recent_projects(self):
-        """Get list of recent projects from storage"""
-        recent_projects = []
+        """Get list of recent projects (pinned first) from the local recents index."""
+        from core.recent_projects import list_recent
+        return list_recent(limit=8)
 
-        # Check for recent projects file
-        recent_file = Path.home() / '.caatmaster' / 'recent_projects.json'
-
-        if recent_file.exists():
-            try:
-                with open(recent_file, 'r') as f:
-                    data = json.load(f)
-                    for item in data.get('recent', [])[:5]:  # Get last 5 projects
-                        project_path = item.get('path', '')
-                        project_name = item.get('name', 'Unknown')
-                        if Path(project_path).exists():
-                            recent_projects.append((project_path, project_name))
-            except Exception as e:
-                print(f"Error loading recent projects: {e}")
-
-        return recent_projects
+    def _on_toggle_pin(self, project_path: str):
+        """Pin/unpin a recent project and refresh the list to reflect it."""
+        from core.recent_projects import toggle_pin
+        toggle_pin(project_path)
+        self._create_open_content()
 
     def _open_project_by_path(self, project_path):
         """Open a project by its file path"""

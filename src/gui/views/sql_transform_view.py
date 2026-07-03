@@ -180,6 +180,7 @@ class SQLTransformView(QWidget):
     """SQL interface for data transformations using DuckDB."""
 
     dataChanged = Signal(pl.DataFrame)
+    applyToPipelineRequested = Signal(str, str)  # query, table_name
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -189,6 +190,7 @@ class SQLTransformView(QWidget):
         self.current_project = None
         self.dataset_widgets = {}  # dataset id -> QListWidgetItem
         self.completer = None
+        self.current_table_name = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -222,6 +224,28 @@ class SQLTransformView(QWidget):
         """)
         self.run_btn.clicked.connect(self.execute_query)
         toolbar_layout.addWidget(self.run_btn)
+
+        from gui.theme import Colors
+        self.apply_pipeline_btn = QPushButton("Apply to Dataset")
+        self.apply_pipeline_btn.setToolTip(
+            "Record this query as a step on the dataset's pipeline, so it shows up in\n"
+            "Applied Steps, is part of the audit trail, and replays when the source refreshes."
+        )
+        self.apply_pipeline_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.BG_PRIMARY};
+                color: {Colors.ACCENT};
+                border: 1px solid {Colors.ACCENT};
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.ACCENT_SOFT};
+            }}
+        """)
+        self.apply_pipeline_btn.clicked.connect(self.apply_to_pipeline)
+        toolbar_layout.addWidget(self.apply_pipeline_btn)
 
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.setStyleSheet("""
@@ -283,9 +307,18 @@ class SQLTransformView(QWidget):
 
         editor_layout.addLayout(toolbar_layout)
 
-        # Dataset selector
+        # Dataset selector — Model Query: every checked dataset is registered
+        # as a table you can JOIN against in a single query (GL-to-subledger
+        # ties, three-way matches, etc.) without any Table.Join gymnastics.
+        model_query_label = QLabel("Model Query — check datasets to query across them:")
+        model_query_label.setToolTip(
+            "Every checked dataset becomes a table you can reference by name in the query below.\n"
+            "e.g. SELECT g.*, s.vendor FROM GL_Entries g JOIN Subledger s ON g.gl_id = s.gl_id"
+        )
+        from gui.theme import Colors
+        model_query_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-weight: 600;")
         dataset_selector_layout = QHBoxLayout()
-        dataset_selector_layout.addWidget(QLabel("Datasets:"))
+        dataset_selector_layout.addWidget(model_query_label)
         self.dataset_list = QListWidget()
         self.dataset_list.setMaximumHeight(80)
         self.dataset_list.setSelectionMode(QListWidget.NoSelection)
@@ -468,6 +501,20 @@ class SQLTransformView(QWidget):
 
         # Update the completer with all registered tables
         self._update_completer_model()
+        self._update_schema_summary()
+
+    def _update_schema_summary(self):
+        """Show how many tables are registered so it's obvious a cross-dataset
+        (Model) query is possible, not just single-table filtering."""
+        n = len(self.registered_tables)
+        if n == 0:
+            self.schema_label.setText("No data loaded")
+        elif n == 1:
+            table_name = next(iter(self.registered_tables))
+            self.schema_label.setText(f"Table: {table_name}")
+        else:
+            names = ", ".join(self.registered_tables.keys())
+            self.schema_label.setText(f"{n} tables registered — join across them: {names}")
 
     @Slot(QListWidgetItem)
     def on_dataset_selection_changed(self, item):
@@ -489,6 +536,7 @@ class SQLTransformView(QWidget):
                 self._unregister_table(table_name)
             # Update completer
             self._update_completer_model()
+            self._update_schema_summary()
 
     def _sanitize_table_name(self, name: str) -> str:
         """Sanitize dataset name for use as SQL table name - preserves case and most characters."""
@@ -567,6 +615,7 @@ class SQLTransformView(QWidget):
 
         # Sanitize the table name
         sanitized_name = self._sanitize_table_name(table_name)
+        self.current_table_name = sanitized_name
 
         # Clear existing tables before registering new one (to avoid duplicates like 'data' and 'customer')
         self.registered_tables.clear()
@@ -632,6 +681,20 @@ class SQLTransformView(QWidget):
             error_msg = f"Query execution failed:\n{str(e)}"
             self.update_info(error_msg)
             QMessageBox.critical(self, "Query Error", error_msg)
+
+    @Slot()
+    def apply_to_pipeline(self):
+        """Record the current query as a step on the active dataset's pipeline
+        instead of leaving it as a one-off result in this view."""
+        query = self.query_editor.toPlainText().strip()
+        if not query:
+            QMessageBox.warning(self, "Empty Query", "Please enter a SQL query.")
+            return
+        if not self.current_table_name:
+            QMessageBox.warning(self, "No Data", "Please select a dataset first.")
+            return
+
+        self.applyToPipelineRequested.emit(query, self.current_table_name)
 
     def display_results(self, df: pl.DataFrame):
         """Display query results in the table."""

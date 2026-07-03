@@ -1,23 +1,32 @@
 """
-Sidebar for CaatMaster - Inspired by data_workspace_app.py design
-Clean, professional navigation with dataset management
+Sidebar for CaatMaster — the "Queries" pane, Power Query style.
+Light, clean navigation with dataset management.
 """
 from typing import List
 
+import qtawesome as qta
 from PySide6.QtCore import Qt, Signal, QSize
-from PySide6.QtGui import QFont, QAction
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QPushButton, QToolButton, QListWidget, QListWidgetItem,
-    QScrollArea, QMenu, QSizePolicy, QGraphicsDropShadowEffect
+    QScrollArea, QMenu, QSizePolicy
 )
+
+from gui.theme import Colors
+
+
+def _icon(name: str, color: str = Colors.TEXT_SECONDARY):
+    return qta.icon(name, color=color)
 
 
 class SidebarButton(QPushButton):
     """Custom styled button for sidebar"""
-    def __init__(self, text, icon_text="", parent=None):
+    def __init__(self, text, icon_name="", parent=None):
         super().__init__(parent)
-        self.setText(f"  {icon_text}  {text}" if icon_text else f"  {text}")
+        self.setText(f"  {text}")
+        if icon_name:
+            self.setIcon(_icon(icon_name))
+            self.setIconSize(QSize(14, 14))
         self.setCheckable(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setMinimumHeight(36)
@@ -25,35 +34,36 @@ class SidebarButton(QPushButton):
 
     def update_style(self, selected):
         if selected:
-            self.setStyleSheet("""
-                QPushButton {
-                    background-color: #1e3a8a;
-                    color: white;
+            self.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {Colors.ACCENT_SOFT};
+                    color: {Colors.ACCENT_PRESSED};
                     border: none;
                     border-radius: 4px;
                     text-align: left;
                     padding-left: 12px;
                     font-size: 13px;
-                }
-                QPushButton:hover {
-                    background-color: #1e40af;
-                }
+                    font-weight: 600;
+                }}
+                QPushButton:hover {{
+                    background-color: {Colors.BG_SELECTED_STRONG};
+                }}
             """)
         else:
-            self.setStyleSheet("""
-                QPushButton {
+            self.setStyleSheet(f"""
+                QPushButton {{
                     background-color: transparent;
-                    color: #9ca3af;
+                    color: {Colors.TEXT_SECONDARY};
                     border: none;
                     border-radius: 4px;
                     text-align: left;
                     padding-left: 12px;
                     font-size: 13px;
-                }
-                QPushButton:hover {
-                    background-color: #1f2937;
-                    color: white;
-                }
+                }}
+                QPushButton:hover {{
+                    background-color: {Colors.BG_TERTIARY};
+                    color: {Colors.TEXT_PRIMARY};
+                }}
             """)
 
 
@@ -65,40 +75,37 @@ class DatasetItemWidget(QWidget):
         layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(8)
 
-        # Icon
-        icon = QLabel("📊")
-        icon.setStyleSheet("font-size: 14px;")
+        icon = QLabel()
+        icon.setPixmap(_icon("fa5s.table", color=Colors.TEXT_TERTIARY).pixmap(14, 14))
         layout.addWidget(icon)
 
-        # Name
         name_label = QLabel(name)
-        name_label.setStyleSheet("""
-            QLabel {
-                color: #d1d5db;
+        name_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_PRIMARY};
                 font-size: 12px;
-            }
+            }}
         """)
         name_label.setCursor(Qt.PointingHandCursor)
         layout.addWidget(name_label, 1)
 
-        # Row count
         rows_label = QLabel(f"{row_count:,}")
-        rows_label.setStyleSheet("""
-            QLabel {
-                color: #6b7280;
+        rows_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_TERTIARY};
                 font-size: 11px;
-            }
+            }}
         """)
         layout.addWidget(rows_label)
 
-        self.setStyleSheet("""
-            QWidget {
+        self.setStyleSheet(f"""
+            QWidget {{
                 background-color: transparent;
                 border-radius: 4px;
-            }
-            QWidget:hover {
-                background-color: #1f2937;
-            }
+            }}
+            QWidget:hover {{
+                background-color: {Colors.BG_TERTIARY};
+            }}
         """)
         self.setCursor(Qt.PointingHandCursor)
 
@@ -113,13 +120,16 @@ class Sidebar(QFrame):
     dataset_duplicate_requested = Signal(str)  # dataset_id
     dataset_delete_requested = Signal(str)  # dataset_id
     dataset_split_sheet_requested = Signal(str)  # dataset_id
+    dataset_refresh_requested = Signal(str)  # dataset_id
     join_datasets_requested = Signal(str)  # source_dataset_id
     append_datasets_requested = Signal(str)  # source_dataset_id
     upload_requested = Signal()  # Request to upload dataset
+    paste_requested = Signal()  # Request to create a dataset from clipboard
     project_edit_requested = Signal()  # Request to edit current project
     project_delete_requested = Signal()  # Request to delete current project
     toggle_ai_panel = Signal()  # Request to toggle AI panel visibility
     ai_chat_requested = Signal()  # Request to open AI chat dialog
+    audit_programs_requested = Signal()  # Request to open the Audit Programs gallery
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -138,22 +148,18 @@ class Sidebar(QFrame):
     def _update_project_info(self):
         """Update the project info labels"""
         if self.current_project:
-            # Update project name
             project_name = self.current_project.name if self.current_project.name else "No Project Selected"
             self.project_label.setText(project_name)
 
-            # Update client name
             client_name = self.current_project.client_name if self.current_project.client_name else "No Client"
             self.client_label.setText(client_name)
 
-            # Show project action buttons
             self.edit_project_btn.setVisible(True)
             self.delete_project_btn.setVisible(True)
         else:
             self.project_label.setText("No Project Selected")
             self.client_label.setText("No Client")
 
-            # Hide project action buttons
             self.edit_project_btn.setVisible(False)
             self.delete_project_btn.setVisible(False)
 
@@ -174,15 +180,14 @@ class Sidebar(QFrame):
             item = QListWidgetItem()
             item.setData(Qt.UserRole, dataset.id)
             item.setText(dataset.name)
+            item.setIcon(_icon("fa5s.table", color=Colors.TEXT_TERTIARY))
 
-            # Store row count in item data
             row_count = dataset.metadata.get('row_count', 0)
             item.setData(Qt.UserRole + 1, row_count)
 
             self.datasets_list.addItem(item)
             self.dataset_items[dataset.id] = item
 
-        # Select first dataset if available
         if datasets and not self.current_dataset_id:
             self.datasets_list.setCurrentRow(0)
 
@@ -196,7 +201,6 @@ class Sidebar(QFrame):
     def _on_datasetContextMenu(self, pos):
         """Handle right-click context menu for dataset items"""
         from PySide6.QtGui import QAction
-        from PySide6.QtWidgets import QMenu
 
         item = self.datasets_list.itemAt(pos)
         if not item:
@@ -207,61 +211,38 @@ class Sidebar(QFrame):
 
         menu = QMenu(self)
 
-        # Dataset info
-        info_action = QAction(f"📊 {dataset_name}", self)
+        info_action = QAction(_icon("fa5s.table", color=Colors.TEXT_TERTIARY), dataset_name, self)
         info_action.setEnabled(False)
         menu.addAction(info_action)
         menu.addSeparator()
 
-        # View data action
-        view_action = QAction("View Data", self)
+        view_action = QAction(_icon("fa5s.eye"), "View Data", self)
         view_action.triggered.connect(lambda: self.dataset_selected.emit(dataset_id))
         menu.addAction(view_action)
 
-        # Rename action
-        rename_action = QAction("✏️ Rename", self)
+        rename_action = QAction(_icon("fa5s.pen"), "Rename", self)
         rename_action.triggered.connect(lambda: self.dataset_rename_requested.emit(dataset_id))
         menu.addAction(rename_action)
 
-        # Duplicate action
-        duplicate_action = QAction("📋 Duplicate", self)
+        duplicate_action = QAction(_icon("fa5s.clone"), "Duplicate", self)
         duplicate_action.triggered.connect(lambda: self.dataset_duplicate_requested.emit(dataset_id))
         menu.addAction(duplicate_action)
 
-        # Split Sheet action
-        split_action = QAction("✂️ Split Sheet", self)
+        split_action = QAction(_icon("fa5s.cut"), "Split Sheet", self)
         split_action.triggered.connect(lambda: self.dataset_split_sheet_requested.emit(dataset_id))
         menu.addAction(split_action)
 
+        refresh_action = QAction(_icon("fa5s.sync-alt"), "Refresh from Source", self)
+        refresh_action.triggered.connect(lambda: self.dataset_refresh_requested.emit(dataset_id))
+        menu.addAction(refresh_action)
+
         menu.addSeparator()
 
-        # Delete action - styled differently
-        delete_action = QAction("🗑️ Delete", self)
+        delete_action = QAction(_icon("fa5s.trash-alt", color=Colors.DANGER), "Delete", self)
         delete_action.triggered.connect(lambda: self.dataset_delete_requested.emit(dataset_id))
         menu.addAction(delete_action)
 
-        # Style the menu with white text for dark background
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #1f2937;
-                border: 1px solid #374151;
-                padding: 5px;
-                color: #ffffff;
-                font-size: 13px;
-            }
-            QMenu::item {
-                color: #ffffff;
-                padding: 8px 20px;
-            }
-            QMenu::item:selected {
-                background-color: #3b82f6;
-            }
-            QMenu::item:last {
-                color: #ef4444;
-            }
-        """)
-
-        # Show menu at cursor position
+        # Menu styling comes from the global stylesheet (QMenu rules in gui.theme)
         menu.exec_(self.mapToGlobal(pos))
 
     def _on_datasetDoubleClicked(self, item):
@@ -273,36 +254,33 @@ class Sidebar(QFrame):
 
     def _setup_ui(self):
         """Setup the sidebar UI"""
-        self.setStyleSheet("""
-            QFrame {
-                background-color: #0f172a;
-                border-right: 1px solid #1e293b;
-            }
-            QListWidget {
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: {Colors.BG_SECONDARY};
+                border-right: 1px solid {Colors.BORDER};
+            }}
+            QListWidget {{
                 background-color: transparent;
                 border: none;
-                color: #d1d5db;
-            }
-            QListWidget::item {
+                color: {Colors.TEXT_PRIMARY};
+            }}
+            QListWidget::item {{
                 background-color: transparent;
                 border: none;
                 padding: 4px 8px;
                 border-radius: 4px;
-            }
-            QListWidget::item:selected {
-                background-color: #1e3a8a;
-                color: white;
-            }
-            QListWidget::item:hover {
-                background-color: #1f2937;
-            }
-            QScrollArea {
+            }}
+            QListWidget::item:selected {{
+                background-color: {Colors.ACCENT_SOFT};
+                color: {Colors.ACCENT_PRESSED};
+            }}
+            QListWidget::item:hover {{
+                background-color: {Colors.BG_TERTIARY};
+            }}
+            QScrollArea {{
                 background-color: transparent;
                 border: none;
-            }
-            QScrollArea QWidgetContents {
-                background-color: transparent;
-            }
+            }}
         """)
 
         layout = QVBoxLayout(self)
@@ -311,188 +289,158 @@ class Sidebar(QFrame):
 
         # Header section with padding
         header_content = QWidget()
-        header_content.setStyleSheet("background-color: #0f172a;")
+        header_content.setStyleSheet(f"background-color: {Colors.BG_SECONDARY};")
         header_layout = QVBoxLayout(header_content)
         header_layout.setContentsMargins(16, 12, 16, 8)
 
-        # Workspace label
-        subtitle_label = QLabel("Workspace")
-        subtitle_label.setStyleSheet("""
-            QLabel {
-                color: #64748b;
+        subtitle_label = QLabel("Queries")
+        subtitle_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_TERTIARY};
                 font-size: 12px;
-            }
+                font-weight: 600;
+            }}
         """)
         header_layout.addWidget(subtitle_label)
 
         layout.addWidget(header_content)
 
-        # Scrollable content area - properly structured
+        # Scrollable content area
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setMinimumHeight(200)  # Ensure scroll area can shrink
+        scroll.setMinimumHeight(200)
         scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        scroll.setStyleSheet("""
-            QScrollArea {
-                background-color: #0f172a;
-                border: none;
-            }
-            QScrollBar:vertical {
-                background-color: #1e293b;
-                width: 8px;
-                border-radius: 4px;
-            }
-            QScrollBar::handle:vertical {
-                background-color: #475569;
-                border-radius: 4px;
-                min-height: 20px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background-color: #64748b;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-        """)
 
-        # Create scroll content widget that holds ALL sidebar items
         scroll_content = QWidget()
         scroll_content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        scroll_content.setStyleSheet("background-color: #0f172a;")
+        scroll_content.setStyleSheet(f"background-color: {Colors.BG_SECONDARY};")
         scroll_layout = QVBoxLayout(scroll_content)
         scroll_layout.setContentsMargins(16, 8, 16, 16)
         scroll_layout.setSpacing(8)
 
-        # Project section
-        project_label = QLabel("📁 PROJECT")
-        project_label.setStyleSheet("""
-            QLabel {
-                color: #64748b;
+        section_label_style = f"""
+            QLabel {{
+                color: {Colors.TEXT_TERTIARY};
                 font-size: 11px;
                 font-weight: 600;
                 letter-spacing: 0.5px;
-            }
-        """)
+            }}
+        """
+
+        # Project section
+        project_label = QLabel("PROJECT")
+        project_label.setStyleSheet(section_label_style)
         scroll_layout.addWidget(project_label)
 
-        # Project name with action buttons
         project_row = QHBoxLayout()
         project_row.setContentsMargins(0, 0, 0, 0)
         project_row.setSpacing(8)
 
         self.project_label = QLabel("No Project Selected")
-        self.project_label.setStyleSheet("""
-            QLabel {
-                color: #9ca3af;
+        self.project_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_PRIMARY};
                 font-size: 13px;
+                font-weight: 600;
                 padding: 4px 0px;
-            }
+            }}
         """)
         project_row.addWidget(self.project_label, 1)
 
-        # Project actions container (edit/delete buttons)
         self.project_actions_widget = QWidget()
         project_actions_layout = QHBoxLayout(self.project_actions_widget)
         project_actions_layout.setContentsMargins(0, 0, 0, 0)
         project_actions_layout.setSpacing(4)
 
-        # Edit project button
-        self.edit_project_btn = QPushButton()
-        self.edit_project_btn.setFixedSize(22, 22)
-        self.edit_project_btn.setText("✏")
-        self.edit_project_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #6b7280;
-                border: none;
-                border-radius: 4px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #374151;
-                color: white;
-            }
-        """)
-        self.edit_project_btn.setCursor(Qt.PointingHandCursor)
+        def _small_icon_button(icon_name, hover_color=Colors.TEXT_PRIMARY):
+            btn = QToolButton()
+            btn.setFixedSize(22, 22)
+            btn.setIcon(_icon(icon_name, color=Colors.TEXT_TERTIARY))
+            btn.setIconSize(QSize(12, 12))
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(f"""
+                QToolButton {{
+                    background-color: transparent;
+                    border: none;
+                    border-radius: 4px;
+                }}
+                QToolButton:hover {{
+                    background-color: {Colors.BG_TERTIARY};
+                }}
+            """)
+            return btn
+
+        self.edit_project_btn = _small_icon_button("fa5s.pen")
         self.edit_project_btn.clicked.connect(self.project_edit_requested.emit)
-        self.edit_project_btn.setVisible(False)  # Hidden until project is set
+        self.edit_project_btn.setVisible(False)
         project_actions_layout.addWidget(self.edit_project_btn)
 
-        # Delete project button
-        self.delete_project_btn = QPushButton()
-        self.delete_project_btn.setFixedSize(22, 22)
-        self.delete_project_btn.setText("🗑")
-        self.delete_project_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #6b7280;
-                border: none;
-                border-radius: 4px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #374151;
-                color: #ef4444;
-            }
-        """)
-        self.delete_project_btn.setCursor(Qt.PointingHandCursor)
+        self.delete_project_btn = _small_icon_button("fa5s.trash-alt")
         self.delete_project_btn.clicked.connect(self.project_delete_requested.emit)
-        self.delete_project_btn.setVisible(False)  # Hidden until project is set
+        self.delete_project_btn.setVisible(False)
         project_actions_layout.addWidget(self.delete_project_btn)
 
         project_row.addWidget(self.project_actions_widget)
         scroll_layout.addLayout(project_row)
 
-        # Client name
         self.client_label = QLabel("No Client")
-        self.client_label.setStyleSheet("""
-            QLabel {
-                color: #6b7280;
+        self.client_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 12px;
                 padding-bottom: 8px;
-            }
+            }}
         """)
         scroll_layout.addWidget(self.client_label)
 
         # Datasets section
         datasets_header = QHBoxLayout()
 
-        datasets_label = QLabel("📊 DATASETS")
-        datasets_label.setStyleSheet("""
-            QLabel {
-                color: #64748b;
-                font-size: 11px;
-                font-weight: 600;
-                letter-spacing: 0.5px;
-                padding-top: 16px;
-            }
-        """)
+        datasets_label = QLabel("DATASETS")
+        datasets_label.setStyleSheet(section_label_style.replace("}", "padding-top: 16px; }"))
         datasets_header.addWidget(datasets_label)
 
         datasets_header.addStretch()
 
-        # Add dataset button
-        add_dataset_btn = QPushButton("+")
+        add_dataset_btn = QToolButton()
         add_dataset_btn.setFixedSize(22, 22)
-        add_dataset_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
+        add_dataset_btn.setIcon(_icon("fa5s.plus", color=Colors.TEXT_ON_ACCENT))
+        add_dataset_btn.setIconSize(QSize(11, 11))
+        add_dataset_btn.setStyleSheet(f"""
+            QToolButton {{
+                background-color: {Colors.ACCENT};
                 border: none;
                 border-radius: 4px;
-                font-size: 14px;
-                font-weight: bold;
-                padding: 0px;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
+            }}
+            QToolButton:hover {{
+                background-color: {Colors.ACCENT_HOVER};
+            }}
         """)
         add_dataset_btn.setCursor(Qt.PointingHandCursor)
         add_dataset_btn.clicked.connect(self.upload_requested.emit)
+        add_dataset_btn.setToolTip("Import a dataset from file")
         datasets_header.addWidget(add_dataset_btn)
+
+        paste_dataset_btn = QToolButton()
+        paste_dataset_btn.setFixedSize(22, 22)
+        paste_dataset_btn.setIcon(_icon("fa5s.paste", color=Colors.TEXT_TERTIARY))
+        paste_dataset_btn.setIconSize(QSize(11, 11))
+        paste_dataset_btn.setStyleSheet(f"""
+            QToolButton {{
+                background-color: transparent;
+                border: none;
+                border-radius: 4px;
+            }}
+            QToolButton:hover {{
+                background-color: {Colors.BG_TERTIARY};
+            }}
+        """)
+        paste_dataset_btn.setCursor(Qt.PointingHandCursor)
+        paste_dataset_btn.clicked.connect(self.paste_requested.emit)
+        paste_dataset_btn.setToolTip("Paste a dataset from clipboard (Ctrl+Shift+V)")
+        datasets_header.addWidget(paste_dataset_btn)
 
         datasets_header_widget = QWidget()
         datasets_header_widget.setLayout(datasets_header)
@@ -511,140 +459,73 @@ class Sidebar(QFrame):
 
         # Workspace Mode section
         mode_label = QLabel("WORKSPACE MODE")
-        mode_label.setStyleSheet("""
-            QLabel {
-                color: #475569;
-                font-size: 11px;
-                font-weight: bold;
-                padding: 16px 0px 8px 0px;
-                letter-spacing: 0.5px;
-            }
-        """)
+        mode_label.setStyleSheet(section_label_style.replace("}", "padding: 16px 0px 8px 0px; }"))
         scroll_layout.addWidget(mode_label)
 
-        # Data Workspace button
-        self.data_workspace_btn = SidebarButton("Data", "💾")
+        self.data_workspace_btn = SidebarButton("Data", "fa5s.table")
         self.data_workspace_btn.setChecked(False)
         self.data_workspace_btn.update_style(False)
         self.data_workspace_btn.clicked.connect(lambda: self.navigation_requested.emit("data"))
         scroll_layout.addWidget(self.data_workspace_btn)
 
-        # SQL Query button
-        self.sql_workspace_btn = SidebarButton("SQL Query", "📝")
+        self.sql_workspace_btn = SidebarButton("SQL Query", "fa5s.database")
         self.sql_workspace_btn.clicked.connect(lambda: self.navigation_requested.emit("sql"))
         scroll_layout.addWidget(self.sql_workspace_btn)
 
         # Actions section
         actions_label = QLabel("ACTIONS")
-        actions_label.setStyleSheet("""
-            QLabel {
-                color: #475569;
-                font-size: 11px;
-                font-weight: bold;
-                padding: 16px 0px 8px 0px;
-                letter-spacing: 0.5px;
-            }
-        """)
+        actions_label.setStyleSheet(section_label_style.replace("}", "padding: 16px 0px 8px 0px; }"))
         scroll_layout.addWidget(actions_label)
 
-        # Export for Review button
-        self.export_review_btn = SidebarButton("Export for Review", "📤")
+        self.export_review_btn = SidebarButton("Export for Review", "fa5s.share-square")
         self.export_review_btn.clicked.connect(lambda: self.navigation_requested.emit("export_review"))
         scroll_layout.addWidget(self.export_review_btn)
 
-        # Join Datasets button
-        self.join_datasets_btn = SidebarButton("Join Datasets", "🔗")
+        self.join_datasets_btn = SidebarButton("Join Datasets", "fa5s.link")
         self.join_datasets_btn.clicked.connect(self._on_join_datasets_clicked)
         scroll_layout.addWidget(self.join_datasets_btn)
 
-        # Append Datasets button
-        self.append_datasets_btn = SidebarButton("Append Datasets", "📋")
+        self.append_datasets_btn = SidebarButton("Append Datasets", "fa5s.layer-group")
         self.append_datasets_btn.clicked.connect(self._on_append_datasets_clicked)
         scroll_layout.addWidget(self.append_datasets_btn)
 
-        # AI Chat button
-        self.ai_chat_btn = SidebarButton("AI Chat", "🤖")
+        self.ai_chat_btn = SidebarButton("AI Chat", "fa5s.comment-dots")
         self.ai_chat_btn.clicked.connect(self.ai_chat_requested.emit)
         scroll_layout.addWidget(self.ai_chat_btn)
 
-        # Add some spacing
+        self.audit_programs_btn = SidebarButton("Audit Programs", "fa5s.clipboard-list")
+        self.audit_programs_btn.clicked.connect(self.audit_programs_requested.emit)
+        scroll_layout.addWidget(self.audit_programs_btn)
+
         scroll_layout.addSpacing(16)
 
-        # Bottom buttons (now INSIDE scroll area for full scrollability)
-        # Back to Projects button
-        self.back_btn = QPushButton("Projects")
-        self.back_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #9ca3af;
-                border: none;
-                text-align: left;
-                padding: 8px 0px;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                color: white;
-            }
-        """)
-        self.back_btn.setCursor(Qt.PointingHandCursor)
+        # Bottom buttons (INSIDE scroll area for full scrollability)
+        self.back_btn = SidebarButton("Projects", "fa5s.folder")
+        self.back_btn.setCheckable(False)
         self.back_btn.clicked.connect(lambda: self.navigation_requested.emit("projects"))
         scroll_layout.addWidget(self.back_btn)
 
-        # Settings button
-        self.settings_btn = QPushButton("⚙ Settings")
-        self.settings_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #9ca3af;
-                border: none;
-                text-align: left;
-                padding: 8px 0px;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                color: white;
-            }
-        """)
-        self.settings_btn.setCursor(Qt.PointingHandCursor)
+        self.settings_btn = SidebarButton("Settings", "fa5s.cog")
+        self.settings_btn.setCheckable(False)
         self.settings_btn.clicked.connect(lambda: self.navigation_requested.emit("settings"))
         scroll_layout.addWidget(self.settings_btn)
 
-        # AI Assistant toggle button
-        self.ai_btn = QPushButton("  🤖  AI Assistant")
-        self.ai_btn.setCursor(Qt.PointingHandCursor)
-        self.ai_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                color: #9ca3af;
-                border: none;
-                border-radius: 4px;
-                text-align: left;
-                padding-left: 12px;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background-color: #1f2937;
-                color: white;
-            }
-        """)
+        self.ai_btn = SidebarButton("AI Assistant", "fa5s.robot")
+        self.ai_btn.setCheckable(False)
         self.ai_btn.clicked.connect(self.toggle_ai_panel.emit)
         scroll_layout.addWidget(self.ai_btn)
 
-        # Add bottom spacing
         scroll_layout.addSpacing(16)
 
-        # Set the scroll content as the scroll area widget
         scroll.setWidget(scroll_content)
         layout.addWidget(scroll, 1)
 
     def set_active_button(self, button_name):
         """Set the active navigation button"""
-        # Reset all buttons
         for btn in [self.data_workspace_btn, self.sql_workspace_btn]:
             btn.setChecked(False)
             btn.update_style(False)
 
-        # Set active button
         button_map = {
             "data": self.data_workspace_btn,
             "transform": self.data_workspace_btn,  # Share Data button highlight
@@ -663,32 +544,28 @@ class Sidebar(QFrame):
         item = QListWidgetItem()
         item.setData(Qt.UserRole, dataset.id)
         item.setText(dataset.name)
+        item.setIcon(_icon("fa5s.table", color=Colors.TEXT_TERTIARY))
         item.setData(Qt.UserRole + 1, dataset.metadata.get('row_count', 0))
 
         self.datasets_list.addItem(item)
         self.dataset_items[dataset.id] = item
 
-        # Select the new dataset and emit signal
         self.datasets_list.setCurrentItem(item)
         self.current_dataset_id = dataset.id
         self.dataset_selected.emit(dataset.id)
 
     def _on_join_datasets_clicked(self):
         """Handle Join Datasets button click"""
-        # Use currently selected dataset if available
         if self.current_dataset_id:
             self.join_datasets_requested.emit(self.current_dataset_id)
         else:
-            # No dataset selected - emit signal with None to prompt selection
             self.join_datasets_requested.emit(None)
 
     def _on_append_datasets_clicked(self):
         """Handle Append Datasets button click"""
-        # Use currently selected dataset if available
         if self.current_dataset_id:
             self.append_datasets_requested.emit(self.current_dataset_id)
         else:
-            # No dataset selected - emit signal with None to prompt selection
             self.append_datasets_requested.emit(None)
 
     def get_dataset_names(self) -> List[str]:

@@ -111,7 +111,7 @@ class ColumnGeneratorDialog(QDialog):
         self.setMinimumSize(700, 550)
         self.setStyleSheet("""
             QDialog {
-                background-color: #f9fafb;
+                background-color: #f3f2f1;
             }
         """)
 
@@ -130,7 +130,7 @@ class ColumnGeneratorDialog(QDialog):
             QLabel {
                 font-size: 18px;
                 font-weight: 700;
-                color: #1f2937;
+                color: #201f1e;
             }
         """)
         title_layout.addWidget(title)
@@ -145,8 +145,8 @@ class ColumnGeneratorDialog(QDialog):
         dataset_group.setStyleSheet("""
             QGroupBox {
                 font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
+                color: #605e5c;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 padding-top: 10px;
             }
@@ -170,7 +170,7 @@ class ColumnGeneratorDialog(QDialog):
         self.dataset_combo.setStyleSheet("""
             QComboBox {
                 padding: 8px 12px;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 font-size: 13px;
                 min-width: 200px;
@@ -191,9 +191,9 @@ class ColumnGeneratorDialog(QDialog):
         self.dataset_info_label.setStyleSheet("""
             QLabel {
                 font-size: 12px;
-                color: #6b7280;
+                color: #605e5c;
                 padding: 4px 8px;
-                background-color: #f3f4f6;
+                background-color: #edebe9;
                 border-radius: 4px;
             }
         """)
@@ -214,8 +214,8 @@ class ColumnGeneratorDialog(QDialog):
         instruction_group.setStyleSheet("""
             QGroupBox {
                 font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
+                color: #605e5c;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 padding-top: 10px;
             }
@@ -240,14 +240,14 @@ class ColumnGeneratorDialog(QDialog):
         self.instruction_edit.setMaximumHeight(120)
         self.instruction_edit.setStyleSheet("""
             QTextEdit {
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 padding: 10px;
                 font-size: 13px;
                 background-color: white;
             }
             QTextEdit:focus {
-                border-color: #3b82f6;
+                border-color: #0078d4;
             }
         """)
         instruction_layout.addWidget(self.instruction_edit)
@@ -257,7 +257,7 @@ class ColumnGeneratorDialog(QDialog):
         suggestions_label.setStyleSheet("""
             QLabel {
                 font-size: 12px;
-                color: #6b7280;
+                color: #605e5c;
                 font-weight: 600;
             }
         """)
@@ -278,14 +278,14 @@ class ColumnGeneratorDialog(QDialog):
             btn.setStyleSheet("""
                 QPushButton {
                     padding: 6px 10px;
-                    background-color: #eff6ff;
-                    border: 1px solid #bfdbfe;
+                    background-color: #deecf9;
+                    border: 1px solid #c7e0f4;
                     border-radius: 4px;
                     font-size: 11px;
-                    color: #1e40af;
+                    color: #005a9e;
                 }
                 QPushButton:hover {
-                    background-color: #dbeafe;
+                    background-color: #deecf9;
                 }
             """)
             btn.clicked.connect(lambda checked, inst=instruction: self.instruction_edit.setText(inst))
@@ -301,7 +301,7 @@ class ColumnGeneratorDialog(QDialog):
             QLabel {
                 font-size: 13px;
                 font-weight: 600;
-                color: #374151;
+                color: #605e5c;
             }
         """)
         name_layout.addWidget(name_label)
@@ -311,13 +311,13 @@ class ColumnGeneratorDialog(QDialog):
         self.name_edit.setStyleSheet("""
             QLineEdit {
                 padding: 8px 12px;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 font-size: 13px;
                 background-color: white;
             }
             QLineEdit:focus {
-                border-color: #3b82f6;
+                border-color: #0078d4;
             }
         """)
         name_layout.addWidget(self.name_edit)
@@ -328,7 +328,7 @@ class ColumnGeneratorDialog(QDialog):
         self.generate_btn.setStyleSheet("""
             QPushButton {
                 padding: 12px 20px;
-                background-color: #3b82f6;
+                background-color: #0078d4;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -336,10 +336,10 @@ class ColumnGeneratorDialog(QDialog):
                 font-weight: 600;
             }
             QPushButton:hover {
-                background-color: #2563eb;
+                background-color: #106ebe;
             }
             QPushButton:disabled {
-                background-color: #9ca3af;
+                background-color: #8a8886;
             }
         """)
         self.generate_btn.clicked.connect(self.generate_column)
@@ -353,7 +353,7 @@ class ColumnGeneratorDialog(QDialog):
                 background-color: transparent;
             }
             QProgressBar::chunk {
-                background-color: #3b82f6;
+                background-color: #0078d4;
             }
         """)
         self.progress_bar.setVisible(False)
@@ -364,10 +364,10 @@ class ColumnGeneratorDialog(QDialog):
         self.status_label.setStyleSheet("""
             QLabel {
                 font-size: 12px;
-                color: #6b7280;
+                color: #605e5c;
                 padding: 8px;
                 border-radius: 4px;
-                background-color: #f3f4f6;
+                background-color: #edebe9;
             }
         """)
         self.status_label.setVisible(False)
@@ -385,8 +385,8 @@ class ColumnGeneratorDialog(QDialog):
         code_group.setStyleSheet("""
             QGroupBox {
                 font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
+                color: #605e5c;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 padding-top: 10px;
             }
@@ -404,13 +404,13 @@ class ColumnGeneratorDialog(QDialog):
         self.code_edit.setReadOnly(True)
         self.code_edit.setStyleSheet("""
             QTextEdit {
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 padding: 10px;
                 font-size: 12px;
                 font-family: 'Consolas', 'Monaco', monospace;
-                background-color: #1f2937;
-                color: #e5e7eb;
+                background-color: #201f1e;
+                color: #e1dfdd;
             }
         """)
         code_layout.addWidget(self.code_edit)
@@ -423,7 +423,7 @@ class ColumnGeneratorDialog(QDialog):
                 font-size: 12px;
                 color: #4b5563;
                 padding: 8px;
-                background-color: #f3f4f6;
+                background-color: #edebe9;
                 border-radius: 4px;
             }
         """)
@@ -436,8 +436,8 @@ class ColumnGeneratorDialog(QDialog):
         examples_group.setStyleSheet("""
             QGroupBox {
                 font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
+                color: #605e5c;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 padding-top: 10px;
             }
@@ -453,7 +453,7 @@ class ColumnGeneratorDialog(QDialog):
         self.examples_list = QListWidget()
         self.examples_list.setStyleSheet("""
             QListWidget {
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 background-color: white;
                 padding: 8px;
@@ -482,7 +482,7 @@ class ColumnGeneratorDialog(QDialog):
                 background-color: #059669;
             }
             QPushButton:disabled {
-                background-color: #9ca3af;
+                background-color: #8a8886;
             }
         """)
         self.apply_btn.clicked.connect(self.apply_column)
@@ -493,19 +493,19 @@ class ColumnGeneratorDialog(QDialog):
         self.preview_btn.setStyleSheet("""
             QPushButton {
                 padding: 10px 20px;
-                background-color: #f3f4f6;
-                border: 1px solid #d1d5db;
+                background-color: #edebe9;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 font-size: 13px;
                 font-weight: 600;
-                color: #374151;
+                color: #605e5c;
             }
             QPushButton:hover {
-                background-color: #e5e7eb;
+                background-color: #e1dfdd;
             }
             QPushButton:disabled {
-                background-color: #f3f4f6;
-                color: #9ca3af;
+                background-color: #edebe9;
+                color: #8a8886;
             }
         """)
         self.preview_btn.clicked.connect(self.preview_column)
@@ -518,13 +518,13 @@ class ColumnGeneratorDialog(QDialog):
             QPushButton {
                 padding: 10px 20px;
                 background-color: white;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 font-size: 13px;
-                color: #374151;
+                color: #605e5c;
             }
             QPushButton:hover {
-                background-color: #f9fafb;
+                background-color: #f3f2f1;
             }
         """)
         close_btn.clicked.connect(self.reject)

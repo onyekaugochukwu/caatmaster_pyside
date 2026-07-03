@@ -189,26 +189,83 @@ class DataView(QWidget):
                     counter += 1
                 dataset_name = unique_name
 
-            # Create dataset
-            dataset = Dataset(name=dataset_name.strip(), dataframe=df)
-
-            # Add to project if project is set
-            if self.current_project:
-                self.current_project.add_dataset(dataset)
-                self.current_dataset = dataset
-                self.dataset_added.emit(dataset)
-
-                # Emit signal to show transform view with applied steps
-                self.show_transform_requested.emit()
-
-            # Update UI
-            self.populate_table(df)
-
-            self.data_loaded.emit(df)
+            # Create dataset — remember where it came from so it can be
+            # refreshed (re-read + steps replayed) later
+            dataset = Dataset(
+                name=dataset_name.strip(), dataframe=df,
+                source_file_path=file_path, source_sheet_name=sheet_name
+            )
+            self._finalize_new_dataset(dataset, df)
 
         except Exception as e:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Error", f"Failed to load data:\n{str(e)}")
+
+    def paste_from_clipboard(self):
+        """Create a new dataset directly from clipboard text (e.g. a range
+        copied from Excel) — no file save required first, matching the
+        copy/paste habit Excel users already have."""
+        from PySide6.QtWidgets import QApplication, QMessageBox
+
+        if not self.current_project:
+            QMessageBox.warning(
+                self, "No Project Selected",
+                "Please create or open a project before pasting a dataset."
+            )
+            return
+
+        clipboard_text = QApplication.clipboard().text()
+        if not clipboard_text or not clipboard_text.strip():
+            QMessageBox.information(self, "Clipboard Empty", "Copy some cells (e.g. from Excel) first, then try again.")
+            return
+
+        try:
+            from core.data_processor import parse_clipboard_text
+            df = parse_clipboard_text(clipboard_text)
+        except Exception as e:
+            QMessageBox.critical(self, "Paste Failed", f"Could not parse clipboard contents as a table:\n{str(e)}")
+            return
+
+        if df is None or len(df.columns) == 0:
+            QMessageBox.warning(self, "Empty Data", "The clipboard contents don't look like tabular data.")
+            return
+
+        self.current_dataframe = df
+
+        dataset_name, ok = QInputDialog.getText(
+            self, "Dataset Name",
+            "Enter a name for this pasted dataset:",
+            text=f"Pasted_{len(self.current_project.list_datasets()) + 1}"
+        )
+        if not ok or not dataset_name.strip():
+            dataset_name = f"Pasted_{len(self.current_project.list_datasets()) + 1}"
+
+        # Pasted data has no source file — can't be refreshed later, only re-pasted
+        dataset = Dataset(name=dataset_name.strip(), dataframe=df)
+        self._finalize_new_dataset(dataset, df)
+
+    def _finalize_new_dataset(self, dataset: Dataset, df):
+        """Shared tail for creating a dataset from any source (file import,
+        clipboard paste): unique-name it, attach to the project, and update
+        the views that need to know."""
+        # Ensure unique name within project
+        if self.current_project:
+            base_name = dataset.name
+            unique_name = base_name
+            counter = 1
+            existing_names = {ds.name for ds in self.current_project.list_datasets()}
+            while unique_name in existing_names:
+                unique_name = f"{base_name} ({counter})"
+                counter += 1
+            dataset.name = unique_name
+
+            self.current_project.add_dataset(dataset)
+            self.current_dataset = dataset
+            self.dataset_added.emit(dataset)
+            self.show_transform_requested.emit()
+
+        self.populate_table(df)
+        self.data_loaded.emit(df)
 
     def show_export_dialog(self):
         """Show export dialog"""

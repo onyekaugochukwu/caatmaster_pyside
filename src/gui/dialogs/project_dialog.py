@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 
 from core.project_manager import Project, Dataset, ProjectExporter
+from core.caat_format import load_caat, is_caat_file, CaatFormatError
 
 
 class NewProjectDialog(QDialog):
@@ -437,7 +438,7 @@ class OpenProjectDialog(QDialog):
             self,
             "Open Project",
             str(Path.home()),
-            "Project Files (*.zip *.json);;All Files (*)"
+            "CaatMaster Project (*.caat);;Legacy Project Files (*.zip *.json);;All Files (*)"
         )
 
         if file_path:
@@ -447,7 +448,11 @@ class OpenProjectDialog(QDialog):
     def load_project_preview(self, file_path: str):
         """Load and display project preview."""
         try:
-            project = ProjectExporter.import_project(file_path)
+            if is_caat_file(file_path):
+                project = load_caat(file_path)
+            else:
+                # Legacy export format (.zip/.json from before .caat existed)
+                project = ProjectExporter.import_project(file_path)
             self.selected_project = project
 
             # Update project info

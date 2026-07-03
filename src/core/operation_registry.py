@@ -16,9 +16,26 @@ class TransformationStepType(str, Enum):
     JOIN = "join"
     PIVOT = "pivot"
     UNPIVOT = "unpivot"
+    QUERY = "query"
 
 
 OPERATION_REGISTRY = {
+    # =========================================================================
+    # SQL (DuckDB) — recorded as a first-class pipeline step so a query run
+    # from the SQL view shows up in Applied Steps and replays on refresh,
+    # exactly like any ribbon transformation.
+    # =========================================================================
+    "sql_query": {
+        "display_name": "SQL Query",
+        "type": TransformationStepType.QUERY,
+        "category": "sql",
+        "description": "Transform the dataset with a DuckDB SQL query",
+        "parameter_schema": {
+            "query": {"type": "text", "required": True, "label": "SQL Query"}
+        },
+        "creates_columns": False,
+    },
+
     # =========================================================================
     # TEXT TRANSFORMATIONS
     # =========================================================================

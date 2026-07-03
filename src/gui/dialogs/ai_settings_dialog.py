@@ -38,13 +38,13 @@ class ProviderConfigWidget(QWidget):
             self.api_key_edit.setStyleSheet("""
                 QLineEdit {
                     padding: 12px 16px;
-                    border: 1px solid #d1d5db;
+                    border: 1px solid #d2d0ce;
                     border-radius: 8px;
                     font-size: 14px;
                     min-width: 300px;
                 }
                 QLineEdit:focus {
-                    border-color: #3b82f6;
+                    border-color: #0078d4;
                 }
             """)
             layout.addRow("API Key:", self.api_key_edit)
@@ -54,7 +54,7 @@ class ProviderConfigWidget(QWidget):
             api_note.setStyleSheet("""
                 QLabel {
                     font-size: 13px;
-                    color: #6b7280;
+                    color: #605e5c;
                     font-style: italic;
                     padding: 8px 0;
                 }
@@ -68,13 +68,13 @@ class ProviderConfigWidget(QWidget):
         self.base_url_edit.setStyleSheet("""
             QLineEdit {
                 padding: 12px 16px;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 8px;
                 font-size: 14px;
                 min-width: 300px;
             }
             QLineEdit:focus {
-                border-color: #3b82f6;
+                border-color: #0078d4;
             }
         """)
 
@@ -92,13 +92,13 @@ class ProviderConfigWidget(QWidget):
         self.model_edit.setStyleSheet("""
             QLineEdit {
                 padding: 12px 16px;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 8px;
                 font-size: 14px;
                 min-width: 300px;
             }
             QLineEdit:focus {
-                border-color: #3b82f6;
+                border-color: #0078d4;
             }
         """)
 
@@ -285,7 +285,7 @@ class CustomProviderWidget(QWidget):
         self.name_edit.setStyleSheet("""
             QLineEdit {
                 padding: 12px 16px;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 8px;
                 font-size: 14px;
                 min-width: 300px;
@@ -301,7 +301,7 @@ class CustomProviderWidget(QWidget):
         self.api_key_edit.setStyleSheet("""
             QLineEdit {
                 padding: 12px 16px;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 8px;
                 font-size: 14px;
                 min-width: 300px;
@@ -316,7 +316,7 @@ class CustomProviderWidget(QWidget):
         self.base_url_edit.setStyleSheet("""
             QLineEdit {
                 padding: 12px 16px;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 8px;
                 font-size: 14px;
                 min-width: 300px;
@@ -331,7 +331,7 @@ class CustomProviderWidget(QWidget):
         self.model_edit.setStyleSheet("""
             QLineEdit {
                 padding: 12px 16px;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 8px;
                 font-size: 14px;
                 min-width: 300px;
@@ -497,7 +497,7 @@ class AISettingsDialog(QDialog):
         self.setMinimumSize(750, 680)
         self.setStyleSheet("""
             QDialog {
-                background-color: #f9fafb;
+                background-color: #f3f2f1;
             }
         """)
 
@@ -511,7 +511,7 @@ class AISettingsDialog(QDialog):
             QLabel {
                 font-size: 20px;
                 font-weight: 700;
-                color: #1f2937;
+                color: #201f1e;
             }
         """)
         layout.addWidget(title)
@@ -520,7 +520,7 @@ class AISettingsDialog(QDialog):
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet("""
             QTabWidget::pane {
-                border: 1px solid #e5e7eb;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 background-color: white;
             }
@@ -581,7 +581,7 @@ class AISettingsDialog(QDialog):
         separator = QFrame()
         separator.setFrameShape(QFrame.HLine)
         separator.setFrameShadow(QFrame.Sunken)
-        separator.setStyleSheet("color: #e5e7eb;")
+        separator.setStyleSheet("color: #e1dfdd;")
         local_layout.addWidget(separator)
 
         # LlamaCPP widget
@@ -617,8 +617,8 @@ class AISettingsDialog(QDialog):
         active_group.setStyleSheet("""
             QGroupBox {
                 font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
+                color: #605e5c;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 padding-top: 10px;
                 background-color: white;
@@ -633,7 +633,7 @@ class AISettingsDialog(QDialog):
         active_layout.setContentsMargins(16, 20, 16, 16)
 
         active_label = QLabel("Use this provider for AI features:")
-        active_label.setStyleSheet("font-size: 14px; color: #374151;")
+        active_label.setStyleSheet("font-size: 14px; color: #605e5c;")
         active_layout.addWidget(active_label)
 
         self.active_provider_combo = QComboBox()
@@ -641,7 +641,7 @@ class AISettingsDialog(QDialog):
         self.active_provider_combo.setStyleSheet("""
             QComboBox {
                 padding: 10px 16px;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 8px;
                 font-size: 14px;
                 min-width: 200px;
@@ -657,8 +657,8 @@ class AISettingsDialog(QDialog):
         usage_group.setStyleSheet("""
             QGroupBox {
                 font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
+                color: #605e5c;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 padding-top: 10px;
             }
@@ -673,7 +673,7 @@ class AISettingsDialog(QDialog):
         self.usage_label = QLabel("No usage data available")
         self.usage_label.setStyleSheet("""
             QLabel {
-                color: #6b7280;
+                color: #605e5c;
                 font-size: 13px;
                 padding: 8px;
             }
@@ -685,13 +685,13 @@ class AISettingsDialog(QDialog):
         refresh_btn.setStyleSheet("""
             QPushButton {
                 padding: 6px 12px;
-                background-color: #f3f4f6;
-                border: 1px solid #d1d5db;
+                background-color: #edebe9;
+                border: 1px solid #d2d0ce;
                 border-radius: 4px;
                 font-size: 12px;
             }
             QPushButton:hover {
-                background-color: #e5e7eb;
+                background-color: #e1dfdd;
             }
         """)
         usage_layout.addWidget(refresh_btn, alignment=Qt.AlignRight)
@@ -707,14 +707,14 @@ class AISettingsDialog(QDialog):
             QPushButton {
                 padding: 10px 20px;
                 background-color: white;
-                border: 1px solid #d1d5db;
+                border: 1px solid #d2d0ce;
                 border-radius: 6px;
                 font-size: 13px;
                 font-weight: 600;
-                color: #374151;
+                color: #605e5c;
             }
             QPushButton:hover {
-                background-color: #f9fafb;
+                background-color: #f3f2f1;
             }
         """)
         cancel_btn.clicked.connect(self.reject)
@@ -724,7 +724,7 @@ class AISettingsDialog(QDialog):
         save_btn.setStyleSheet("""
             QPushButton {
                 padding: 10px 20px;
-                background-color: #3b82f6;
+                background-color: #0078d4;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -732,7 +732,7 @@ class AISettingsDialog(QDialog):
                 font-weight: 600;
             }
             QPushButton:hover {
-                background-color: #2563eb;
+                background-color: #106ebe;
             }
         """)
         save_btn.clicked.connect(self.save_settings)
@@ -893,7 +893,7 @@ class AIUsageDialog(QDialog):
             QLabel {
                 font-size: 18px;
                 font-weight: 700;
-                color: #1f2937;
+                color: #201f1e;
             }
         """)
         layout.addWidget(title)
@@ -906,7 +906,7 @@ class AIUsageDialog(QDialog):
         requests_card = self.create_stat_card(
             "Total Requests",
             str(self.usage_data.get("total_requests", 0)),
-            "#3b82f6"
+            "#0078d4"
         )
         cards_layout.addWidget(requests_card)
 
@@ -941,7 +941,7 @@ class AIUsageDialog(QDialog):
                     QLabel {
                         padding: 8px;
                         font-size: 13px;
-                        color: #374151;
+                        color: #605e5c;
                     }
                 """)
                 provider_layout.addWidget(label)
@@ -955,7 +955,7 @@ class AIUsageDialog(QDialog):
         close_btn.setStyleSheet("""
             QPushButton {
                 padding: 10px 24px;
-                background-color: #3b82f6;
+                background-color: #0078d4;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -963,7 +963,7 @@ class AIUsageDialog(QDialog):
                 font-weight: 600;
             }
             QPushButton:hover {
-                background-color: #2563eb;
+                background-color: #106ebe;
             }
         """)
         close_btn.clicked.connect(self.accept)
@@ -975,7 +975,7 @@ class AIUsageDialog(QDialog):
         card.setStyleSheet(f"""
             QFrame {{
                 background-color: white;
-                border: 1px solid #e5e7eb;
+                border: 1px solid #e1dfdd;
                 border-radius: 8px;
                 padding: 16px;
             }}
@@ -988,7 +988,7 @@ class AIUsageDialog(QDialog):
         label.setStyleSheet("""
             QLabel {
                 font-size: 12px;
-                color: #6b7280;
+                color: #605e5c;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
             }

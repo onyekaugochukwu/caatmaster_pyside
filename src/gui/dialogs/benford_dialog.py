@@ -46,7 +46,7 @@ class BenfordChartPopup(QDialog):
                 font-size: 12px;
                 color: #333;
                 padding: 8px;
-                background-color: #f5f5f5;
+                background-color: #f3f2f1;
                 border-radius: 4px;
             }
         """)
@@ -58,7 +58,7 @@ class BenfordChartPopup(QDialog):
         close_btn = QPushButton("Close")
         close_btn.setStyleSheet("""
             QPushButton {
-                background-color: #6c757d;
+                background-color: #605e5c;
                 color: white;
                 padding: 8px 20px;
                 border: none;
@@ -123,17 +123,17 @@ class BenfordDialog(BaseModal):
                 border: none;
             }
             QScrollBar:vertical {
-                background-color: #f0f0f0;
+                background-color: #edebe9;
                 width: 12px;
                 border-radius: 6px;
             }
             QScrollBar::handle:vertical {
-                background-color: #c0c0c0;
+                background-color: #d2d0ce;
                 border-radius: 6px;
                 min-height: 30px;
             }
             QScrollBar::handle:vertical:hover {
-                background-color: #a0a0a0;
+                background-color: #8a8886;
             }
         """)
 
@@ -249,7 +249,7 @@ class BenfordDialog(BaseModal):
                 background-color: white;
             }
             QPushButton:hover {
-                background-color: #e6f2fa;
+                background-color: #deecf9;
             }
         """)
         view_chart_btn.clicked.connect(self._show_chart_popup)
@@ -289,7 +289,7 @@ class BenfordDialog(BaseModal):
         self.stats_table.setAlternatingRowColors(True)
         self.stats_table.setStyleSheet("""
             QTableWidget {
-                gridline-color: #e0e0e0;
+                gridline-color: #e1dfdd;
             }
             QTableWidget::item {
                 padding: 4px;
@@ -397,10 +397,10 @@ class BenfordDialog(BaseModal):
                 padding: 8px 20px;
                 border: 1px solid #ccc;
                 border-radius: 4px;
-                background-color: #f8f9fa;
+                background-color: #f3f2f1;
             }
             QPushButton:hover {
-                background-color: #e9ecef;
+                background-color: #e1dfdd;
             }
         """)
         self.cancel_btn.clicked.connect(self.reject)

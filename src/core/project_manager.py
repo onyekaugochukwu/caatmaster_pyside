@@ -16,11 +16,17 @@ import io
 class Dataset:
     """Represents a dataset with transformation pipeline metadata."""
 
-    def __init__(self, id: str = None, name: str = "", dataframe: pl.DataFrame = None):
+    def __init__(self, id: str = None, name: str = "", dataframe: pl.DataFrame = None,
+                 source_file_path: str = None, source_sheet_name: str = None):
         self.id = id or str(uuid.uuid4())
         self.name = name
         self.original_dataframe: pl.DataFrame = dataframe
         self.transformation_pipeline = None
+        # Where this dataset was originally imported from, if it was a file
+        # import (None for pasted/generated data) — lets "Refresh" re-read
+        # the source and replay all steps against the fresh data.
+        self.source_file_path = source_file_path
+        self.source_sheet_name = source_sheet_name
         self.metadata: Dict[str, Any] = {
             "created_at": datetime.now().isoformat(),
             "version": "1.0",
@@ -39,6 +45,41 @@ class Dataset:
             return self.transformation_pipeline.apply()
         return self.original_dataframe
 
+    def can_refresh(self) -> bool:
+        """Whether this dataset has a known source file to refresh from."""
+        return bool(self.source_file_path)
+
+    def refresh_from_source(self) -> pl.DataFrame:
+        """Re-read this dataset's original file and replay all transformation
+        steps against the fresh data — the same "refresh" idea as Power
+        Query: source + steps stay the recipe of record, so re-running it
+        against updated source data is always possible.
+
+        Raises FileNotFoundError if the source file no longer exists, and
+        ValueError if this dataset has no known source (e.g. pasted data).
+        """
+        if not self.source_file_path:
+            raise ValueError(f"Dataset '{self.name}' has no known source file to refresh from.")
+
+        from pathlib import Path
+        if not Path(self.source_file_path).exists():
+            raise FileNotFoundError(f"Source file not found: {self.source_file_path}")
+
+        from .data_processor import LegacyDataProcessor
+        processor = LegacyDataProcessor()
+        fresh_df = processor.read_file(self.source_file_path, self.source_sheet_name)
+
+        if self.transformation_pipeline:
+            self.transformation_pipeline.refresh_source(fresh_df)
+        else:
+            self.original_dataframe = fresh_df
+
+        self.metadata["row_count"] = len(fresh_df)
+        self.metadata["column_count"] = len(fresh_df.columns)
+        self.metadata["columns"] = list(fresh_df.columns)
+
+        return self.get_current_dataframe()
+
     def duplicate(self, new_name: str = None) -> 'Dataset':
         """Create a duplicate of this dataset with a new name."""
         # Copy the dataframe
@@ -48,7 +89,9 @@ class Dataset:
         new_dataset = Dataset(
             id=str(uuid.uuid4()),
             name=new_name or f"{self.name} (Copy)",
-            dataframe=new_dataframe
+            dataframe=new_dataframe,
+            source_file_path=self.source_file_path,
+            source_sheet_name=self.source_sheet_name
         )
 
         # Copy metadata
@@ -66,7 +109,8 @@ class Dataset:
                 new_step = TransformationStep(
                     operation_id=step.operation_id,
                     params=step.params.copy(),
-                    step_number=step.step_number
+                    step_number=step.step_number,
+                    enabled=step.enabled
                 )
                 new_step.created_columns = step.created_columns.copy() if step.created_columns else []
                 new_step.timestamp = step.timestamp
@@ -93,7 +137,8 @@ class Dataset:
                         "params": step.params,
                         "step_number": step.step_number,
                         "created_columns": step.created_columns,
-                        "timestamp": step.timestamp.isoformat()
+                        "timestamp": step.timestamp.isoformat(),
+                        "enabled": step.enabled,
                     }
                     for step in self.transformation_pipeline.get_steps()
                 ],
@@ -105,6 +150,8 @@ class Dataset:
             "name": self.name,
             "metadata": self.metadata,
             "pipeline": pipeline_data,
+            "source_file_path": self.source_file_path,
+            "source_sheet_name": self.source_sheet_name,
             # Note: Dataframe is stored separately in the export format
         }
 
@@ -114,7 +161,9 @@ class Dataset:
         dataset = cls(
             id=data["id"],
             name=data["name"],
-            dataframe=dataframe
+            dataframe=dataframe,
+            source_file_path=data.get("source_file_path"),
+            source_sheet_name=data.get("source_sheet_name")
         )
         dataset.metadata = data.get("metadata", {})
 
@@ -128,7 +177,8 @@ class Dataset:
                 step = TransformationStep(
                     operation_id=step_data["operation_id"],
                     params=step_data["params"],
-                    step_number=step_data["step_number"]
+                    step_number=step_data["step_number"],
+                    enabled=step_data.get("enabled", True)
                 )
                 step.created_columns = step_data.get("created_columns", [])
                 step.timestamp = datetime.fromisoformat(step_data["timestamp"])
@@ -157,6 +207,11 @@ class Project:
         self.risk_score = risk_score
         self.objectives = objectives
         self.datasets: Dict[str, Dataset] = {}
+        # Reusable named values (materiality threshold, period dates,
+        # currency, ...) that steps/SQL can reference as {{name}} instead of
+        # a hardcoded value — change once here, every step that uses it
+        # picks up the new value on next apply().
+        self.parameters: Dict[str, Any] = {}
         self.metadata: Dict[str, Any] = {
             "created_at": datetime.now().isoformat(),
             "version": "1.0",
@@ -200,6 +255,7 @@ class Project:
             "risk_score": self.risk_score,
             "objectives": self.objectives,
             "metadata": self.metadata,
+            "parameters": self.parameters,
             "datasets": {ds_id: ds.to_dict() for ds_id, ds in self.datasets.items()}
         }
 
@@ -217,6 +273,7 @@ class Project:
             objectives=data.get("objectives"),
         )
         project.metadata = data.get("metadata", {})
+        project.parameters = data.get("parameters", {})
 
         # Note: Datasets are loaded separately during import
         return project
