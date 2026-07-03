@@ -402,7 +402,9 @@ class ProjectExporter:
                     # Load data file
                     data_file = temp_dir / f"{dataset_name}.xlsx"
                     if data_file.exists():
-                        df = pl.read_excel(str(data_file))
+                        import io
+                        with open(data_file, 'rb') as f:
+                            df = pl.read_excel(io.BytesIO(f.read()))
                     else:
                         data_file = temp_dir / f"{dataset_name}.parquet"
                         if data_file.exists():

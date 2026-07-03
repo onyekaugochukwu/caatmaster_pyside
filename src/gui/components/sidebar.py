@@ -119,6 +119,7 @@ class Sidebar(QFrame):
     project_edit_requested = Signal()  # Request to edit current project
     project_delete_requested = Signal()  # Request to delete current project
     toggle_ai_panel = Signal()  # Request to toggle AI panel visibility
+    ai_chat_requested = Signal()  # Request to open AI chat dialog
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -560,6 +561,11 @@ class Sidebar(QFrame):
         self.append_datasets_btn = SidebarButton("Append Datasets", "📋")
         self.append_datasets_btn.clicked.connect(self._on_append_datasets_clicked)
         scroll_layout.addWidget(self.append_datasets_btn)
+
+        # AI Chat button
+        self.ai_chat_btn = SidebarButton("AI Chat", "🤖")
+        self.ai_chat_btn.clicked.connect(self.ai_chat_requested.emit)
+        scroll_layout.addWidget(self.ai_chat_btn)
 
         # Add some spacing
         scroll_layout.addSpacing(16)

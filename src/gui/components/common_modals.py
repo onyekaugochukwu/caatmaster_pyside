@@ -37,6 +37,11 @@ class BaseModal(QDialog):
         self._setup_ui()
         self._connect_signals()
 
+    @property
+    def original_df(self):
+        """Alias for dataframe - for backward compatibility with dialogs"""
+        return self.dataframe
+
     def _setup_ui(self):
         """Setup the dialog UI - override in subclasses"""
         layout = QVBoxLayout(self)

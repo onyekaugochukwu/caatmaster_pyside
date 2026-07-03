@@ -144,7 +144,8 @@ class BaseAIProvider(ABC):
     @abstractmethod
     async def complete(self, messages: List[Dict[str, str]],
                        temperature: float = 0.1,
-                       max_tokens: int = 4000) -> AIResponse:
+                       max_tokens: int = 4000,
+                       response_format: Dict = None) -> AIResponse:
         """Send a chat completion request"""
         pass
 
@@ -208,7 +209,8 @@ Use formal audit language appropriate for management reports.
 Be factual, objective, and constructive.
 Include specific evidence where available.""",
         }
-        return prompts.get(task_type, prompts["general"])
+        base_prompt = prompts.get(task_type, prompts["general"])
+        return base_prompt
 
 
 class OpenAIProvider(BaseAIProvider):
@@ -236,16 +238,21 @@ class OpenAIProvider(BaseAIProvider):
 
     async def complete(self, messages: List[Dict[str, str]],
                        temperature: float = 0.1,
-                       max_tokens: int = 4000) -> AIResponse:
+                       max_tokens: int = 4000,
+                       response_format: Dict = None) -> AIResponse:
         import time
         start_time = time.time()
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        if response_format:
+            kwargs["response_format"] = response_format
+
+        response = self.client.chat.completions.create(**kwargs)
 
         latency_ms = (time.time() - start_time) * 1000
 
@@ -285,7 +292,8 @@ class AnthropicProvider(BaseAIProvider):
 
     async def complete(self, messages: List[Dict[str, str]],
                        temperature: float = 0.1,
-                       max_tokens: int = 4000) -> AIResponse:
+                       max_tokens: int = 4000,
+                       response_format: Dict = None) -> AIResponse:
         import time
         start_time = time.time()
 
@@ -344,7 +352,8 @@ class GoogleProvider(BaseAIProvider):
 
     async def complete(self, messages: List[Dict[str, str]],
                        temperature: float = 0.1,
-                       max_tokens: int = 4000) -> AIResponse:
+                       max_tokens: int = 4000,
+                       response_format: Dict = None) -> AIResponse:
         import time
         start_time = time.time()
 
@@ -400,16 +409,21 @@ class DeepSeekProvider(BaseAIProvider):
 
     async def complete(self, messages: List[Dict[str, str]],
                        temperature: float = 0.1,
-                       max_tokens: int = 4000) -> AIResponse:
+                       max_tokens: int = 4000,
+                       response_format: Dict = None) -> AIResponse:
         import time
         start_time = time.time()
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        if response_format:
+            kwargs["response_format"] = response_format
+
+        response = self.client.chat.completions.create(**kwargs)
 
         latency_ms = (time.time() - start_time) * 1000
 
@@ -449,7 +463,8 @@ class HuggingFaceProvider(BaseAIProvider):
 
     async def complete(self, messages: List[Dict[str, str]],
                        temperature: float = 0.1,
-                       max_tokens: int = 4000) -> AIResponse:
+                       max_tokens: int = 4000,
+                       response_format: Dict = None) -> AIResponse:
         import time
         start_time = time.time()
 
@@ -509,7 +524,8 @@ class OllamaProvider(BaseAIProvider):
 
     async def complete(self, messages: List[Dict[str, str]],
                        temperature: float = 0.1,
-                       max_tokens: int = 4000) -> AIResponse:
+                       max_tokens: int = 4000,
+                       response_format: Dict = None) -> AIResponse:
         import time
         start_time = time.time()
 
@@ -578,16 +594,21 @@ class LlamaCPPProvider(BaseAIProvider):
 
     async def complete(self, messages: List[Dict[str, str]],
                        temperature: float = 0.1,
-                       max_tokens: int = 4000) -> AIResponse:
+                       max_tokens: int = 4000,
+                       response_format: Dict = None) -> AIResponse:
         import time
         start_time = time.time()
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        if response_format:
+            kwargs["response_format"] = response_format
+
+        response = self.client.chat.completions.create(**kwargs)
 
         latency_ms = (time.time() - start_time) * 1000
 
@@ -635,16 +656,21 @@ class OpenRouterProvider(BaseAIProvider):
 
     async def complete(self, messages: List[Dict[str, str]],
                        temperature: float = 0.1,
-                       max_tokens: int = 4000) -> AIResponse:
+                       max_tokens: int = 4000,
+                       response_format: Dict = None) -> AIResponse:
         import time
         start_time = time.time()
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        if response_format:
+            kwargs["response_format"] = response_format
+
+        response = self.client.chat.completions.create(**kwargs)
 
         latency_ms = (time.time() - start_time) * 1000
 
@@ -688,16 +714,21 @@ class CustomProvider(BaseAIProvider):
 
     async def complete(self, messages: List[Dict[str, str]],
                        temperature: float = 0.1,
-                       max_tokens: int = 4000) -> AIResponse:
+                       max_tokens: int = 4000,
+                       response_format: Dict = None) -> AIResponse:
         import time
         start_time = time.time()
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
+        kwargs = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        if response_format:
+            kwargs["response_format"] = response_format
+
+        response = self.client.chat.completions.create(**kwargs)
 
         latency_ms = (time.time() - start_time) * 1000
 
@@ -902,18 +933,30 @@ Never make up data or statistical values - calculate them from provided informat
     async def complete(self, prompt: str,
                        provider: str = None,
                        task_type: str = "general",
-                       temperature: float = 0.1) -> AIResponse:
+                       temperature: float = 0.1,
+                       force_json: bool = False) -> AIResponse:
         """Send a completion request"""
         prov = self.get_provider(provider)
         if not prov:
             raise ValueError(f"No provider available. Add a provider first.")
 
+        # Build messages
+        system_prompt = prov.format_system_prompt(task_type)
+        if force_json:
+            # OpenAI requires "json" to appear in messages when using json_object mode
+            system_prompt = system_prompt.strip() + " You must respond with valid JSON output."
+
         messages = [
-            {"role": "system", "content": prov.format_system_prompt(task_type)},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt}
         ]
 
-        response = await prov.complete(messages, temperature=temperature)
+        # Use response_format for OpenAI-compatible providers when JSON is forced
+        response_format = None
+        if force_json:
+            response_format = {"type": "json_object"}
+
+        response = await prov.complete(messages, temperature=temperature, response_format=response_format)
 
         # Track usage
         self.usage_tracker.append({
@@ -1671,7 +1714,10 @@ def get_ai_credentials(provider: str) -> Optional[Dict]:
         api_key = keyring.get_password("caatmaster", f"ai_{provider}")
         model = keyring.get_password("caatmaster", f"ai_{provider}_model")
         base_url = keyring.get_password("caatmaster", f"ai_{provider}_base_url")
-        return {"api_key": api_key, "model": model, "base_url": base_url} if api_key else None
+        # Return dict even if api_key is None (for local providers)
+        if api_key or model or base_url:
+            return {"api_key": api_key, "model": model, "base_url": base_url}
+        return None
     else:
         # Special case: default_provider stores just the provider name
         if provider == "default_provider":

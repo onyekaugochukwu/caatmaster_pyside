@@ -11,6 +11,11 @@ from .forecast_dialog import ForecastDialog
 from .split_dialog import SplitColumnDialog
 from .extract_dialog import ExtractDialog
 from .standardize_dialog import StandardizeDialog
+from .financial_ratios_dialog import FinancialRatiosDialog
+from .ifrs9_dialog import IFRS9Dialog
+from .sox_dialog import SoxSodDialog
+from .coso_dialog import CosoDialog
+from .ai_chat_dialog import AIChatDialog, create_ai_chat_dialog
 
 __all__ = [
     'PivotTableDialog',
@@ -24,4 +29,10 @@ __all__ = [
     'SplitColumnDialog',
     'ExtractDialog',
     'StandardizeDialog',
+    'FinancialRatiosDialog',
+    'IFRS9Dialog',
+    'SoxSodDialog',
+    'CosoDialog',
+    'AIChatDialog',
+    'create_ai_chat_dialog',
 ]

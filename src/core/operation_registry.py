@@ -492,6 +492,68 @@ OPERATION_REGISTRY = {
     },
 
     # =========================================================================
+    # FINANCIAL OPERATIONS
+    # =========================================================================
+    "financial_ratios": {
+        "display_name": "Financial Ratios",
+        "type": TransformationStepType.CALCULATE,
+        "category": "financial",
+        "description": "Calculate standard financial ratios (Liquidity, Solvency, Profitability)",
+        "parameter_schema": {
+            "mapping": {"type": "dict", "label": "Column Mapping"},
+            "ratios": {"type": "list", "label": "Selected Ratios"}
+        },
+        "creates_columns": True
+    },
+    
+    # IFRS 9 OPERATIONS
+    "ifrs9_staging": {
+        "display_name": "IFRS 9 Staging",
+        "type": TransformationStepType.CALCULATE,
+        "category": "financial",
+        "description": "Classify loans into Stages 1, 2, 3 based on DPD and calculate ECL",
+        "parameter_schema": {
+            "mapping": {"type": "dict", "label": "Column Mapping"},
+            "thresholds": {"type": "dict", "label": "Staging Thresholds"}
+        },
+        "creates_columns": True
+    },
+
+    # =========================================================================
+    # SOX OPERATIONS
+    # =========================================================================
+    "sox_sod_analysis": {
+        "display_name": "SOX SoD Analysis",
+        "type": TransformationStepType.AUDIT_FLAG,
+        "category": "audit",
+        "description": "Scan transaction logs for Segregation of Duties conflicts",
+        "parameter_schema": {
+            "user_column": {"type": "column", "label": "User ID Column"},
+            "action_column": {"type": "column", "label": "Action/Role Column"},
+            "conflicts": {"type": "list", "label": "Conflict Rules"}
+        },
+        "creates_columns": ["sod_conflict_found", "sod_conflict_detail"],
+        "requires_specific_dialog": True
+    },
+
+    # =========================================================================
+    # COSO OPERATIONS
+    # =========================================================================
+    "coso_risk_heatmap": {
+        "display_name": "COSO Risk Heatmap",
+        "type": TransformationStepType.AGGREGATE,
+        "category": "audit",
+        "description": "Aggregate risk scores by COSO components",
+        "parameter_schema": {
+            "category_column": {"type": "column", "label": "Category Column"},
+            "risk_score_column": {"type": "column", "label": "Risk Score Column"},
+            "mapping": {"type": "dict", "label": "Mapping"}
+        },
+        "creates_columns": False, # Creates summary table
+        "requires_specific_dialog": True
+    },
+
+    # =========================================================================
     # COLUMN OPERATIONS
     # =========================================================================
     "column_rename": {
@@ -1443,6 +1505,52 @@ OPERATION_REGISTRY = {
             "index_column": {"type": "string", "required": False, "default": "index", "label": "Index Column Name"}
         },
         "creates_columns": False  # Creates transposed table
+    },
+
+    # -------------------------------------------------------------------------
+    # PROMOTE ROW AS HEADER
+    # -------------------------------------------------------------------------
+    "promote_row_header": {
+        "display_name": "Use First Row as Headers",
+        "type": TransformationStepType.CALCULATE,
+        "category": "table",
+        "description": "Promotes the first row to become column headers (removes that row from data)",
+        "parameter_schema": {
+            "row_index": {"type": "int", "required": False, "default": 0, "label": "Row Number to Use as Header", "min": 0}
+        },
+        "creates_columns": False  # Renames columns
+    },
+
+    # -------------------------------------------------------------------------
+    # REMOVE ROWS
+    # -------------------------------------------------------------------------
+    "remove_rows": {
+        "display_name": "Remove Rows",
+        "type": TransformationStepType.FILTER,
+        "category": "table",
+        "description": "Remove or keep specific rows by their row numbers",
+        "parameter_schema": {
+            "row_indices": {"type": "list[int]", "required": True, "label": "Row Indices (0-based)", "placeholder": "e.g., 0, 1, 5"},
+            "remove": {"type": "bool", "required": False, "default": True, "label": "Remove These Rows (uncheck to Keep Only)"}
+        },
+        "creates_columns": False  # Filters rows
+    },
+
+    # -------------------------------------------------------------------------
+    # FILTER ROWS
+    # -------------------------------------------------------------------------
+    "filter_rows": {
+        "display_name": "Filter Rows",
+        "type": TransformationStepType.FILTER,
+        "category": "table",
+        "description": "Filter rows based on a column value",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "operator": {"type": "string", "required": True, "label": "Operator",
+                        "options": ["==", "!=", ">", "<", ">=", "<=", "contains", "starts_with", "ends_with", "is_null", "is_not_null"]},
+            "value": {"type": "string", "required": False, "label": "Value"}
+        },
+        "creates_columns": False  # Filters rows
     },
 
     # -------------------------------------------------------------------------

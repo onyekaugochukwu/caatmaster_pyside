@@ -584,6 +584,10 @@ class SQLTransformView(QWidget):
         if self.duckdb_conn is None:
             self.duckdb_conn = duckdb.connect(database=':memory:')
 
+        # DuckDB requires at least one column to register a table
+        if df is None or len(df.columns) == 0:
+            return
+
         # Register the Polars DataFrame directly with DuckDB using the provided table name
         self.duckdb_conn.register(table_name, df)
         self.registered_tables[table_name] = df
@@ -592,7 +596,8 @@ class SQLTransformView(QWidget):
         for col in df.columns:
             # Create a Polars DataFrame with just this column
             col_df = df.select(pl.col(col))
-            self.duckdb_conn.register(f'col_{col}', col_df)
+            if len(col_df.columns) > 0:
+                self.duckdb_conn.register(f'col_{col}', col_df)
 
     @Slot()
     def execute_query(self):

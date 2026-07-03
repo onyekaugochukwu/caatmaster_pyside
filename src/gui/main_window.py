@@ -226,6 +226,7 @@ class MainWindow(QMainWindow):
         self.sidebar.project_edit_requested.connect(self.edit_current_project)
         self.sidebar.project_delete_requested.connect(self.delete_current_project)
         self.sidebar.toggle_ai_panel.connect(self.toggle_ai_panel)
+        self.sidebar.ai_chat_requested.connect(self._on_ai_chat_requested)
         middle_layout.addWidget(self.sidebar)
 
         # Content area (right side) - Light mode
@@ -576,6 +577,19 @@ class MainWindow(QMainWindow):
         settings_view = self.views.get("settings")
         if settings_view and hasattr(settings_view, 'refresh_ai_info'):
             settings_view.refresh_ai_info()
+
+    @Slot()
+    def _on_ai_chat_requested(self):
+        """Open AI Chat dialog"""
+        from gui.dialogs.ai_chat_dialog import AIChatDialog
+
+        # Get current dataframe if available
+        current_df = None
+        if self.current_dataset:
+            current_df = self.current_dataset.get_current_dataframe()
+
+        dialog = AIChatDialog(current_df, self)
+        dialog.exec()
 
     def _on_column_applied(self, data: dict):
         """Handle when a column is applied"""

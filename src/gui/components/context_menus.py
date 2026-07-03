@@ -66,6 +66,9 @@ class ColumnContextMenu(QMenu):
         # === STANDARDIZE (Statistics) ===
         self._add_standardize_section()
 
+        # === FINANCIAL ===
+        self._add_financial_section()
+
         self.addSeparator()
 
         # === ML ANALYSIS ===
@@ -370,6 +373,26 @@ class ColumnContextMenu(QMenu):
 
         self.addMenu(stats_menu)
 
+    def _add_financial_section(self):
+        """Add Financial analysis submenu"""
+        fin_menu = self._create_submenu("Financial", "money")
+        
+        ratio_action = QAction("Financial Ratios", self)
+        ratio_action.setToolTip("Calculate liquidity, solvency, profitability ratios")
+        ratio_action.triggered.connect(
+            lambda: self._emit_transform("financial_ratios")
+        )
+        fin_menu.addAction(ratio_action)
+        
+        ifrs_action = QAction("IFRS 9 Staging", self)
+        ifrs_action.setToolTip("Loan staging and ECL calculation")
+        ifrs_action.triggered.connect(
+            lambda: self._emit_transform("ifrs9_staging")
+        )
+        fin_menu.addAction(ifrs_action)
+        
+        self.addMenu(fin_menu)
+
     def _add_ml_section(self):
         """Add ML analysis submenu - organized by category"""
         ml_menu = self._create_submenu("ML Analysis", "chart")
@@ -473,6 +496,8 @@ class ColumnContextMenu(QMenu):
         audit_menu = self._create_submenu("Audit", "shield")
         audit_ops = [
             ("Benford's Law Analysis", "audit_benfords_law", "Digit distribution analysis"),
+            ("SOX SoD Scanner", "sox_sod_analysis", "Scan for Segregation of Duties conflicts"),
+            ("COSO Risk Heatmap", "coso_risk_heatmap", "Aggregate risk by COSO component"),
         ]
         for label, op, desc in audit_ops:
             action = QAction(label, self)

@@ -34,6 +34,11 @@ from .summary_dialogs import (
     SamplingDialog, CrossTabulationDialog, TrendAnalysisDialog
 )
 from .split_columns_dialog import SplitColumnsDialog
+from .financial_ratios_dialog import FinancialRatiosDialog
+from .ifrs9_dialog import IFRS9Dialog
+from .sox_dialog import SoxSodDialog
+from .coso_dialog import CosoDialog
+from .promote_row_header_dialog import PromoteRowHeaderDialog
 
 # Import polars for type hints
 import polars as pl
@@ -54,6 +59,14 @@ class TransformationDialogFactory:
 
         # Filter operations
         'filter_advanced': FilterDialog,
+
+        # Financial Operations
+        'financial_ratios': FinancialRatiosDialog,
+        'ifrs9_staging': IFRS9Dialog,
+        
+        # SOX/COSO Operations
+        'sox_sod_analysis': SoxSodDialog,
+        'coso_risk_heatmap': CosoDialog,
 
         # ML Operations
         'ml_anomaly_iforest': AnomalyDetectionDialog,
@@ -112,6 +125,7 @@ class TransformationDialogFactory:
         # Table operations
         # Note: split_sheet is NOT here - it creates multiple datasets and is triggered from sidebar
         'transpose': TransposeDialog,
+        'promote_row_header': PromoteRowHeaderDialog,
         'combine_sheets': CombineSheetsDialog,
         'query_sheet': QuerySheetDialog,
         'select_n_rows': SelectNRowsDialog,

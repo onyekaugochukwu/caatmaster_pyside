@@ -785,12 +785,62 @@ class AISettingsDialog(QDialog):
 
         print(f"Saving AI configs: {saved_providers}")
 
+        # Refresh the active provider combo
+        self._refresh_active_providers(saved_providers)
+
         self.settingsChanged.emit()
         self.accept()
 
+    def _refresh_active_providers(self, just_saved_providers=None):
+        """Refresh the active provider combo box"""
+        from src.services.ai_service import get_ai_credentials, AIProviderFactory
+
+        self.active_provider_combo.clear()
+
+        # Get default provider
+        default_creds = get_ai_credentials("default_provider")
+        default_provider = default_creds.get("api_key") if default_creds else None
+        if not default_provider and self.ai_manager:
+            default_provider = self.ai_manager.default_provider
+
+        # Collect all providers (standard + custom)
+        all_providers = set(self.provider_widgets.keys())
+
+        # Check if custom provider was saved
+        if self.custom_provider_widget:
+            custom_config = self.custom_provider_widget.get_config()
+            if custom_config.get("base_url") and custom_config.get("model"):
+                all_providers.add(custom_config["provider"])
+
+        # Add all configured providers to the combo
+        for provider in all_providers:
+            config = None
+            # Get config from widget if it exists
+            if provider in self.provider_widgets:
+                config = self.provider_widgets[provider].get_config()
+            # Or check credentials
+            if config is None:
+                creds = get_ai_credentials(provider)
+                if creds:
+                    config = creds
+
+            if config:
+                has_key = config.get("api_key") or AIProviderFactory.is_local_provider(provider)
+                if has_key:
+                    display_name = AIProviderFactory.get_display_name(provider)
+                    self.active_provider_combo.addItem(display_name, provider)
+
+        # Try to set the active provider
+        if default_provider:
+            idx = self.active_provider_combo.findData(default_provider)
+            if idx >= 0:
+                self.active_provider_combo.setCurrentIndex(idx)
+        elif self.active_provider_combo.count() > 0:
+            self.active_provider_combo.setCurrentIndex(0)
+
     def load_settings(self):
         """Load saved configurations"""
-        from src.services.ai_service import get_ai_credentials, AIProviderFactory
+        from src.services.ai_service import get_ai_credentials
 
         all_providers = list(self.provider_widgets.keys())
 
@@ -806,32 +856,8 @@ class AISettingsDialog(QDialog):
                     "base_url": creds.get("base_url", "")
                 })
 
-        # Populate active provider combo with saved providers
-        self.active_provider_combo.clear()
-
-        # Get default provider
-        default_creds = get_ai_credentials("default_provider")
-        default_provider = default_creds.get("api_key") if default_creds else None
-        if not default_provider and self.ai_manager:
-            default_provider = self.ai_manager.default_provider
-
-        # Add all providers with configurations to the combo
-        for provider in all_providers:
-            widget = self.provider_widgets[provider]
-            config = widget.get_config()
-            # Include if API key present OR it's a local provider
-            if config["api_key"] or AIProviderFactory.is_local_provider(provider):
-                display_name = AIProviderFactory.get_display_name(provider)
-                self.active_provider_combo.addItem(display_name, provider)
-
-        # Try to set the active provider
-        if default_provider:
-            idx = self.active_provider_combo.findData(default_provider)
-            if idx >= 0:
-                self.active_provider_combo.setCurrentIndex(idx)
-        elif self.active_provider_combo.count() > 0:
-            # Default to first provider
-            self.active_provider_combo.setCurrentIndex(0)
+        # Populate active provider combo using shared method
+        self._refresh_active_providers()
 
     def update_usage_display(self, usage: Dict):
         """Update usage display"""

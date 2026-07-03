@@ -271,6 +271,7 @@ class TransformView(QWidget):
             'column': 'Column',
             'table': 'Table',
             'statistics': 'Statistics',
+            'financial': 'Financial',
             'audit': 'Audit',
             'ml': 'Machine Learning',
             'ai': 'AI',
@@ -303,6 +304,9 @@ class TransformView(QWidget):
             # For ml category, create sub-submenus for Supervised, Unsupervised, Time Series, etc.
             elif category_key == 'ml':
                 self._add_ml_submenu(category_menu, grouped_ops[category_key], column_name)
+            # For financial category
+            elif category_key == 'financial':
+                self._add_financial_submenu(category_menu, grouped_ops[category_key], column_name)
             else:
                 # For other categories, just list operations directly
                 for op_id, op_data in sorted(grouped_ops[category_key], key=lambda x: x[1]['display_name']):
@@ -517,7 +521,8 @@ class TransformView(QWidget):
         split_ops = []  # split_sheet
         combine_ops = []  # combine_sheets, append_datasets
         join_ops = []  # join_datasets
-        transform_ops = []  # transpose, select_n_rows, query_sheet
+        transform_ops = []  # transpose, select_n_rows, query_sheet, promote_row_header
+        filter_ops = []  # remove_rows, filter_rows
         other_ops = []
 
         for op_id, op_data in operations:
@@ -528,6 +533,8 @@ class TransformView(QWidget):
             elif 'join' in op_id.lower():
                 join_ops.append((op_id, op_data))
             elif 'transpose' in op_id.lower() or 'select' in op_id.lower() or 'query' in op_id.lower():
+                transform_ops.append((op_id, op_data))
+            elif 'promote' in op_id.lower() or 'remove_rows' in op_id or 'filter_rows' in op_id:
                 transform_ops.append((op_id, op_data))
             else:
                 other_ops.append((op_id, op_data))
@@ -575,6 +582,14 @@ class TransformView(QWidget):
                 lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
             )
 
+    def _add_financial_submenu(self, parent_menu, operations, column_name):
+        """Add financial operations"""
+        for op_id, op_data in operations:
+            action = parent_menu.addAction(op_data['display_name'])
+            action.triggered.connect(
+                lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+            )
+            
     def _add_ml_submenu(self, parent_menu, operations, column_name):
         """Add ML operations with sub-submenus organized by category"""
         # Operations to exclude from the menu (no-ops or duplicates)

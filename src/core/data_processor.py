@@ -370,6 +370,33 @@ class DataProcessor:
         elif operation_id == 'ml_train':
             return self._call_mapped_method(self.ml_train_model, df, params)
 
+        # Financial operations
+        elif operation_id == 'financial_ratios':
+            return self.financial_ratios(
+                df, 
+                params.get('mapping', {}), 
+                params.get('ratios', []),
+                **{k: v for k, v in params.items() if k not in ['mapping', 'ratios']}
+            )
+        elif operation_id == 'ifrs9_staging':
+            return self.ifrs9_staging(df, params.get('mapping', {}), params.get('thresholds', {}))
+            
+        # SOX operations
+        elif operation_id == 'sox_sod_analysis':
+            return self.sox_sod_analysis(
+                df, 
+                params.get('user_column'), 
+                params.get('action_column'),
+                params.get('conflicts', [])
+            )
+        elif operation_id == 'coso_risk_heatmap':
+            return self.coso_risk_heatmap(
+                df,
+                params.get('category_column'),
+                params.get('risk_score_column'),
+                params.get('mapping', {})
+            )
+
         # Audit transformations
         elif operation_id == 'audit_benfords_law':
             return self._call_mapped_method(self.audit_benford_law, df, params)
@@ -477,6 +504,17 @@ class DataProcessor:
             return self._call_mapped_method(self.split_alphanumeric, df, params)
         elif operation_id == 'transpose':
             return self._call_mapped_method(self.transpose_table, df, params)
+        elif operation_id == 'promote_row_header':
+            return self.promote_row_as_header(df, params.get('row_index', 0))
+        elif operation_id == 'remove_rows':
+            return self.remove_rows(df, params.get('row_indices', []), params.get('remove', True))
+        elif operation_id == 'filter_rows':
+            return self.filter_rows_by_value(
+                df,
+                params.get('column'),
+                params.get('operator'),
+                params.get('value')
+            )
         elif operation_id == 'join_datasets':
             return self._call_mapped_method(self.join_datasets, df, params)
         elif operation_id == 'append_datasets':
@@ -945,6 +983,68 @@ class DataProcessor:
         print(f"Model saved to: {model_path}")
 
         return df  # Return unchanged dataframe
+
+    # ============================================================================
+    # FINANCIAL TRANSFORMATION IMPLEMENTATIONS
+    # ============================================================================
+
+    def financial_ratios(self, df: pl.DataFrame, mapping: Dict[str, str], ratios: List[str], **kwargs) -> pl.DataFrame:
+        """Calculate financial ratios and advanced analysis"""
+        from services.financial_service import FinancialService
+        service = FinancialService()
+
+        # Check for multi-dataset mode
+        dataset_mapping = kwargs.get('dataset_mapping', {})
+        all_datasets = kwargs.get('all_datasets', {})
+
+        # 1. Standard Ratios - use multi-dataset if dataset_mapping provided
+        if ratios:
+            if dataset_mapping and all_datasets:
+                # Multi-dataset mode
+                df = service.calculate_ratios_multi_dataset(
+                    df, mapping, dataset_mapping, all_datasets, ratios
+                )
+            else:
+                # Single dataset mode
+                df = service.calculate_ratios(df, mapping, ratios)
+
+        # 2. Altman Z-Score
+        if kwargs.get('do_altman_z'):
+            df = service.calculate_altman_z_score(
+                df, mapping, is_public=kwargs.get('is_public', False)
+            )
+
+        # 3. Vertical Analysis
+        v_base = kwargs.get('vertical_base')
+        v_cols = kwargs.get('vertical_cols', [])
+        if v_base and v_cols:
+            df = service.calculate_vertical_analysis(df, v_base, v_cols)
+
+        # 4. Horizontal Analysis
+        h_period = kwargs.get('horizontal_period')
+        h_cols = kwargs.get('horizontal_cols', [])
+        if h_period and h_cols:
+            df = service.calculate_horizontal_analysis(df, h_period, h_cols)
+
+        return df
+        
+    def ifrs9_staging(self, df: pl.DataFrame, mapping: Dict[str, str], thresholds: Dict[str, int]) -> pl.DataFrame:
+        """Perform IFRS 9 Staging"""
+        from services.ifrs9_service import IFRS9Service
+        service = IFRS9Service()
+        return service.perform_staging(df, mapping, thresholds)
+
+    def sox_sod_analysis(self, df: pl.DataFrame, user_col: str, action_col: str, conflicts: List[Dict]) -> pl.DataFrame:
+        """Perform SOX SoD Analysis"""
+        from services.sox_service import SoxService
+        service = SoxService()
+        return service.analyze_sod_conflicts(df, user_col, action_col, conflicts)
+
+    def coso_risk_heatmap(self, df: pl.DataFrame, category_col: str, risk_score_col: str, mapping: Dict[str, str]) -> pl.DataFrame:
+        """Generate COSO Risk Heatmap"""
+        from services.coso_service import CosoService
+        service = CosoService()
+        return service.generate_risk_heatmap(df, category_col, risk_score_col, mapping)
 
     # ============================================================================
     # AUDIT TRANSFORMATION IMPLEMENTATIONS
@@ -2006,6 +2106,118 @@ class DataProcessor:
             )
         return df.select(columns_to_transpose).transpose(include_header=False)
 
+    def promote_row_as_header(self, df: pl.DataFrame, row_index: int = 0) -> pl.DataFrame:
+        """
+        Promote a specific row to become the column headers.
+
+        Args:
+            df: Input DataFrame
+            row_index: The 0-based index of the row to use as headers
+
+        Returns:
+            DataFrame with the specified row as column names
+        """
+        if row_index >= len(df):
+            raise ValueError(f"Row index {row_index} is out of range (dataframe has {len(df)} rows)")
+
+        # Get the row to use as header
+        row = df.row(row_index)
+        new_headers = []
+        seen = {}
+        for i, h in enumerate(row):
+            h_str = str(h).strip() if h is not None else f"col_{i}"
+            # Handle duplicates by appending a suffix
+            if h_str in seen:
+                seen[h_str] += 1
+                h_str = f"{h_str}_{seen[h_str]}"
+            else:
+                seen[h_str] = 0
+            new_headers.append(h_str)
+
+        # Remove the header row and return with new column names
+        return df[row_index+1:].rename(dict(zip(df.columns, new_headers)))
+
+    def remove_rows(self, df: pl.DataFrame, row_indices: List[int], remove: bool = True) -> pl.DataFrame:
+        """
+        Remove or keep specific rows by index.
+
+        Args:
+            df: Input DataFrame
+            row_indices: List of row indices to remove or keep
+            remove: If True, remove the specified rows. If False, keep only the specified rows.
+
+        Returns:
+            DataFrame with rows removed or filtered
+        """
+        if not row_indices:
+            return df
+
+        # Convert to set for fast lookup
+        indices_set = set(row_indices)
+
+        # Get all valid indices
+        all_indices = set(range(len(df)))
+
+        if remove:
+            # Remove specified indices
+            keep_indices = all_indices - indices_set
+        else:
+            # Keep only specified indices
+            keep_indices = indices_set
+
+        # Filter dataframe
+        if not keep_indices:
+            return df.clear()
+
+        # Use lazy evaluation for better performance
+        return df.filter(pl.int_range(0, len(df)).is_in(list(keep_indices)))
+
+    def filter_rows_by_value(self, df: pl.DataFrame, column: str, operator: str, value: Any) -> pl.DataFrame:
+        """
+        Filter rows based on a column value.
+
+        Args:
+            df: Input DataFrame
+            column: Column to filter on
+            operator: One of '==', '!=', '>', '<', '>=', '<=', 'contains', 'starts_with', 'ends_with'
+            value: Value to compare against
+
+        Returns:
+            Filtered DataFrame
+        """
+        if column not in df.columns:
+            raise ValueError(f"Column '{column}' not found in dataframe")
+
+        col = pl.col(column)
+
+        # Handle different operators
+        if operator == "==":
+            expr = col == value
+        elif operator == "!=":
+            expr = col != value
+        elif operator == ">":
+            expr = col > value
+        elif operator == "<":
+            expr = col < value
+        elif operator == ">=":
+            expr = col >= value
+        elif operator == "<=":
+            expr = col <= value
+        elif operator == "contains":
+            expr = col.str.contains(value, literal=False)
+        elif operator == "starts_with":
+            expr = col.str.starts_with(value)
+        elif operator == "ends_with":
+            expr = col.str.ends_with(value)
+        elif operator == "is_null":
+            expr = col.is_null()
+        elif operator == "is_not_null":
+            expr = col.is_not_null()
+        else:
+            raise ValueError(f"Unknown operator: {operator}")
+
+        return df.filter(expr)
+
     def join_datasets(self, left_df: pl.DataFrame, right_df: pl.DataFrame, left_key: str, right_key: str, join_type: str = "left", suffix: str = "_right") -> pl.DataFrame:
         """Join two datasets by a key column"""
         if left_df is None:
@@ -2631,24 +2843,113 @@ class LegacyDataProcessor:
 
     def read_file(self, file_path: str, sheet_name: str = None) -> pl.DataFrame:
         """Read various file formats using Polars"""
-        file_path = Path(file_path)
-        file_extension = file_path.suffix.lower()
+        file_path_obj = Path(file_path)
+        file_extension = file_path_obj.suffix.lower()
 
         if file_extension == '.csv':
-            return pl.read_csv(file_path)
+            return pl.read_csv(file_path_obj)
         elif file_extension in ['.xlsx', '.xls']:
+            import io
+            # Read file into memory to avoid path-handling issues in lower-level engines
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+            
+            df = None
             try:
+                # Try Polars with default engine first
                 if sheet_name:
-                    return pl.read_excel(file_path, sheet_name=sheet_name)
+                    df = pl.read_excel(io.BytesIO(file_content), sheet_name=sheet_name)
                 else:
-                    return pl.read_excel(file_path)
+                    df = pl.read_excel(io.BytesIO(file_content))
+                
+                if df is not None and len(df.columns) == 0:
+                    df = None
             except Exception:
+                df = None
+            
+            if df is None:
                 import pandas as pd
-                if sheet_name:
-                    df_pandas = pd.read_excel(file_path, sheet_name=sheet_name)
+                # Use xlrd for .xls files (xlrd 2+ doesn't support .xls)
+                if file_extension == '.xls':
+                    try:
+                        import xlrd
+                        # xlrd 1.x works directly with file path
+                        wb = xlrd.open_workbook(file_path)
+                        sheet_names = wb.sheet_names()
+
+                        # Determine which sheet to read
+                        if sheet_name and sheet_name in sheet_names:
+                            sheet_idx = sheet_names.index(sheet_name)
+                        else:
+                            sheet_idx = 0
+
+                        sheet = wb.sheet_by_index(sheet_idx)
+
+                        # Convert xlrd sheet to pandas DataFrame
+                        data = []
+                        for row_idx in range(sheet.nrows):
+                            row_data = []
+                            for col_idx in range(sheet.ncols):
+                                cell = sheet.cell(row_idx, col_idx)
+                                cell_value = cell.value
+                                # Convert xlrd cell types to Python types
+                                if cell.ctype == xlrd.XL_CELL_EMPTY:
+                                    cell_value = None
+                                elif cell.ctype == xlrd.XL_CELL_NUMBER:
+                                    # Convert to int if whole number, else keep as float
+                                    if cell_value == int(cell_value):
+                                        cell_value = int(cell_value)
+                                    cell_value = str(cell_value)
+                                elif cell.ctype == xlrd.XL_CELL_DATE:
+                                    # Convert Excel date to Python datetime
+                                    try:
+                                        date_tuple = xlrd.xldate_as_tuple(cell_value, wb.datemode)
+                                        cell_value = datetime.date(date_tuple[0], date_tuple[1], date_tuple[2]).isoformat()
+                                    except:
+                                        cell_value = str(cell_value)
+                                elif cell.ctype == xlrd.XL_CELL_BOOLEAN:
+                                    cell_value = bool(cell_value)
+                                else:
+                                    cell_value = str(cell_value) if cell_value else None
+                                row_data.append(cell_value)
+                            data.append(row_data)
+
+                        # Get column names from first row if available
+                        # Generate unique column names if first row has duplicates/empty values
+                        if sheet.nrows > 0:
+                            columns = data[0].copy()
+                            # Check if columns are valid (unique, non-empty strings)
+                            has_issues = False
+                            seen = set()
+                            for col in columns:
+                                if not isinstance(col, str) or not col.strip() or col in seen:
+                                    has_issues = True
+                                    break
+                                seen.add(col)
+
+                            if has_issues or len(data) <= 1:
+                                # Generate generic column names
+                                columns = [f'Column_{i+1}' for i in range(sheet.ncols)]
+                                df_pandas = pd.DataFrame(data, columns=columns)
+                            else:
+                                df_pandas = pd.DataFrame(data[1:], columns=columns)
+                        else:
+                            df_pandas = pd.DataFrame()
+                    except Exception as e:
+                        raise ValueError(f"Failed to read .xls file: {str(e)}")
                 else:
-                    df_pandas = pd.read_excel(file_path)
+                    # openpyxl for .xlsx
+                    try:
+                        df_pandas = pd.read_excel(
+                            io.BytesIO(file_content),
+                            sheet_name=sheet_name,
+                            engine='openpyxl'
+                        )
+                    except Exception as e:
+                        raise ValueError(f"Failed to read .xlsx file with openpyxl: {str(e)}")
+
                 return pl.from_pandas(df_pandas)
+            return df
         elif file_extension == '.json':
             return pl.read_json(file_path)
         elif file_extension == '.parquet':
@@ -2659,9 +2960,19 @@ class LegacyDataProcessor:
     def get_excel_sheets(self, file_path: str) -> List[str]:
         """Get list of available sheets in Excel file"""
         try:
-            import pandas as pd
-            excel_file = pd.ExcelFile(file_path)
-            return excel_file.sheet_names
+            # Use xlrd for .xls files (xlrd 2+ doesn't support .xls)
+            if file_path.endswith('.xls'):
+                import xlrd
+                wb = xlrd.open_workbook(file_path)
+                return wb.sheet_names()
+            else:
+                # openpyxl for .xlsx files
+                import pandas as pd
+                import io
+                with open(file_path, 'rb') as f:
+                    file_content = f.read()
+                excel_file = pd.ExcelFile(io.BytesIO(file_content), engine='openpyxl')
+                return excel_file.sheet_names
         except Exception as e:
             raise ValueError(f"Error reading Excel file: {str(e)}")
 
@@ -3450,3 +3761,119 @@ class LegacyDataProcessor:
     def pivot_table_legacy(self, df: pl.DataFrame, index: List[str], columns: str, values: str, aggregate: str = 'first') -> pl.DataFrame:
         """Create pivot table"""
         return df.pivot(values=values, index=index, columns=columns, aggregate_function=aggregate)
+
+    # =========================================================================
+    # TABLE STRUCTURE OPERATIONS
+    # =========================================================================
+
+    def promote_row_as_header(self, df: pl.DataFrame, row_index: int = 0) -> pl.DataFrame:
+        """
+        Promote a specific row to become the column headers.
+
+        Args:
+            df: Input DataFrame
+            row_index: The 0-based index of the row to use as headers
+
+        Returns:
+            DataFrame with the specified row as column names
+        """
+        if row_index >= len(df):
+            raise ValueError(f"Row index {row_index} is out of range (dataframe has {len(df)} rows)")
+
+        # Get the row to use as header
+        row = df.row(row_index)
+        new_headers = []
+        seen = {}
+        for i, h in enumerate(row):
+            h_str = str(h).strip() if h is not None else f"col_{i}"
+            # Handle duplicates by appending a suffix
+            if h_str in seen:
+                seen[h_str] += 1
+                h_str = f"{h_str}_{seen[h_str]}"
+            else:
+                seen[h_str] = 0
+            new_headers.append(h_str)
+
+        # Remove the header row and return with new column names
+        return df[row_index+1:].rename(dict(zip(df.columns, new_headers)))
+
+    def remove_rows(self, df: pl.DataFrame, row_indices: List[int], remove: bool = True) -> pl.DataFrame:
+        """
+        Remove or keep specific rows by index.
+
+        Args:
+            df: Input DataFrame
+            row_indices: List of row indices to remove or keep
+            remove: If True, remove the specified rows. If False, keep only the specified rows.
+
+        Returns:
+            DataFrame with rows removed or filtered
+        """
+        if not row_indices:
+            return df
+
+        # Convert to set for fast lookup
+        indices_set = set(row_indices)
+
+        # Get all valid indices
+        all_indices = set(range(len(df)))
+
+        if remove:
+            # Remove specified indices
+            keep_indices = all_indices - indices_set
+        else:
+            # Keep only specified indices
+            keep_indices = indices_set
+
+        # Filter dataframe
+        if not keep_indices:
+            return df.clear()
+
+        # Use lazy evaluation for better performance
+        return df.filter(pl.int_range(0, len(df)).is_in(list(keep_indices)))
+
+    def filter_rows_by_value(self, df: pl.DataFrame, column: str, operator: str, value: Any) -> pl.DataFrame:
+        """
+        Filter rows based on a column value.
+
+        Args:
+            df: Input DataFrame
+            column: Column to filter on
+            operator: One of '==', '!=', '>', '<', '>=', '<=', 'contains', 'starts_with', 'ends_with'
+            value: Value to compare against
+
+        Returns:
+            Filtered DataFrame
+        """
+        if column not in df.columns:
+            raise ValueError(f"Column '{column}' not found in dataframe")
+
+        col = pl.col(column)
+
+        # Handle different operators
+        if operator == "==":
+            expr = col == value
+        elif operator == "!=":
+            expr = col != value
+        elif operator == ">":
+            expr = col > value
+        elif operator == "<":
+            expr = col < value
+        elif operator == ">=":
+            expr = col >= value
+        elif operator == "<=":
+            expr = col <= value
+        elif operator == "contains":
+            expr = col.str.contains(value, literal=False)
+        elif operator == "starts_with":
+            expr = col.str.starts_with(value)
+        elif operator == "ends_with":
+            expr = col.str.ends_with(value)
+        elif operator == "is_null":
+            expr = col.is_null()
+        elif operator == "is_not_null":
+            expr = col.is_not_null()
+        else:
+            raise ValueError(f"Unknown operator: {operator}")
+
+        return df.filter(expr)

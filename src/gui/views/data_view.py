@@ -157,6 +157,11 @@ class DataView(QWidget):
 
             # Load the data
             df = self.data_processor.read_file(file_path, sheet_name)
+            
+            if df is None or len(df.columns) == 0:
+                QMessageBox.warning(self, "Empty Data", "The selected file/sheet contains no columns or data.")
+                return
+
             self.current_dataframe = df
 
             # Get file name for default dataset name
