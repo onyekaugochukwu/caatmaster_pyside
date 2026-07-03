@@ -206,6 +206,17 @@ class MainWindow(QMainWindow):
 
         middle_layout.addWidget(content_area, 1)
 
+        # Applied Steps panel — persistent across every data-workspace page
+        # (Data, Transform, SQL, Visualizations, Reports, Query), the same
+        # way Power Query's Applied Steps pane never disappears just because
+        # you're on a different ribbon tab. Visibility is toggled in
+        # on_navigation_requested(); TransformView renders into this shared
+        # instance regardless of which page is currently on screen.
+        from gui.components.applied_steps_panel import AppliedStepsPanel
+        self.applied_steps_panel = AppliedStepsPanel()
+        self.applied_steps_panel.setVisible(False)
+        middle_layout.addWidget(self.applied_steps_panel)
+
         # AI Panel (right sidebar) - initially hidden
         self.ai_panel = AIPanel()
         self.ai_panel.setFixedWidth(320)
@@ -693,7 +704,7 @@ class MainWindow(QMainWindow):
         self.views = {
             "dashboard": DashboardView(),
             "data": DataView(),
-            "transform": TransformView(),
+            "transform": TransformView(applied_steps_panel=self.applied_steps_panel),
             "sql": SQLTransformView(),
             "analyze": AnalyzeView(),
             "visualizations": VisualizationsView(),
@@ -732,6 +743,7 @@ class MainWindow(QMainWindow):
         data_view.dataset_added.connect(lambda d: self.views["dashboard"].refresh() if "dashboard" in self.views else None)
         data_view.show_transform_requested.connect(self._on_show_transform_after_upload)
         transform_view.pipelineChanged.connect(self._on_pipeline_changed)
+        transform_view.dataChanged.connect(self._on_transform_data_changed)
         sql_view.applyToPipelineRequested.connect(self._on_sql_apply_to_pipeline)
 
         # Set project on data_view
@@ -747,6 +759,24 @@ class MainWindow(QMainWindow):
 
         # Set a default view
         self.content_stack.setCurrentWidget(self.views["dashboard"])
+
+        # Belt-and-suspenders: keep the Applied Steps panel's visibility in
+        # sync with whatever page is actually showing, no matter which of
+        # the many navigation code paths switched it (not just the ones that
+        # go through on_navigation_requested).
+        self.content_stack.currentChanged.connect(self._sync_applied_steps_panel_visibility)
+        self._sync_applied_steps_panel_visibility(self.content_stack.currentIndex())
+
+    def _sync_applied_steps_panel_visibility(self, index: int):
+        """Show the Applied Steps panel only on data-workspace pages."""
+        current_widget = self.content_stack.widget(index)
+        view_name = next((name for name, w in self.views.items() if w is current_widget), None)
+        self.applied_steps_panel.setVisible(view_name in self.PIPELINE_VIEWS)
+
+    # Data-workspace pages where the Applied Steps panel stays pinned —
+    # anywhere you're actively working with a dataset's pipeline. Hidden on
+    # Dashboard/Projects/Settings/ML Models, which have no dataset context.
+    PIPELINE_VIEWS = {"data", "transform", "sql", "visualizations", "reports", "query"}
 
     @Slot(str)
     def on_navigation_requested(self, view_name):
@@ -766,6 +796,8 @@ class MainWindow(QMainWindow):
             elif view_name in no_ribbon_views:
                 self.ribbon_bar.setVisible(False)
 
+            self.applied_steps_panel.setVisible(view_name in self.PIPELINE_VIEWS)
+
             display_name = view_name.replace("_", " ").title()
             self.statusBar().showMessage(f"Navigated to {display_name}")
         elif view_name == "upload":
@@ -773,6 +805,7 @@ class MainWindow(QMainWindow):
             self.content_stack.setCurrentWidget(self.views["data"])
             self.sidebar.set_active_button("data")
             self.ribbon_bar.setVisible(True)
+            self.applied_steps_panel.setVisible(True)
             data_view = self.views.get("data")
             if data_view and hasattr(data_view, "show_import_dialog"):
                 data_view.show_import_dialog()
@@ -906,7 +939,7 @@ class MainWindow(QMainWindow):
             # Clear the table
             transform_view.populate_table(None)
             # Clear the steps list
-            transform_view.steps_list_widget.clear()
+            transform_view.steps_panel.set_pipeline(None)
             # Update the info label
             transform_view.info_label.setText("No data loaded. Select or import a dataset to begin.")
             transform_view.pipeline = None
@@ -1200,6 +1233,29 @@ class MainWindow(QMainWindow):
         if self.current_dataset and pipeline:
             self.current_dataset.set_pipeline(pipeline)
             self.statusBar().showMessage(f"Transformations saved to dataset: {self.current_dataset.name}")
+
+    @Slot(object)
+    def _on_transform_data_changed(self, df):
+        """Keep SQL/Visualizations/Reports/Query in sync whenever the active
+        dataset's data changes from the Transform page (apply/undo/toggle/
+        clear a step) — otherwise those pages silently show stale data once
+        the Applied Steps panel became reachable from every page, not just
+        Transform."""
+        viz_view = self.views.get("visualizations")
+        query_view = self.views.get("query")
+        reports_view = self.views.get("reports")
+        sql_view = self.views.get("sql")
+
+        if viz_view:
+            viz_view.set_dataframe(df)
+        if query_view:
+            query_view.set_dataframe(df)
+        if reports_view:
+            reports_view.set_dataframe(df)
+        if sql_view and self.current_dataset:
+            # Re-register only this dataset's table — preserves any other
+            # datasets checked for a cross-dataset Model Query.
+            sql_view.refresh_dataset(self.current_dataset.name, df)
 
     @Slot(str, str)
     def _on_sql_apply_to_pipeline(self, query: str, table_name: str):

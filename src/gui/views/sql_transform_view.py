@@ -555,6 +555,15 @@ class SQLTransformView(QWidget):
         self.duckdb_conn.register(table_name, df)
         self.registered_tables[table_name] = df
 
+    def refresh_dataset(self, dataset_name: str, df: pl.DataFrame):
+        """Re-register one dataset's table with updated data (e.g. after a
+        transformation step changes it elsewhere) without touching any other
+        registered table — keeps Model Query cross-dataset joins intact."""
+        table_name = self._sanitize_table_name(dataset_name)
+        self._register_dataset_table(table_name, df)
+        self._update_completer_model()
+        self._update_schema_summary()
+
     def _unregister_table(self, table_name: str):
         """Unregister a table from DuckDB."""
         if table_name in self.registered_tables:

@@ -31,10 +31,24 @@ class TransformView(QWidget):
     dataChanged = Signal(pl.DataFrame)
     pipelineChanged = Signal(object)  # Signal when pipeline is updated (emits the pipeline)
 
-    def __init__(self, parent=None):
+    def __init__(self, applied_steps_panel=None, parent=None):
         super().__init__(parent)
         self.pipeline: TransformationPipeline = None
         self.original_dataframe: pl.DataFrame = None
+
+        # Applied Steps rendering lives in a shared, persistent panel (see
+        # gui.components.applied_steps_panel) so it stays visible across
+        # every data-workspace page, not just this one — Power Query never
+        # hides its Applied Steps pane just because you switched ribbon tabs.
+        # Falls back to a private instance if none is supplied, so this view
+        # remains independently constructible/testable.
+        from gui.components.applied_steps_panel import AppliedStepsPanel
+        self.steps_panel = applied_steps_panel or AppliedStepsPanel()
+        self.steps_panel.undoRequested.connect(self.undo_last_step)
+        self.steps_panel.clearRequested.connect(self.clear_all_steps)
+        self.steps_panel.exportRequested.connect(self.export_transformations)
+        self.steps_panel.stepToggled.connect(self._on_step_toggled)
+        self.steps_panel.stepSelectionChanged.connect(self._on_step_selection_changed)
 
         self.setup_ui()
 
@@ -43,7 +57,9 @@ class TransformView(QWidget):
         main_layout.setSpacing(0)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # --- Left Panel: Steps and Inspector (scrollable) ---
+        # --- Left Panel: Step Inspector (scrollable) ---
+        # Applied Steps itself is rendered by the shared panel (self.steps_panel),
+        # not owned by this view — see __init__.
         left_panel = QWidget()
         left_panel.setObjectName("LeftPanel")
         left_panel.setFixedWidth(350)
@@ -58,100 +74,6 @@ class TransformView(QWidget):
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(10)
-
-        # Toolbar with action buttons
-        toolbar = QWidget()
-        toolbar.setObjectName("Toolbar")
-        toolbar.setStyleSheet("""
-            QWidget#Toolbar {
-                background-color: #f8fafc;
-                border: 1px solid #e2e8f0;
-                border-radius: 6px;
-                padding: 8px;
-            }
-        """)
-        toolbar_layout = QHBoxLayout(toolbar)
-        toolbar_layout.setContentsMargins(10, 5, 10, 5)
-        toolbar_layout.setSpacing(8)
-
-        # Undo button
-        self.undo_btn = QPushButton("⟲ Undo")
-        self.undo_btn.setFixedHeight(28)
-        self.undo_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f1f5f9;
-                color: #334155;
-                border: 1px solid #cbd5e1;
-                border-radius: 4px;
-                padding: 4px 10px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #e2e8f0;
-            }
-        """)
-        self.undo_btn.clicked.connect(self.undo_last_step)
-        toolbar_layout.addWidget(self.undo_btn)
-
-        # Clear button
-        self.clear_btn = QPushButton("Clear All")
-        self.clear_btn.setFixedHeight(28)
-        self.clear_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #fee2e2;
-                color: #991b1b;
-                border: 1px solid #fecaca;
-                border-radius: 4px;
-                padding: 4px 10px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #fecaca;
-            }
-        """)
-        self.clear_btn.clicked.connect(self.clear_all_steps)
-        toolbar_layout.addWidget(self.clear_btn)
-
-        # Export button
-        self.export_btn = QPushButton("Export")
-        self.export_btn.setFixedHeight(28)
-        self.export_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f1f5f9;
-                color: #334155;
-                border: 1px solid #cbd5e1;
-                border-radius: 4px;
-                padding: 4px 10px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #e2e8f0;
-            }
-        """)
-        self.export_btn.clicked.connect(self.export_transformations)
-        toolbar_layout.addWidget(self.export_btn)
-
-        left_layout.addWidget(toolbar)
-
-        # Applied Steps section - always visible
-        steps_group = QGroupBox("Applied Steps")
-        steps_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
-        steps_layout = QVBoxLayout(steps_group)
-
-        self.steps_list_widget = QListWidget()
-        self.steps_list_widget.setObjectName("StepsList")
-        self.steps_list_widget.itemSelectionChanged.connect(self.on_step_selected)
-        steps_layout.addWidget(self.steps_list_widget)
-        left_layout.addWidget(steps_group)
 
         # Step Inspector section
         inspector_group = QGroupBox("Step Inspector")
@@ -247,56 +169,15 @@ class TransformView(QWidget):
         else:
             self.pipeline = TransformationPipeline(initial_df=self.original_dataframe)
 
-        # Restore steps list from pipeline
-        self._refresh_steps_list()
+        # Bind the shared Applied Steps panel to this pipeline and render it
+        self.steps_panel.set_pipeline(self.pipeline)
 
         self.populate_table(self.pipeline.apply())  # Use apply() to show transformed data
         self.update_info()
 
-    def _add_step_list_item(self, step, index: int):
-        """Add a row to the Applied Steps list with an enable/disable checkbox
-        and, once it's run, how long it took — lets a user turn a step off
-        without deleting it, and see which steps are expensive."""
-        op_name = OPERATION_REGISTRY.get(step.operation_id, {}).get('display_name', step.operation_id)
-        step_text = f"{index}. {op_name}"
-
-        item = QListWidgetItem(step_text)
-        item.setSizeHint(QSize(0, 30))
-        self.steps_list_widget.addItem(item)
-
-        row = QWidget()
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(6, 2, 6, 2)
-        row_layout.setSpacing(6)
-
-        checkbox = QCheckBox()
-        checkbox.setChecked(step.enabled)
-        checkbox.setToolTip("Disable this step without deleting it")
-        checkbox.toggled.connect(lambda checked, idx=index: self._on_step_toggled(idx, checked))
-        row_layout.addWidget(checkbox)
-
-        label = QLabel(step_text)
-        if not step.enabled:
-            label.setStyleSheet(f"color: {Colors.TEXT_DISABLED};")
-        row_layout.addWidget(label, 1)
-
-        if step.execution_time is not None:
-            time_label = QLabel(f"{step.execution_time * 1000:.0f} ms")
-            time_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; font-size: 10px;")
-            row_layout.addWidget(time_label)
-
-        self.steps_list_widget.setItemWidget(item, row)
-
-    def _refresh_steps_list(self):
-        """Rebuild the Applied Steps list from the current pipeline state."""
-        self.steps_list_widget.clear()
-        if not self.pipeline:
-            return
-        for i, step in enumerate(self.pipeline.get_steps(), start=1):
-            self._add_step_list_item(step, i)
-
     def _on_step_toggled(self, step_number: int, enabled: bool):
-        """Handle a step's enable/disable checkbox being toggled."""
+        """Handle a step's enable/disable checkbox being toggled (signal
+        from the shared Applied Steps panel)."""
         if not self.pipeline:
             return
         try:
@@ -304,7 +185,7 @@ class TransformView(QWidget):
             transformed_df = self.pipeline.apply()
             self.populate_table(transformed_df)
             self.update_info()
-            self._refresh_steps_list()
+            self.steps_panel.refresh()
             self.dataChanged.emit(transformed_df)
             self.pipelineChanged.emit(self.pipeline)
         except Exception as e:
@@ -905,9 +786,8 @@ class TransformView(QWidget):
             self.populate_table(transformed_df)
             self.update_info()
 
-            # Update the "Applied Steps" list
-            new_step = self.pipeline.get_steps()[-1]
-            self._add_step_list_item(new_step, len(self.pipeline.get_steps()))
+            # Update the shared Applied Steps panel
+            self.steps_panel.refresh()
 
             # Clear inspector when new step is added
             self.clear_inspector()
@@ -931,8 +811,8 @@ class TransformView(QWidget):
             self.pipeline.remove_last_step()
             transformed_df = self.pipeline.apply()
 
-            # Rebuild the steps list (also cleans up the removed row's checkbox widget)
-            self._refresh_steps_list()
+            # Rebuild the shared Applied Steps panel (also cleans up the removed row's checkbox widget)
+            self.steps_panel.refresh()
 
             # Clear inspector
             self.clear_inspector()
@@ -959,7 +839,7 @@ class TransformView(QWidget):
         if reply == QMessageBox.Yes:
             try:
                 self.pipeline.clear_steps()
-                self.steps_list_widget.clear()
+                self.steps_panel.refresh()
                 self.clear_inspector()
                 self.populate_table(self.pipeline.original_df)
                 self.update_info()
@@ -1087,23 +967,15 @@ class TransformView(QWidget):
             f"Transformations: {num_steps}"
         )
 
-    @Slot()
-    def on_step_selected(self):
-        """Handle step selection in the steps list."""
-        if not self.pipeline:
-            return
-
-        selected_items = self.steps_list_widget.selectedItems()
-        if not selected_items:
+    def _on_step_selection_changed(self, step_number):
+        """Handle step selection changing in the shared Applied Steps panel."""
+        if not self.pipeline or step_number is None:
             self.clear_inspector()
             return
 
-        # Get the step number from the selected item text
-        selected_text = selected_items[0].text()
         try:
-            step_number = int(selected_text.split('.')[0])  # Extract number from "1. Operation Name"
-            self.update_inspector(step_number)
-        except (ValueError, IndexError):
+            self.update_inspector(int(step_number))
+        except (ValueError, TypeError):
             self.clear_inspector()
 
     def update_inspector(self, step_number: int):
