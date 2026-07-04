@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QTextEdit, QTreeWidget, QTreeWidgetItem, QTabWidget, QScrollArea, QDialog,
     QCheckBox, QLineEdit
 )
-from PySide6.QtCore import Qt, Signal, Slot, QSize
+from PySide6.QtCore import Qt, Signal, Slot, QSize, QTimer
 import polars as pl
 from collections import defaultdict
 from typing import Dict, Any
@@ -148,7 +148,15 @@ class TransformView(QWidget):
         # Bind the shared Applied Steps panel to this pipeline and render it
         self.steps_panel.set_pipeline(self.pipeline)
 
-        self.populate_table(self.pipeline.apply())  # Use apply() to show transformed data
+        try:
+            transformed_df = self.pipeline.apply()
+        except Exception as e:
+            QMessageBox.critical(self, "Pipeline Error",
+                                  f"Failed to replay this dataset's transformation steps:\n{str(e)}\n\n"
+                                  f"Showing the original, untransformed data instead.")
+            transformed_df = self.original_dataframe
+
+        self.populate_table(transformed_df)
         self.update_info()
 
     def _on_step_toggled(self, step_number: int, enabled: bool):
@@ -161,7 +169,7 @@ class TransformView(QWidget):
             transformed_df = self.pipeline.apply()
             self.populate_table(transformed_df)
             self.update_info()
-            self.steps_panel.refresh()
+            self._refresh_steps_panel()
             self.dataChanged.emit(transformed_df)
             self.pipelineChanged.emit(self.pipeline)
         except Exception as e:
@@ -758,7 +766,11 @@ class TransformView(QWidget):
 
         # Create dialog using the factory with selected_column for auto-selection
         # Use the transformed dataframe so newly created columns appear in the dialog
-        current_df = self.pipeline.apply() if self.pipeline else self.original_dataframe
+        try:
+            current_df = self.pipeline.apply() if self.pipeline else self.original_dataframe
+        except Exception as e:
+            QMessageBox.critical(self, "Pipeline Error", f"Failed to read the current dataset:\n{str(e)}")
+            return
         dialog = TransformationDialogFactory.create_dialog(
             operation_id=operation_id,
             dataframe=current_df,
@@ -774,6 +786,20 @@ class TransformView(QWidget):
                 if params is not None:
                     self.apply_transformation(operation_id, params)
 
+    def _refresh_steps_panel(self):
+        """Rebuild the Applied Steps list on the next event-loop tick
+        instead of immediately. refresh() destroys and recreates every
+        step row's widgets (including the per-step enable/disable
+        checkbox); calling it synchronously from a handler that was itself
+        triggered by one of those checkboxes' own toggled signal means
+        Qt would be deleting a widget while its own signal is still
+        propagating — undefined behavior in Qt/PySide and a known class of
+        hard-to-reproduce native crashes. Deferring by one tick (0 ms) lets
+        the current signal fully unwind first; applied uniformly here so
+        every caller (toggle, undo, clear, filter) is safe by construction
+        rather than case-by-case."""
+        QTimer.singleShot(0, self.steps_panel.refresh)
+
     def apply_transformation(self, operation_id: str, params: dict):
         """Adds a step to the pipeline and refreshes the view."""
         if not self.pipeline:
@@ -788,7 +814,7 @@ class TransformView(QWidget):
             self.update_info()
 
             # Update the shared Applied Steps panel
-            self.steps_panel.refresh()
+            self._refresh_steps_panel()
 
             # Clear inspector when new step is added
             self.clear_inspector()
@@ -823,13 +849,19 @@ class TransformView(QWidget):
             QMessageBox.warning(self, "Formula Bar", "Enter both a column name and an expression.")
             return
 
-        current_df = self.pipeline.apply()
+        try:
+            current_df = self.pipeline.apply()
+        except Exception as e:
+            QMessageBox.critical(self, "Formula Bar", f"Failed to read the current dataset:\n{str(e)}")
+            return
+
         self.apply_transformation('custom_column_from_math', {
             'expression': expression,
             'output_column': output_column,
             'columns': list(current_df.columns),
         })
         self.formula_expr_edit.clear()
+        self.formula_output_edit.clear()
 
     def undo_last_step(self):
         """Removes the last transformation step."""
@@ -841,7 +873,7 @@ class TransformView(QWidget):
             transformed_df = self.pipeline.apply()
 
             # Rebuild the shared Applied Steps panel (also cleans up the removed row's checkbox widget)
-            self.steps_panel.refresh()
+            self._refresh_steps_panel()
 
             # Clear inspector
             self.clear_inspector()
@@ -868,7 +900,7 @@ class TransformView(QWidget):
         if reply == QMessageBox.Yes:
             try:
                 self.pipeline.clear_steps()
-                self.steps_panel.refresh()
+                self._refresh_steps_panel()
                 self.clear_inspector()
                 self.populate_table(self.pipeline.original_df)
                 self.update_info()
@@ -974,7 +1006,7 @@ class TransformView(QWidget):
             transformed_df = self.pipeline.apply()
             self.populate_table(transformed_df)
             self.update_info()
-            self.steps_panel.refresh()
+            self._refresh_steps_panel()
             self.dataChanged.emit(transformed_df)
             self.pipelineChanged.emit(self.pipeline)
             return

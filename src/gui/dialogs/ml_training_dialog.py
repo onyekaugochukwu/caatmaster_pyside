@@ -134,10 +134,14 @@ class MLTrainingDialog(QDialog):
         # Populate features list
         for col in columns:
             item = QListWidgetItem(col)
+            # Item must be added to the list before setSelected() has any
+            # effect — a QListWidgetItem's selection state is tracked by its
+            # parent widget's model, so calling setSelected() on a
+            # not-yet-added item silently does nothing.
+            self.features_list.addItem(item)
             # Auto-select numeric columns as features
             if self.dataframe[col].dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32]:
                 item.setSelected(True)
-            self.features_list.addItem(item)
 
     @Slot()
     def select_all_features(self):

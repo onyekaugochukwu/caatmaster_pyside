@@ -1821,9 +1821,63 @@ class MainWindow(QMainWindow):
                 transform_view.apply_transformation(operation_id, params)
                 if operation_id in self.AUDIT_OPERATION_IDS:
                     self._record_audit_run()
+                self._maybe_show_analysis_report(transform_view, operation_id)
                 self.statusBar().showMessage(f"Applied {operation_id} transformation")
         else:
             self.statusBar().showMessage("Transformation cancelled")
+
+    def _maybe_show_analysis_report(self, transform_view, operation_id: str):
+        """After a reportable operation succeeds, build and show its
+        AnalysisReport — for operations like Find Duplicates, Benford's Law,
+        or any ML model, the added columns alone don't convey the full
+        picture (duplicate group counts, conformity verdicts, R²/accuracy,
+        feature importances, cluster profiles, etc.). Never lets a problem
+        building the report undo or hide the fact that the transformation
+        itself already succeeded."""
+        from core.report_builders import AUDIT_REPORT_BUILDERS, ML_REPORT_BUILDERS_WITH_METRICS
+
+        steps = transform_view.pipeline.get_steps() if transform_view.pipeline else []
+        if not steps:
+            return
+        last_step = steps[-1]
+        if last_step.operation_id != operation_id:
+            return
+
+        try:
+            if operation_id in AUDIT_REPORT_BUILDERS:
+                result_df = transform_view.pipeline.apply()
+                report = AUDIT_REPORT_BUILDERS[operation_id](result_df, last_step.params)
+            elif operation_id in ML_REPORT_BUILDERS_WITH_METRICS:
+                result_df = transform_view.pipeline.apply()
+                report = ML_REPORT_BUILDERS_WITH_METRICS[operation_id](result_df, last_step.params, last_step.metrics)
+            else:
+                return
+
+            report.operation_id = operation_id
+            from gui.dialogs.analysis_report_dialog import AnalysisReportDialog
+            dialog = AnalysisReportDialog(report, parent=self)
+            dialog.setAttribute(Qt.WA_DeleteOnClose)
+            # Non-modal (.show(), not .exec()) so reviewing/exporting the
+            # report doesn't block continuing to work — keep a reference so
+            # Python doesn't garbage-collect it out from under the open
+            # window. WA_DeleteOnClose means a closed dialog's C++ object is
+            # already destroyed by the time we get here — shiboken.isValid()
+            # checks that safely; calling .isVisible() directly on a
+            # destroyed dialog instead raises RuntimeError, which (before
+            # this fix) got caught by the except below and silently broke
+            # every report attempt for the rest of the session, the moment
+            # any earlier report window was closed.
+            import shiboken6
+            self._open_report_dialogs = [
+                d for d in getattr(self, '_open_report_dialogs', [])
+                if shiboken6.isValid(d) and d.isVisible()
+            ]
+            self._open_report_dialogs.append(dialog)
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
+        except Exception as e:
+            self.statusBar().showMessage(f"Applied {operation_id}, but couldn't build its analysis report: {str(e)}")
 
     def _record_audit_run(self):
         """Mark that an audit check was just run — drives the dashboard's

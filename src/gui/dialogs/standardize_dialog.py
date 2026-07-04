@@ -60,7 +60,8 @@ class StandardizeDialog(BaseModal):
 
         for label, value in methods:
             radio = QRadioButton(label)
-            self.method_group.addButton(radio, value)
+            radio.setProperty("method_value", value)
+            self.method_group.addButton(radio)
             method_layout.addWidget(radio)
             if value == "zscore":
                 radio.setChecked(True)
@@ -124,9 +125,10 @@ class StandardizeDialog(BaseModal):
 
     def get_parameters(self) -> dict:
         """Get the standardization parameters"""
+        checked = self.method_group.checkedButton()
         return {
             "column": self.column_selector.get_column(),
-            "method": self.method_group.checkedId(),
+            "method": checked.property("method_value") if checked else None,
             "output_column": self.output_col_edit.text() or "standardized",
         }
 

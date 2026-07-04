@@ -369,13 +369,13 @@ class DataProcessor:
         elif operation_id == 'ml_outlier':
             return self._call_mapped_method(self.ml_outlier_detection, df, params)
         elif operation_id == 'ml_cluster':
-            return self._call_mapped_method(self.ml_cluster, df, params)
+            return self._call_mapped_method(self.ml_cluster, df, params, metrics_sink=params.get('_metrics_sink'))
         elif operation_id == 'ml_forecast':
-            return self._call_mapped_method(self.ml_forecast, df, params)
+            return self._call_mapped_method(self.ml_forecast, df, params, metrics_sink=params.get('_metrics_sink'))
 
         # ML Training operations
         elif operation_id == 'ml_train':
-            return self._call_mapped_method(self.ml_train_model, df, params)
+            return self._call_mapped_method(self.ml_train_model, df, params, metrics_sink=params.get('_metrics_sink'))
 
         # Financial operations
         elif operation_id == 'financial_ratios':
@@ -428,41 +428,41 @@ class DataProcessor:
 
         # ML Classification & Prediction
         elif operation_id == 'ml_classify':
-            return self._call_mapped_method(self.ml_classify, df, params)
+            return self._call_mapped_method(self.ml_classify, df, params, metrics_sink=params.get('_metrics_sink'))
         elif operation_id == 'ml_risk_score':
-            return self._call_mapped_method(self.ml_risk_score, df, params)
+            return self._call_mapped_method(self.ml_risk_score, df, params, metrics_sink=params.get('_metrics_sink'))
         elif operation_id == 'ml_predict':
-            return self._call_mapped_method(self.ml_predict, df, params)
+            return self._call_mapped_method(self.ml_predict, df, params, metrics_sink=params.get('_metrics_sink'))
 
         # Supervised Learning - Regression
         elif operation_id == 'ml_linear_regression':
-            return self._call_mapped_method(self.ml_linear_regression, df, params)
+            return self._call_mapped_method(self.ml_linear_regression, df, params, metrics_sink=params.get('_metrics_sink'))
         elif operation_id == 'ml_glm':
-            return self._call_mapped_method(self.ml_glm, df, params)
+            return self._call_mapped_method(self.ml_glm, df, params, metrics_sink=params.get('_metrics_sink'))
 
         # Supervised Learning - Tree-based
         elif operation_id == 'ml_decision_tree':
-            return self._call_mapped_method(self.ml_decision_tree, df, params)
+            return self._call_mapped_method(self.ml_decision_tree, df, params, metrics_sink=params.get('_metrics_sink'))
         elif operation_id == 'ml_random_forest':
-            return self._call_mapped_method(self.ml_random_forest, df, params)
+            return self._call_mapped_method(self.ml_random_forest, df, params, metrics_sink=params.get('_metrics_sink'))
         elif operation_id == 'ml_gradient_boosting':
-            return self._call_mapped_method(self.ml_gradient_boosting, df, params)
+            return self._call_mapped_method(self.ml_gradient_boosting, df, params, metrics_sink=params.get('_metrics_sink'))
         elif operation_id == 'ml_xgboost':
-            return self._call_mapped_method(self.ml_xgboost, df, params)
+            return self._call_mapped_method(self.ml_xgboost, df, params, metrics_sink=params.get('_metrics_sink'))
         elif operation_id == 'ml_lightgbm':
-            return self._call_mapped_method(self.ml_lightgbm, df, params)
+            return self._call_mapped_method(self.ml_lightgbm, df, params, metrics_sink=params.get('_metrics_sink'))
 
         # Unsupervised Learning - Clustering
         elif operation_id == 'ml_dbscan':
-            return self._call_mapped_method(self.ml_dbscan, df, params)
+            return self._call_mapped_method(self.ml_dbscan, df, params, metrics_sink=params.get('_metrics_sink'))
         elif operation_id == 'ml_gmm':
-            return self._call_mapped_method(self.ml_gmm, df, params)
+            return self._call_mapped_method(self.ml_gmm, df, params, metrics_sink=params.get('_metrics_sink'))
 
         # Time Series
         elif operation_id == 'ml_arima':
-            return self._call_mapped_method(self.ml_arima, df, params)
+            return self._call_mapped_method(self.ml_arima, df, params, metrics_sink=params.get('_metrics_sink'))
         elif operation_id == 'ml_ets':
-            return self._call_mapped_method(self.ml_ets, df, params)
+            return self._call_mapped_method(self.ml_ets, df, params, metrics_sink=params.get('_metrics_sink'))
 
         # Audit transformations
         elif operation_id == 'audit_flag_rows':
@@ -852,8 +852,11 @@ class DataProcessor:
         return df.with_columns(((col - mean) / std).alias(output_col))
 
     def percent_rank_transform(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
-        """Calculate percent rank"""
-        return df.with_columns(pl.col(column).rank("average", pct=True).alias(output_col))
+        """Calculate percent rank (0.0-1.0). This polars version's rank()
+        has no pct= keyword, so it's computed manually as rank / row count."""
+        return df.with_columns(
+            (pl.col(column).rank("average") / pl.len()).alias(output_col)
+        )
 
     def rank_transform(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
         """Calculate rank"""
@@ -955,7 +958,8 @@ class DataProcessor:
 
         return df.with_columns(pl.Series(name=output_col, values=labels))
 
-    def ml_forecast(self, df: pl.DataFrame, column: str, output_col: str, periods: int = 12) -> pl.DataFrame:
+    def ml_forecast(self, df: pl.DataFrame, column: str, output_col: str, periods: int = 12,
+                     metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
         """Simple time series forecast using exponential smoothing"""
         import numpy as np
         values = df[column].to_numpy()
@@ -970,17 +974,21 @@ class DataProcessor:
         for i in range(1, n):
             smoothed[i] = alpha * values[i] + (1 - alpha) * smoothed[i - 1]
 
+        self._capture_forecast_metrics(metrics_sink, "Exponential Smoothing (simple)", values, smoothed,
+                                        model_params={'alpha': alpha})
+
         return df.with_columns(pl.Series(name=output_col, values=smoothed))
 
     def ml_train_model(self, df: pl.DataFrame, model_name: str, algorithm: str, features: List[str],
-                      target: str, test_split: float = 0.2, random_seed: int = 42) -> pl.DataFrame:
+                      target: str, test_split: float = 0.2, random_seed: int = 42,
+                      metrics_sink: Optional[dict] = None) -> pl.DataFrame:
         """
         Train an ML model and save it for later use.
         This operation doesn't modify the dataframe but saves a trained model.
         """
         try:
             from sklearn.model_selection import train_test_split
-            from sklearn.metrics import accuracy_score, classification_report
+            from sklearn.metrics import accuracy_score, confusion_matrix
             import joblib
             import os
         except ImportError:
@@ -1024,10 +1032,19 @@ class DataProcessor:
         model_path = model_dir / f"{model_name}.joblib"
         joblib.dump(model, model_path)
 
-        # Return original dataframe unchanged (this operation doesn't create columns)
-        # But we could add metadata about the trained model
-        print(f"Model '{model_name}' trained with accuracy: {accuracy:.3f}")
-        print(f"Model saved to: {model_path}")
+        if metrics_sink is not None:
+            classes = sorted(set(y_test.tolist()) | set(y_pred.tolist()))
+            y_proba, proba_classes = None, None
+            if hasattr(model, 'predict_proba'):
+                y_proba = model.predict_proba(X_test)
+                proba_classes = model.classes_
+            self._capture_classification_metrics(metrics_sink, algorithm.replace('_', ' ').title(),
+                                                  y_test, y_pred, classes, y_proba=y_proba, proba_classes=proba_classes)
+            metrics_sink['model_name'] = model_name
+            metrics_sink['model_path'] = str(model_path)
+            metrics_sink['train_rows'] = int(len(X_train))
+            metrics_sink['test_rows'] = int(len(X_test))
+            self._capture_feature_importance(metrics_sink, features, getattr(model, 'feature_importances_', None))
 
         return df  # Return unchanged dataframe
 
@@ -1097,29 +1114,73 @@ class DataProcessor:
     # AUDIT TRANSFORMATION IMPLEMENTATIONS
     # ============================================================================
 
-    def audit_benford_law(self, df: pl.DataFrame, column: str, output_col: str, threshold: float = 0.1) -> pl.DataFrame:
-        """Benford's Law analysis"""
-        first_digit = df[column].cast(pl.Utf8).str.slice(0, 1)
+    def audit_benford_law(self, df: pl.DataFrame, column: str, digits: int = 1,
+                           significant_only: bool = False, digit_col: str = "leading_digit",
+                           expected_col: str = "benford_expected",
+                           deviation_col: str = "benford_deviation") -> pl.DataFrame:
+        """Benford's Law analysis — adds the leading digit(s), that digit's
+        expected Benford frequency, and how far the ACTUAL frequency in
+        this dataset deviates from it. Supports 1- or 2-digit analysis and
+        "significant digits only" the same way the dialog's own preview
+        chart does, so what you see in Run Analysis matches what gets
+        committed to the dataset."""
+        import numpy as np
 
-        benford_expected = {
-            '1': 0.301, '2': 0.176, '3': 0.125, '4': 0.097, '5': 0.079,
-            '6': 0.067, '7': 0.058, '8': 0.051, '9': 0.046
-        }
+        def leading_digits(value):
+            if value is None:
+                return None
+            try:
+                abs_v = abs(float(value))
+            except (TypeError, ValueError):
+                return None
+            if abs_v == 0:
+                return None
+            if significant_only:
+                s = f"{abs_v:.10g}".replace('.', '').lstrip('0')
+            else:
+                s = str(abs_v)
+            # Leading zeros (e.g. from "0.114") are never Benford's "leading
+            # digit" — always skip to the first non-zero digit before
+            # taking N digits, regardless of significant_only.
+            digs_all = [c for c in s if c.isdigit()]
+            start = 0
+            while start < len(digs_all) and digs_all[start] == '0':
+                start += 1
+            digs = digs_all[start:]
+            if not digs:
+                return None
+            if digits == 1:
+                return digs[0]
+            return "".join(digs[:2]) if len(digs) >= 2 else None
 
-        total = len(df)
-        digit_counts = first_digit.value_counts().to_dict()
-
-        def calc_deviation(val):
-            if val is None or str(val) == '0':
-                return 0
-            first = str(val)[0]
-            expected = benford_expected.get(first, 0.05)
-            actual = digit_counts.get(first, 0) / total if first in digit_counts else 0
-            return abs(expected - actual)
-
-        return df.with_columns(
-            pl.col(column).map_elements(calc_deviation, return_dtype=pl.Float64).alias(output_col)
+        result = df.with_columns(
+            pl.col(column).map_elements(leading_digits, return_dtype=pl.Utf8).alias(digit_col)
         )
+
+        if digits == 1:
+            expected_map = {str(i): np.log10(1 + 1 / i) * 100 for i in range(1, 10)}
+        else:
+            expected_map = {f"{d:02d}": np.log10(1 + 1 / d) * 100 for d in range(10, 100)}
+
+        non_null = result[digit_col].drop_nulls()
+        total = len(non_null)
+        actual_map = {}
+        if total:
+            for row in non_null.value_counts().to_dicts():
+                actual_map[row[digit_col]] = row["count"] / total * 100
+
+        def expected_for(d):
+            return expected_map.get(d) if d is not None else None
+
+        def deviation_for(d):
+            if d is None:
+                return None
+            return abs(actual_map.get(d, 0.0) - expected_map.get(d, 0.0))
+
+        return result.with_columns([
+            pl.col(digit_col).map_elements(expected_for, return_dtype=pl.Float64).alias(expected_col),
+            pl.col(digit_col).map_elements(deviation_for, return_dtype=pl.Float64).alias(deviation_col),
+        ])
 
     # ============================================================================
     # AI TRANSFORMATION IMPLEMENTATIONS
@@ -1170,7 +1231,7 @@ class DataProcessor:
     # ============================================================================
 
     def ml_classify(self, df: pl.DataFrame, features: List[str], target: str, output_col: str, probability_col: str,
-                   model_id: str = None, **kwargs) -> pl.DataFrame:
+                   model_id: str = None, metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
         """ML Classification - trains model and predicts (simplified)"""
         try:
             from sklearn.ensemble import RandomForestClassifier
@@ -1202,12 +1263,18 @@ class DataProcessor:
         # Map back to original labels
         predicted_labels = le.inverse_transform(predictions)
 
+        self._capture_tree_model_metrics(metrics_sink, "Classification (Random Forest)", True,
+                                          y_raw.astype(str), predicted_labels, le, features, model, X=X)
+        if metrics_sink is not None:
+            metrics_sink['mean_confidence'] = float(probabilities.mean())
+
         return df.with_columns([
             pl.Series(name=output_col, values=predicted_labels),
             pl.Series(name=probability_col, values=probabilities)
         ])
 
-    def ml_risk_score(self, df: pl.DataFrame, group_column: str, features: List[str], output_col: str) -> pl.DataFrame:
+    def ml_risk_score(self, df: pl.DataFrame, group_column: str, features: List[str], output_col: str,
+                      metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
         """Calculate risk score per group"""
         import numpy as np
 
@@ -1223,9 +1290,21 @@ class DataProcessor:
         risk_scores = np.dot(normalized, weights)
         risk_scores = (risk_scores - risk_scores.min()) / (risk_scores.max() - risk_scores.min() + 1e-8)
 
+        if metrics_sink is not None:
+            metrics_sink['model_type'] = 'Risk Score (equal-weighted)'
+            metrics_sink['feature_weights'] = {f: float(w) for f, w in zip(features, weights)}
+            metrics_sink['min_score'] = float(risk_scores.min())
+            metrics_sink['max_score'] = float(risk_scores.max())
+            metrics_sink['mean_score'] = float(risk_scores.mean())
+            top_n = min(10, len(risk_scores))
+            top_idx = np.argsort(risk_scores)[::-1][:top_n]
+            metrics_sink['top_risk_row_indices'] = [int(i) for i in top_idx]
+            metrics_sink['top_risk_scores'] = [float(risk_scores[i]) for i in top_idx]
+
         return df.with_columns(pl.Series(name=output_col, values=risk_scores))
 
-    def ml_predict(self, df: pl.DataFrame, model_id: str, features: List[str], output_col: str) -> pl.DataFrame:
+    def ml_predict(self, df: pl.DataFrame, model_id: str, features: List[str], output_col: str,
+                   metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
         """Apply trained model to predict new values"""
         import joblib
         from pathlib import Path
@@ -1234,6 +1313,9 @@ class DataProcessor:
         model_path = Path(__file__).parent.parent.parent / "models" / f"{model_id}.joblib"
 
         if not model_path.exists():
+            if metrics_sink is not None:
+                metrics_sink['model_id'] = model_id
+                metrics_sink['model_found'] = False
             # Fallback: return original values with mock prediction
             return df.with_columns(pl.col(features[0]).alias(output_col))
 
@@ -1241,8 +1323,26 @@ class DataProcessor:
             model = joblib.load(model_path)
             X = df.select(features).to_pandas()
             predictions = model.predict(X)
+            if metrics_sink is not None:
+                import numpy as np
+                metrics_sink['model_id'] = model_id
+                metrics_sink['model_found'] = True
+                metrics_sink['model_path'] = str(model_path)
+                metrics_sink['rows_predicted'] = int(len(predictions))
+                preds_arr = np.asarray(predictions)
+                if preds_arr.dtype.kind in 'iuf':
+                    metrics_sink['prediction_mean'] = float(preds_arr.mean())
+                    metrics_sink['prediction_min'] = float(preds_arr.min())
+                    metrics_sink['prediction_max'] = float(preds_arr.max())
+                else:
+                    from collections import Counter
+                    metrics_sink['prediction_value_counts'] = dict(Counter(preds_arr.tolist()))
             return df.with_columns(pl.Series(name=output_col, values=predictions))
         except Exception:
+            if metrics_sink is not None:
+                metrics_sink['model_id'] = model_id
+                metrics_sink['model_found'] = True
+                metrics_sink['error'] = 'Prediction failed; used fallback passthrough.'
             return df.with_columns(pl.col(features[0]).alias(output_col))
 
     # ============================================================================
@@ -1360,9 +1460,92 @@ class DataProcessor:
     # SUPERVISED LEARNING - REGRESSION
     # ============================================================================
 
+    @staticmethod
+    def _capture_regression_metrics(metrics_sink: Optional[dict], model_type: str,
+                                     y_true, y_pred, feature_names: List[str],
+                                     coefficients: Optional[List[float]] = None,
+                                     intercept: Optional[float] = None):
+        """Fill an optional metrics_sink dict with the regression metrics an
+        AnalysisReport builder needs — computed here, at the one point where
+        the fitted model/predictions actually exist, since none of this
+        survives once the method returns just a prediction column."""
+        if metrics_sink is None:
+            return
+        import numpy as np
+        from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+        y_true_arr = np.asarray(y_true, dtype=float)
+        y_pred_arr = np.asarray(y_pred, dtype=float)
+        metrics_sink['model_type'] = model_type
+        metrics_sink['task'] = 'regression'
+        metrics_sink['r_squared'] = float(r2_score(y_true_arr, y_pred_arr))
+        mse = float(mean_squared_error(y_true_arr, y_pred_arr))
+        metrics_sink['mse'] = mse
+        metrics_sink['rmse'] = mse ** 0.5
+        metrics_sink['mae'] = float(mean_absolute_error(y_true_arr, y_pred_arr))
+        # MAPE is undefined wherever y_true is 0 — skip those points rather
+        # than let sklearn's mean_absolute_percentage_error blow up to a
+        # meaningless huge number from a single zero actual.
+        nonzero = y_true_arr != 0
+        if nonzero.any():
+            mape = float(np.mean(np.abs((y_true_arr[nonzero] - y_pred_arr[nonzero]) / y_true_arr[nonzero])) * 100)
+            metrics_sink['mape'] = mape
+            if not nonzero.all():
+                metrics_sink['mape_excluded_zero_actuals'] = int((~nonzero).sum())
+        if coefficients is not None:
+            metrics_sink['coefficients'] = dict(zip(feature_names, [float(c) for c in coefficients]))
+        if intercept is not None:
+            metrics_sink['intercept'] = float(intercept)
+
+    @staticmethod
+    def _capture_classification_metrics(metrics_sink: Optional[dict], model_type: str,
+                                         y_true, y_pred, classes: List[str],
+                                         y_proba=None, proba_classes: List = None):
+        """Fill an optional metrics_sink dict with classification metrics:
+        accuracy, confusion matrix, F1/precision/recall (both macro- and
+        weighted-averaged, since which is "right" depends on whether class
+        imbalance should count against the model), and AUC when per-class
+        probabilities are available (binary: standard ROC AUC; multi-class:
+        macro-averaged one-vs-rest, sklearn's standard extension)."""
+        if metrics_sink is None:
+            return
+        from sklearn.metrics import (
+            accuracy_score, confusion_matrix, f1_score, precision_score, recall_score
+        )
+        metrics_sink['model_type'] = model_type
+        metrics_sink['task'] = 'classification'
+        metrics_sink['accuracy'] = float(accuracy_score(y_true, y_pred))
+        metrics_sink['classes'] = [str(c) for c in classes]
+        metrics_sink['confusion_matrix'] = confusion_matrix(y_true, y_pred, labels=classes).tolist()
+        for avg in ('macro', 'weighted'):
+            metrics_sink[f'f1_{avg}'] = float(f1_score(y_true, y_pred, labels=classes, average=avg, zero_division=0))
+            metrics_sink[f'precision_{avg}'] = float(precision_score(y_true, y_pred, labels=classes, average=avg, zero_division=0))
+            metrics_sink[f'recall_{avg}'] = float(recall_score(y_true, y_pred, labels=classes, average=avg, zero_division=0))
+
+        if y_proba is not None:
+            try:
+                from sklearn.metrics import roc_auc_score
+                if len(classes) == 2:
+                    # Column for the "positive" (second, per proba_classes order) class.
+                    pos_idx = 1
+                    if proba_classes is not None:
+                        pos_idx = list(proba_classes).index(classes[1]) if classes[1] in list(proba_classes) else 1
+                    metrics_sink['auc'] = float(roc_auc_score(y_true, y_proba[:, pos_idx]))
+                else:
+                    metrics_sink['auc_macro_ovr'] = float(
+                        roc_auc_score(y_true, y_proba, multi_class='ovr', average='macro', labels=classes)
+                    )
+            except Exception:
+                pass  # AUC is a bonus metric — never let it block the rest of the report
+
+    @staticmethod
+    def _capture_feature_importance(metrics_sink: Optional[dict], feature_names: List[str], importances) -> None:
+        if metrics_sink is None or importances is None:
+            return
+        metrics_sink['feature_importances'] = dict(zip(feature_names, [float(v) for v in importances]))
+
     def ml_linear_regression(self, df: pl.DataFrame, features: List[str], target: str,
                              output_col: str = "y_hat", fit_intercept: bool = True,
-                             **kwargs) -> pl.DataFrame:
+                             metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
         """Linear regression prediction"""
         try:
             from sklearn.linear_model import LinearRegression
@@ -1383,6 +1566,9 @@ class DataProcessor:
             # Predict
             y_pred = model.predict(X_scaled)
 
+            self._capture_regression_metrics(metrics_sink, "Linear Regression", y, y_pred, features,
+                                              coefficients=model.coef_, intercept=model.intercept_)
+
             return df.with_columns(pl.Series(name=output_col, values=y_pred))
 
         except Exception as e:
@@ -1391,7 +1577,7 @@ class DataProcessor:
 
     def ml_glm(self, df: pl.DataFrame, features: List[str], target: str,
                output_col: str = "y_hat", family: str = "gaussian",
-               **kwargs) -> pl.DataFrame:
+               metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
         """Generalized Linear Model prediction"""
         try:
             import statsmodels.api as sm
@@ -1418,6 +1604,14 @@ class DataProcessor:
             # Predict
             y_pred = result.predict(X)
 
+            if metrics_sink is not None:
+                self._capture_regression_metrics(metrics_sink, f"GLM ({family})", y, y_pred, features,
+                                                  coefficients=[result.params[f] for f in features],
+                                                  intercept=result.params.get('const'))
+                metrics_sink['pseudo_r_squared'] = float(1 - result.deviance / result.null_deviance) \
+                    if result.null_deviance else None
+                metrics_sink['p_values'] = {f: float(result.pvalues[f]) for f in features}
+
             return df.with_columns(pl.Series(name=output_col, values=y_pred))
 
         except Exception as e:
@@ -1428,10 +1622,34 @@ class DataProcessor:
     # SUPERVISED LEARNING - TREE-BASED
     # ============================================================================
 
+    def _capture_tree_model_metrics(self, metrics_sink: Optional[dict], model_type: str,
+                                     is_classification: bool, y, y_pred, le, features: List[str], model,
+                                     X=None):
+        """Shared metrics capture for the 5 tree-based methods below, which
+        all share the same is_classification branch + feature_importances_
+        API. y/y_pred should be the DECODED (original label space) values
+        for classification, or the encoder-scale values for regression
+        (matching whatever the model was actually fit/evaluated against).
+        X (the feature matrix used to fit), if given, is used to compute
+        predict_proba for AUC — every sklearn/xgboost/lightgbm classifier
+        used here supports it."""
+        if metrics_sink is None:
+            return
+        self._capture_feature_importance(metrics_sink, features, getattr(model, 'feature_importances_', None))
+        if is_classification:
+            y_proba, proba_classes = None, None
+            if X is not None and hasattr(model, 'predict_proba'):
+                y_proba = model.predict_proba(X)
+                proba_classes = le.inverse_transform(model.classes_)
+            self._capture_classification_metrics(metrics_sink, model_type, y, y_pred, list(le.classes_),
+                                                  y_proba=y_proba, proba_classes=proba_classes)
+        else:
+            self._capture_regression_metrics(metrics_sink, model_type, y, y_pred, features)
+
     def ml_decision_tree(self, df: pl.DataFrame, features: List[str], target: str,
                          output_col: str = "prediction", max_depth: int = 10,
                          min_samples_split: int = 2, min_samples_leaf: int = 1,
-                         **kwargs) -> pl.DataFrame:
+                         metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
         """Decision tree prediction"""
         try:
             from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
@@ -1462,6 +1680,9 @@ class DataProcessor:
             # Decode if classification
             if is_classification:
                 y_pred = le.inverse_transform(y_pred.astype(int))
+                self._capture_tree_model_metrics(metrics_sink, "Decision Tree", True, y, y_pred, le, features, model, X=X)
+            else:
+                self._capture_tree_model_metrics(metrics_sink, "Decision Tree", False, y_encoded, y_pred, le, features, model)
 
             return df.with_columns(pl.Series(name=output_col, values=y_pred))
 
@@ -1472,7 +1693,8 @@ class DataProcessor:
     def ml_random_forest(self, df: pl.DataFrame, features: List[str], target: str,
                          output_col: str = "prediction", n_estimators: int = 100,
                          max_depth: int = 10, min_samples_split: int = 2,
-                         min_samples_leaf: int = 1, **kwargs) -> pl.DataFrame:
+                         min_samples_leaf: int = 1, metrics_sink: Optional[dict] = None,
+                         **kwargs) -> pl.DataFrame:
         """Random forest prediction"""
         try:
             from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -1498,6 +1720,9 @@ class DataProcessor:
 
             if is_classification:
                 y_pred = le.inverse_transform(y_pred.astype(int))
+                self._capture_tree_model_metrics(metrics_sink, "Random Forest", True, y, y_pred, le, features, model, X=X)
+            else:
+                self._capture_tree_model_metrics(metrics_sink, "Random Forest", False, y_encoded, y_pred, le, features, model)
 
             return df.with_columns(pl.Series(name=output_col, values=y_pred))
 
@@ -1509,7 +1734,7 @@ class DataProcessor:
                              output_col: str = "prediction", n_estimators: int = 100,
                              learning_rate: float = 0.1, max_depth: int = 5,
                              min_samples_split: int = 2, min_samples_leaf: int = 1,
-                             **kwargs) -> pl.DataFrame:
+                             metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
         """Gradient boosting prediction"""
         try:
             from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
@@ -1544,6 +1769,9 @@ class DataProcessor:
 
             if is_classification:
                 y_pred = le.inverse_transform(y_pred.astype(int))
+                self._capture_tree_model_metrics(metrics_sink, "Gradient Boosting", True, y, y_pred, le, features, model, X=X)
+            else:
+                self._capture_tree_model_metrics(metrics_sink, "Gradient Boosting", False, y_encoded, y_pred, le, features, model)
 
             return df.with_columns(pl.Series(name=output_col, values=y_pred))
 
@@ -1555,7 +1783,7 @@ class DataProcessor:
                    output_col: str = "prediction", n_estimators: int = 100,
                    learning_rate: float = 0.1, max_depth: int = 6,
                    subsample: float = 0.8, colsample_bytree: float = 0.8,
-                   **kwargs) -> pl.DataFrame:
+                   metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
         """XGBoost prediction"""
         try:
             import xgboost as xgb
@@ -1591,6 +1819,9 @@ class DataProcessor:
 
             if is_classification:
                 y_pred = le.inverse_transform(y_pred.astype(int))
+                self._capture_tree_model_metrics(metrics_sink, "XGBoost", True, y, y_pred, le, features, model, X=X)
+            else:
+                self._capture_tree_model_metrics(metrics_sink, "XGBoost", False, y_encoded, y_pred, le, features, model)
 
             return df.with_columns(pl.Series(name=output_col, values=y_pred))
 
@@ -1603,7 +1834,8 @@ class DataProcessor:
     def ml_lightgbm(self, df: pl.DataFrame, features: List[str], target: str,
                     output_col: str = "prediction", n_estimators: int = 100,
                     learning_rate: float = 0.1, num_leaves: int = 31,
-                    min_child_samples: int = 20, **kwargs) -> pl.DataFrame:
+                    min_child_samples: int = 20, metrics_sink: Optional[dict] = None,
+                    **kwargs) -> pl.DataFrame:
         """LightGBM prediction"""
         try:
             import lightgbm as lgb
@@ -1637,6 +1869,9 @@ class DataProcessor:
 
             if is_classification:
                 y_pred = le.inverse_transform(y_pred.astype(int))
+                self._capture_tree_model_metrics(metrics_sink, "LightGBM", True, y, y_pred, le, features, model, X=X)
+            else:
+                self._capture_tree_model_metrics(metrics_sink, "LightGBM", False, y_encoded, y_pred, le, features, model)
 
             return df.with_columns(pl.Series(name=output_col, values=y_pred))
 
@@ -1650,9 +1885,52 @@ class DataProcessor:
     # UNSUPERVISED LEARNING - CLUSTERING
     # ============================================================================
 
+    def _capture_clustering_metrics(self, metrics_sink: Optional[dict], model_type: str,
+                                     X_original, labels, feature_names: List[str],
+                                     inertia: Optional[float] = None):
+        """Cluster sizes + per-cluster feature means (in the ORIGINAL,
+        unscaled units — far more interpretable than standardized-scale
+        centers) + inertia/silhouette where computable."""
+        if metrics_sink is None:
+            return
+        import numpy as np
+        from collections import Counter
+
+        metrics_sink['model_type'] = model_type
+        labels_arr = np.asarray(labels)
+        size_counts = Counter(labels_arr.tolist())
+        metrics_sink['n_clusters'] = len([lbl for lbl in size_counts if lbl != -1])
+        metrics_sink['cluster_sizes'] = {str(k): int(v) for k, v in sorted(size_counts.items())}
+        if -1 in size_counts:
+            metrics_sink['n_noise'] = int(size_counts[-1])
+
+        X_arr = X_original.to_numpy() if hasattr(X_original, 'to_numpy') else np.asarray(X_original)
+        centers = {}
+        for lbl in sorted(size_counts.keys()):
+            if lbl == -1:
+                continue
+            mask = labels_arr == lbl
+            centers[str(lbl)] = {f: float(v) for f, v in zip(feature_names, X_arr[mask].mean(axis=0))}
+        metrics_sink['cluster_centers'] = centers
+
+        if inertia is not None:
+            metrics_sink['inertia'] = float(inertia)
+
+        n_real_clusters = metrics_sink['n_clusters']
+        if 2 <= n_real_clusters < len(labels_arr):
+            try:
+                from sklearn.metrics import silhouette_score, davies_bouldin_score
+                metrics_sink['silhouette_score'] = float(silhouette_score(X_arr, labels_arr))
+                # Davies-Bouldin: lower is better (unlike silhouette, where
+                # higher is better) — average similarity between each
+                # cluster and its most-similar other cluster.
+                metrics_sink['davies_bouldin_score'] = float(davies_bouldin_score(X_arr, labels_arr))
+            except Exception:
+                pass
+
     def ml_cluster(self, df: pl.DataFrame, columns: List[str],
                     n_clusters: int = 3, output_col: str = "cluster",
-                    **kwargs) -> pl.DataFrame:
+                    metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
         """K-Means clustering across one or more feature columns."""
         try:
             from sklearn.cluster import KMeans
@@ -1666,6 +1944,9 @@ class DataProcessor:
             model = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
             labels = model.fit_predict(X_scaled)
 
+            self._capture_clustering_metrics(metrics_sink, "K-Means", X, labels, columns,
+                                              inertia=model.inertia_)
+
             return df.with_columns(pl.Series(name=output_col, values=labels))
 
         except Exception as e:
@@ -1674,7 +1955,8 @@ class DataProcessor:
 
     def ml_dbscan(self, df: pl.DataFrame, features: List[str],
                   output_col: str = "cluster", eps: float = 0.5,
-                  min_samples: int = 5, **kwargs) -> pl.DataFrame:
+                  min_samples: int = 5, metrics_sink: Optional[dict] = None,
+                  **kwargs) -> pl.DataFrame:
         """DBSCAN clustering"""
         try:
             from sklearn.cluster import DBSCAN
@@ -1690,6 +1972,8 @@ class DataProcessor:
             model = DBSCAN(eps=eps, min_samples=min_samples)
             labels = model.fit_predict(X_scaled)
 
+            self._capture_clustering_metrics(metrics_sink, "DBSCAN", X, labels, features)
+
             return df.with_columns(pl.Series(name=output_col, values=labels))
 
         except Exception as e:
@@ -1698,7 +1982,7 @@ class DataProcessor:
 
     def ml_gmm(self, df: pl.DataFrame, features: List[str],
                output_col: str = "cluster", n_components: int = 3,
-               **kwargs) -> pl.DataFrame:
+               metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
         """Gaussian Mixture Model clustering"""
         try:
             from sklearn.mixture import GaussianMixture
@@ -1714,6 +1998,8 @@ class DataProcessor:
             model = GaussianMixture(n_components=n_components)
             labels = model.fit_predict(X_scaled)
 
+            self._capture_clustering_metrics(metrics_sink, "Gaussian Mixture", X, labels, features)
+
             return df.with_columns(pl.Series(name=output_col, values=labels))
 
         except Exception as e:
@@ -1724,9 +2010,50 @@ class DataProcessor:
     # TIME SERIES FORECASTING
     # ============================================================================
 
+    @staticmethod
+    def _capture_forecast_metrics(metrics_sink: Optional[dict], model_type: str,
+                                   actual, fitted, forecast_values=None, model_params: Optional[dict] = None):
+        """Fill an optional metrics_sink dict with forecast quality metrics.
+        There's no ground truth for the actual forecast period (it's the
+        future), so what's reported is the standard proxy: in-sample fit
+        quality (RMSE/MAE/MAPE between the model's fitted values and the
+        historical actuals it was fit on), plus a summary of the forecast
+        itself (how many periods, its range)."""
+        if metrics_sink is None:
+            return
+        import numpy as np
+        actual_arr = np.asarray(actual, dtype=float)
+        fitted_arr = np.asarray(fitted, dtype=float)
+        metrics_sink['model_type'] = model_type
+        metrics_sink['task'] = 'forecasting'
+
+        # Some models (e.g. ARIMA with differencing) leave the first few
+        # periods' fitted values as NaN — exclude those from fit metrics.
+        mask = ~(np.isnan(actual_arr) | np.isnan(fitted_arr))
+        if mask.any():
+            errors = actual_arr[mask] - fitted_arr[mask]
+            metrics_sink['in_sample_rmse'] = float(np.sqrt(np.mean(errors ** 2)))
+            metrics_sink['in_sample_mae'] = float(np.mean(np.abs(errors)))
+            nonzero = actual_arr[mask] != 0
+            if nonzero.any():
+                metrics_sink['in_sample_mape'] = float(
+                    np.mean(np.abs(errors[nonzero] / actual_arr[mask][nonzero])) * 100
+                )
+            metrics_sink['in_sample_points'] = int(mask.sum())
+
+        if forecast_values is not None:
+            fc = np.asarray(forecast_values, dtype=float)
+            metrics_sink['forecast_periods'] = int(len(fc))
+            metrics_sink['forecast_mean'] = float(fc.mean())
+            metrics_sink['forecast_min'] = float(fc.min())
+            metrics_sink['forecast_max'] = float(fc.max())
+
+        if model_params:
+            metrics_sink['model_params'] = model_params
+
     def ml_arima(self, df: pl.DataFrame, column: str, output_col: str = "forecast",
                  order_p: int = 1, order_d: int = 1, order_q: int = 1,
-                 steps: int = 12, **kwargs) -> pl.DataFrame:
+                 steps: int = 12, metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
         """ARIMA time series forecasting - extends dataset with forecast values"""
         try:
             from statsmodels.tsa.arima.model import ARIMA
@@ -1742,6 +2069,12 @@ class DataProcessor:
 
             # Forecast future values
             forecast = result.forecast(steps=steps)
+
+            self._capture_forecast_metrics(
+                metrics_sink, f"ARIMA({order_p},{order_d},{order_q})",
+                series.values, result.fittedvalues.values, forecast_values=forecast.values,
+                model_params={'order': f'({order_p},{order_d},{order_q})', 'aic': float(result.aic)}
+            )
 
             # Step 1: Add forecast column to original df with NaN values (Float64 type)
             result_df = df.with_columns(pl.lit(np.nan).cast(pl.Float64).alias(output_col))
@@ -1770,7 +2103,7 @@ class DataProcessor:
 
     def ml_ets(self, df: pl.DataFrame, column: str, output_col: str = "forecast",
                trend: str = "add", seasonal: str = None, steps: int = 12,
-               **kwargs) -> pl.DataFrame:
+               metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
         """Exponential Smoothing - extends dataset with forecast values"""
         try:
             from statsmodels.tsa.holtwinters import ExponentialSmoothing
@@ -1796,6 +2129,12 @@ class DataProcessor:
 
             # Forecast future values
             forecast = result.forecast(steps=steps)
+
+            self._capture_forecast_metrics(
+                metrics_sink, f"ETS (trend={trend}, seasonal={seasonal})",
+                series.values, result.fittedvalues.values, forecast_values=forecast.values,
+                model_params={'trend': trend, 'seasonal': seasonal, 'aic': float(result.aic)}
+            )
 
             # Step 1: Add forecast column to original df with NaN values (Float64 type)
             result_df = df.with_columns(pl.lit(np.nan).cast(pl.Float64).alias(output_col))
@@ -1828,34 +2167,26 @@ class DataProcessor:
 
     def audit_duplicate_detection(self, df: pl.DataFrame, columns: List[str], output_col: str,
                                   flag_col: str, **kwargs) -> pl.DataFrame:
-        """Detect duplicate rows based on specified columns"""
-        # Create a grouping key
-        select_exprs = [pl.col(c).cast(pl.Utf8).str.replace(r"[^\w]", "_", literal=True).alias(c) for c in columns]
-        temp_df = df.with_columns(select_exprs)
+        """Detect duplicate rows based on one or more columns.
 
-        # Create group IDs
-        group_keys = temp_df.select(columns).with_columns(
-            pl.concat_str(columns, separator="_").alias("_group_key")
-        )["_group_key"].to_list()
+        Works for both paradigms — a single column (do THIS column's values
+        repeat elsewhere?) and multiple columns (does the full combination
+        repeat elsewhere?) — since both are just "group by columns, count
+        occurrences of each group."
 
-        # Count occurrences
-        from collections import Counter
-        counts = Counter(group_keys)
-
-        # Assign group IDs and flags
-        group_ids = []
-        is_duplicates = []
-        seen = {}
-
-        for i, key in enumerate(group_keys):
-            if key not in seen:
-                seen[key] = len(seen)
-            group_ids.append(seen[key])
-            is_duplicates.append(counts[key] > 1)
-
+        Grouping is done with a real struct key (pl.struct), never a string
+        concatenation: an earlier version built the key by joining columns
+        with "_" after regex-sanitizing each one, which meant two genuinely
+        different combinations — e.g. ("A_B", "C") and ("A", "B_C") — could
+        collide into the identical string "A_B_C" and get flagged as
+        duplicates of each other. A struct compares each field independently,
+        so no delimiter collision is possible no matter what characters the
+        data itself contains.
+        """
+        key_expr = pl.struct(columns)
         return df.with_columns([
-            pl.Series(name=output_col, values=group_ids),
-            pl.Series(name=flag_col, values=is_duplicates)
+            key_expr.rank(method="dense").cast(pl.Int64).sub(1).alias(output_col),
+            (pl.len().over(columns) > 1).alias(flag_col),
         ])
 
     def audit_gap_analysis(self, df: pl.DataFrame, id_column: str, output_col: str,
@@ -1939,8 +2270,15 @@ class DataProcessor:
             mantissa = 10 ** (log10 - np.floor(log10))
             # Higher score = more round (mantissa close to 1, 10, 100...)
             round_scores = [1.0, 0.1, 0.01, 0.001]
-            score = max(1 - min(abs(mantissa - r) for r in round_scores), 0)
-            return score
+            # max(..., 0) (an int) rather than 0.0 would return a plain
+            # Python int whenever the score clamps to zero, mixing with the
+            # numpy.float64 from the un-clamped branch — a mixed
+            # int/numpy.float64 list downstream produces a mixed
+            # bool/numpy.bool_ "is_round" list, which polars' Series
+            # constructor refuses ("found value of type Boolean" while
+            # inferring Float64) — hence the explicit float() here.
+            score = max(1 - min(abs(mantissa - r) for r in round_scores), 0.0)
+            return float(score)
 
         roundness = [calc_roundness(v) for v in df[column]]
         is_round = [s >= threshold for s in roundness]
@@ -1968,22 +2306,48 @@ class DataProcessor:
         ])
 
     def stat_add_group_stats(self, df: pl.DataFrame, group_column: str, target_column: str,
-                            calculations: List[str], **kwargs) -> pl.DataFrame:
-        """Add aggregate statistics as columns per group"""
-        result_df = df.clone()
+                            calculations: List[str] = None, **kwargs) -> pl.DataFrame:
+        """Add aggregate statistics as columns per group — only the ones
+        actually requested via `calculations` (mean/std/min/max/sum/count/
+        zscore), rather than always adding all six regardless of what was
+        asked for."""
+        requested = set(calculations) if calculations else {'mean', 'std'}
 
-        # Calculate group statistics
-        group_stats = df.group_by(group_column).agg([
-            pl.col(target_column).mean().alias(f"{target_column}_mean"),
-            pl.col(target_column).std().alias(f"{target_column}_std"),
-            pl.col(target_column).min().alias(f"{target_column}_min"),
-            pl.col(target_column).max().alias(f"{target_column}_max"),
-            pl.col(target_column).sum().alias(f"{target_column}_sum"),
-            pl.col(target_column).count().alias(f"{target_column}_count"),
-        ])
+        needs_mean = 'mean' in requested or 'zscore' in requested
+        needs_std = 'std' in requested or 'zscore' in requested
 
-        # Join back to original dataframe
-        result_df = result_df.join(group_stats, on=group_column, how="left")
+        agg_exprs = []
+        if needs_mean:
+            agg_exprs.append(pl.col(target_column).mean().alias(f"{target_column}_mean"))
+        if needs_std:
+            agg_exprs.append(pl.col(target_column).std().alias(f"{target_column}_std"))
+        if 'min' in requested:
+            agg_exprs.append(pl.col(target_column).min().alias(f"{target_column}_min"))
+        if 'max' in requested:
+            agg_exprs.append(pl.col(target_column).max().alias(f"{target_column}_max"))
+        if 'sum' in requested:
+            agg_exprs.append(pl.col(target_column).sum().alias(f"{target_column}_sum"))
+        if 'count' in requested:
+            agg_exprs.append(pl.col(target_column).count().alias(f"{target_column}_count"))
+
+        group_stats = df.group_by(group_column).agg(agg_exprs) if agg_exprs else df.select(group_column).unique()
+        result_df = df.join(group_stats, on=group_column, how="left")
+
+        if 'zscore' in requested:
+            std_col = pl.col(f"{target_column}_std")
+            safe_std = pl.when(std_col == 0).then(1.0).otherwise(std_col)
+            result_df = result_df.with_columns(
+                ((pl.col(target_column) - pl.col(f"{target_column}_mean")) / safe_std).alias(f"{target_column}_zscore")
+            )
+
+        # mean/std may have been computed only as inputs to zscore, not
+        # because the caller actually asked to see them as columns.
+        drop_cols = [c for c, requested_directly in (
+            (f"{target_column}_mean", 'mean' in requested),
+            (f"{target_column}_std", 'std' in requested),
+        ) if not requested_directly and c in result_df.columns]
+        if drop_cols:
+            result_df = result_df.drop(drop_cols)
 
         return result_df
 
@@ -2087,14 +2451,24 @@ class DataProcessor:
         """Create custom column using mathematical expression"""
         # For safety, use polars expressions
         try:
-            # Replace column names with pl.col() calls
+            # Replace column names with pl.col() calls. Note: the loop
+            # variable must NOT be named "col" — that would leak into this
+            # function's local scope (Python for-loops don't have their own
+            # scope) and shadow the col(...) call syntax the user actually
+            # typed for any column reference that DIDN'T get substituted
+            # (e.g. a typo'd or no-longer-existing column name), turning a
+            # clear "column not found" failure into a baffling
+            # "'str' object is not callable".
             expr = expression
-            for col in columns or []:
-                expr = expr.replace(f"col('{col}')", f"pl.col('{col}')")
+            for col_name in columns or []:
+                expr = expr.replace(f"col('{col_name}')", f"pl.col('{col_name}')")
 
             # Create the expression
             result_expr = eval(expr)
             return df.with_columns(result_expr.alias(output_col))
+        except NameError as e:
+            raise ValueError(f"Invalid expression: unknown column reference ({e}). "
+                              f"Check for typos — available columns: {', '.join(columns or [])}")
         except Exception as e:
             raise ValueError(f"Invalid expression: {e}")
 
@@ -2864,6 +3238,7 @@ class TransformationStep:
         self.timestamp = datetime.now()
         self.enabled = enabled
         self.execution_time: Optional[float] = None  # seconds, set on apply()
+        self.metrics: Dict[str, Any] = {}  # populated by operations that support it (see _metrics_sink)
 
 
 class TransformationPipeline:
@@ -2911,9 +3286,18 @@ class TransformationPipeline:
         step = TransformationStep(operation_id, params, step_number)
         self.steps.append(step)
 
-        # Apply the operation to detect created columns
-        current_df = self.apply(to_step=step_number)
-        created_columns = self._detect_created_columns(step_number - 1, step_number)
+        # Apply the operation to detect created columns. If this fails,
+        # roll the step back out of self.steps rather than leaving a
+        # permanently-broken step in the pipeline — otherwise every future
+        # apply() (including ones from completely unrelated, valid
+        # transformations) would keep re-raising this same failure forever,
+        # since apply() always replays from step 1.
+        try:
+            current_df = self.apply(to_step=step_number)
+            created_columns = self._detect_created_columns(step_number - 1, step_number)
+        except Exception:
+            self.steps.pop()
+            raise
 
         # Update step with created columns
         step.created_columns = created_columns
@@ -2977,16 +3361,23 @@ class TransformationPipeline:
                 start_time = time.perf_counter()
                 # Merge in current parameters without mutating step.params
                 # (which is what gets persisted) — only sql_query reads
-                # '_pipeline_parameters' today.
-                call_params = step.params
+                # '_pipeline_parameters' today. '_metrics_sink' is a fresh
+                # dict each run that operations supporting a companion
+                # report (regression/tree/clustering models, etc.) can fill
+                # in with metrics that don't fit in a dataframe column
+                # (R², feature importances, cluster centers...) — ignored by
+                # every operation that doesn't ask for it.
+                metrics_sink: Dict[str, Any] = {}
+                call_params = {**step.params, '_metrics_sink': metrics_sink}
                 if self.parameters:
-                    call_params = {**step.params, '_pipeline_parameters': self.parameters}
+                    call_params['_pipeline_parameters'] = self.parameters
                 current_df = self._data_processor.apply_operation(
                     current_df,
                     step.operation_id,
                     call_params
                 )
                 step.execution_time = time.perf_counter() - start_time
+                step.metrics = metrics_sink
             else:
                 # Disabled steps pass the dataframe through unchanged —
                 # lets a user turn a step off without losing/reordering it.

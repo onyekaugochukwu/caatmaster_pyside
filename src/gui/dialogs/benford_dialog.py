@@ -423,6 +423,27 @@ class BenfordDialog(BaseModal):
         self.analyze_btn.clicked.connect(self._run_analysis)
         btn_layout.addWidget(self.analyze_btn)
 
+        self.apply_btn = QPushButton("Apply to Dataset")
+        self.apply_btn.setToolTip(
+            "Add the leading-digit, expected-frequency, and deviation columns\n"
+            "to the dataset as a real, replayable Applied Step."
+        )
+        self.apply_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #107c10;
+                color: white;
+                padding: 8px 20px;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #0b5c0b;
+            }
+        """)
+        self.apply_btn.clicked.connect(self._on_apply_clicked)
+        btn_layout.addWidget(self.apply_btn)
+
         layout.addLayout(btn_layout)
 
         # Set scroll area content
@@ -497,6 +518,13 @@ class BenfordDialog(BaseModal):
                 continue
 
         return digits
+
+    def _on_apply_clicked(self):
+        """Commit the analysis: validate, then accept so the caller applies
+        it as a real step (get_parameters() already returns everything the
+        audit_benford_law operation needs)."""
+        if self.validate():
+            self.accept()
 
     def _run_analysis(self):
         """Run Benford's Law analysis"""

@@ -57,8 +57,10 @@ class GenericTransformationDialog(QDialog):
 
         for col in available_columns:
             item = QListWidgetItem(col)
-            item.setSelected(col in selected_columns)
+            # Must add the item to the list before setSelected() has any
+            # effect — selection state is tracked by the parent widget.
             list_widget.addItem(item)
+            item.setSelected(col in selected_columns)
 
         return list_widget
 
@@ -69,11 +71,6 @@ class GenericTransformationDialog(QDialog):
 
             # Use initial value if provided, otherwise use default
             initial_value = self.initial_params.get(param_name, schema.get('default'))
-
-            # Don't create a widget for the main 'column' if it's pre-filled
-            if param_name == 'column' and 'column' in self.initial_params:
-                # Still add it to the initial_params, but don't show it as an editable field
-                continue
 
             param_type = schema['type']
             widget = None

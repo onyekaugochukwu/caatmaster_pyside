@@ -13,6 +13,7 @@ from .filter_dialog import FilterDialog, AuditFlagDialog
 from .anomaly_dialog import AnomalyDetectionDialog
 from .kmeans_dialog import KMeansDialog
 from .benford_dialog import BenfordDialog
+from .duplicate_detection_dialog import DuplicateDetectionDialog
 from .forecast_dialog import ForecastDialog
 from .split_dialog import SplitColumnDialog
 from .extract_dialog import ExtractDialog
@@ -79,6 +80,7 @@ class TransformationDialogFactory:
 
         # Audit Operations
         'audit_benford_law': BenfordDialog,
+        'audit_duplicate_detection': DuplicateDetectionDialog,
 
         # Text operations
         'text_split_delimiter': SplitColumnDialog,
