@@ -117,9 +117,8 @@ class TransformView(QWidget):
         self.data_table.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
         self.data_table.horizontalHeader().customContextMenuRequested.connect(self.show_header_context_menu)
 
-        # Column AutoFilter state: column name -> set of allowed values
-        # (as displayed strings; None key absent = no filter on that column)
-        self.column_filters = {}
+        # Column AutoFilter is now a real pipeline step (column_value_filter)
+        # rather than view-only state — see _enabled_column_filter_steps().
         self._last_full_df = None
 
         data_scroll.setWidget(self.data_table)
@@ -881,8 +880,7 @@ class TransformView(QWidget):
                 )
 
     def populate_table(self, df: pl.DataFrame):
-        """Populates the table with data from a Polars DataFrame, applying
-        any active column AutoFilters first."""
+        """Populates the table with data from a Polars DataFrame."""
         if df is None:
             self._last_full_df = None
             self.data_table.setRowCount(0)
@@ -890,8 +888,7 @@ class TransformView(QWidget):
             return
 
         self._last_full_df = df
-        filtered_df = self._apply_column_filters(df)
-        display_df = filtered_df.head(1000)
+        display_df = df.head(1000)
 
         self.data_table.setRowCount(display_df.height)
         self.data_table.setColumnCount(display_df.width)
@@ -906,38 +903,24 @@ class TransformView(QWidget):
 
         header = self.data_table.horizontalHeader()
         if hasattr(header, "set_filtered_columns"):
+            filtered_columns = {
+                step.params.get('column') for step in self._enabled_column_filter_steps()
+            }
             filtered_indices = {
-                display_df.columns.index(col) for col in self.column_filters
+                display_df.columns.index(col) for col in filtered_columns
                 if col in display_df.columns
             }
             header.set_filtered_columns(filtered_indices)
 
-        if filtered_df.height != df.height:
-            self.info_label.setText(
-                f"Showing {filtered_df.height:,} of {df.height:,} rows (AutoFilter active) — "
-                f"click a header's funnel icon to change it."
-            )
-
-    def _apply_column_filters(self, df: pl.DataFrame) -> pl.DataFrame:
-        """Apply active AutoFilter selections (view-level only — does not
-        modify the pipeline or its steps)."""
-        if not self.column_filters:
-            return df
-
-        import polars as pl
-        mask = None
-        for col, allowed in self.column_filters.items():
-            if col not in df.columns:
-                continue
-            allow_blank = BLANKS_LABEL in allowed
-            text_allowed = [v for v in allowed if v != BLANKS_LABEL]
-            col_expr = pl.col(col).cast(pl.Utf8, strict=False)
-            col_mask = col_expr.is_in(text_allowed)
-            if allow_blank:
-                col_mask = col_mask | col_expr.is_null()
-            mask = col_mask if mask is None else (mask & col_mask)
-
-        return df.filter(mask) if mask is not None else df
+    def _enabled_column_filter_steps(self):
+        """Every currently-enabled column_value_filter step in the active
+        pipeline, in order applied."""
+        if not self.pipeline:
+            return []
+        return [
+            step for step in self.pipeline.get_steps()
+            if step.enabled and step.operation_id == 'column_value_filter'
+        ]
 
     def _get_unique_display_values(self, column_name: str):
         """Unique values for a column, as displayed strings, for the filter popup."""
@@ -959,7 +942,15 @@ class TransformView(QWidget):
         if not values:
             return
 
-        current_selection = self.column_filters.get(column_name)
+        # Pre-check whatever the most recent active filter step for this
+        # column selected, so reopening the popup shows the current state.
+        current_selection = None
+        for step in reversed(self._enabled_column_filter_steps()):
+            if step.params.get('column') == column_name:
+                current_selection = set(step.params.get('allowed_values', []))
+                if step.params.get('allow_blank'):
+                    current_selection.add(BLANKS_LABEL)
+                break
 
         popup = ColumnFilterPopup(column_name, values, current_selection, parent=self)
         popup.filtersApplied.connect(self._on_column_filter_applied)
@@ -971,14 +962,30 @@ class TransformView(QWidget):
         popup.show_at(global_pos)
 
     def _on_column_filter_applied(self, column_name: str, selected):
-        """Apply or clear a column's filter and refresh the grid."""
+        """Record the AutoFilter selection as a real pipeline step (so it
+        shows up in Applied Steps, is part of the audit trail, and replays
+        on refresh) — or, if cleared, disable whatever filter step was
+        previously applied to this column."""
         if selected is None:
-            self.column_filters.pop(column_name, None)
-        else:
-            self.column_filters[column_name] = selected
+            for i, step in enumerate(self.pipeline.get_steps(), start=1):
+                if step.enabled and step.operation_id == 'column_value_filter' \
+                        and step.params.get('column') == column_name:
+                    self.pipeline.set_step_enabled(i, False)
+            transformed_df = self.pipeline.apply()
+            self.populate_table(transformed_df)
+            self.update_info()
+            self.steps_panel.refresh()
+            self.dataChanged.emit(transformed_df)
+            self.pipelineChanged.emit(self.pipeline)
+            return
 
-        if self._last_full_df is not None:
-            self.populate_table(self._last_full_df)
+        allow_blank = BLANKS_LABEL in selected
+        allowed_values = [v for v in selected if v != BLANKS_LABEL]
+        self.apply_transformation('column_value_filter', {
+            'column': column_name,
+            'allowed_values': allowed_values,
+            'allow_blank': allow_blank,
+        })
 
     def update_info(self):
         """Updates the info label with details about the current DataFrame."""

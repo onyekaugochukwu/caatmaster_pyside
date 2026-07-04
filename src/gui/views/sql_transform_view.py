@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QTextEdit, QTableWidget, QTableWidgetItem, QHeaderView,
     QSplitter, QMessageBox, QGroupBox, QComboBox, QScrollArea,
-    QListWidget, QListWidgetItem, QCheckBox, QCompleter
+    QListWidget, QListWidgetItem, QCheckBox, QCompleter, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal, Slot, QStringListModel
 from PySide6.QtGui import QFont, QSyntaxHighlighter, QTextCharFormat, QColor, QTextCursor
@@ -181,6 +181,7 @@ class SQLTransformView(QWidget):
 
     dataChanged = Signal(pl.DataFrame)
     applyToPipelineRequested = Signal(str, str)  # query, table_name
+    createDatasetRequested = Signal(str, object, list)  # name, df, source_table_names
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -191,6 +192,8 @@ class SQLTransformView(QWidget):
         self.dataset_widgets = {}  # dataset id -> QListWidgetItem
         self.completer = None
         self.current_table_name = None
+        self.last_query_result = None  # full (non-truncated) result of the last executed query
+        self.last_query_text = ""
         self.setup_ui()
 
     def setup_ui(self):
@@ -246,6 +249,28 @@ class SQLTransformView(QWidget):
         """)
         self.apply_pipeline_btn.clicked.connect(self.apply_to_pipeline)
         toolbar_layout.addWidget(self.apply_pipeline_btn)
+
+        self.create_dataset_btn = QPushButton("Create New Dataset")
+        self.create_dataset_btn.setToolTip(
+            "Create a brand new dataset from this query's results — for cross-dataset\n"
+            "queries (joins, unions) where the result doesn't belong to any one\n"
+            "source dataset's pipeline."
+        )
+        self.create_dataset_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.BG_PRIMARY};
+                color: {Colors.ACCENT};
+                border: 1px solid {Colors.ACCENT};
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: 600;
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.ACCENT_SOFT};
+            }}
+        """)
+        self.create_dataset_btn.clicked.connect(self.create_dataset_from_results)
+        toolbar_layout.addWidget(self.create_dataset_btn)
 
         self.clear_btn = QPushButton("Clear")
         self.clear_btn.setStyleSheet("""
@@ -713,6 +738,8 @@ class SQLTransformView(QWidget):
 
             # Convert to Polars
             result_df = pl.from_pandas(result_pandas)
+            self.last_query_result = result_df
+            self.last_query_text = query
 
             # Display results
             self.display_results(result_df)
@@ -725,6 +752,7 @@ class SQLTransformView(QWidget):
             )
 
         except Exception as e:
+            self.last_query_result = None
             error_msg = f"Query execution failed:\n{str(e)}"
             self.update_info(error_msg)
             QMessageBox.critical(self, "Query Error", error_msg)
@@ -742,6 +770,33 @@ class SQLTransformView(QWidget):
             return
 
         self.applyToPipelineRequested.emit(query, self.current_table_name)
+
+    @Slot()
+    def create_dataset_from_results(self):
+        """Create a brand new dataset from the last executed query's full
+        result set — the right choice for a cross-dataset Model Query
+        (a join/union) whose result doesn't semantically belong to any one
+        source dataset's pipeline."""
+        if self.last_query_result is None:
+            QMessageBox.warning(self, "No Results", "Run a query first.")
+            return
+
+        default_name = "Query Result"
+        name, ok = QInputDialog.getText(
+            self, "Create New Dataset", "Name for the new dataset:", text=default_name
+        )
+        if not ok or not name.strip():
+            return
+
+        # Best-effort lineage: which currently-registered tables does the
+        # query text actually reference by name.
+        query_lower = self.last_query_text.lower()
+        referenced_tables = [
+            t for t in self.registered_tables
+            if re.search(r'\b' + re.escape(t.lower()) + r'\b', query_lower)
+        ]
+
+        self.createDatasetRequested.emit(name.strip(), self.last_query_result, referenced_tables)
 
     def display_results(self, df: pl.DataFrame):
         """Display query results in the table."""

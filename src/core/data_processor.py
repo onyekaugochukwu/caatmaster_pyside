@@ -538,6 +538,8 @@ class DataProcessor:
             return self._call_mapped_method(self.query_sheet, df, params)
         elif operation_id == 'filter_advanced':
             return self._call_mapped_method(self.apply_advanced_filter, df, params)
+        elif operation_id == 'column_value_filter':
+            return self._call_mapped_method(self.column_value_filter, df, params)
 
         # Aggregate operations (summary reports)
         elif operation_id == 'group_summary':
@@ -2687,6 +2689,20 @@ class DataProcessor:
             return df
         combined = self._build_condition_expr(df, conditions, combine_operator)
         return df.filter(combined) if combined is not None else df
+
+    def column_value_filter(self, df: pl.DataFrame, column: str, allowed_values: list,
+                             allow_blank: bool = True) -> pl.DataFrame:
+        """Keep only rows whose value in `column` is one of `allowed_values`
+        (an Excel AutoFilter-style checklist) — the real implementation
+        behind the column header's funnel-icon filter, now a real,
+        replayable pipeline step instead of a view-only display filter."""
+        if column not in df.columns:
+            return df
+        col_expr = pl.col(column).cast(pl.Utf8, strict=False)
+        mask = col_expr.is_in(allowed_values)
+        if allow_blank:
+            mask = mask | col_expr.is_null()
+        return df.filter(mask)
 
     def flag_rows(self, df: pl.DataFrame, conditions: list, combine_operator: str = "AND",
                   flag_col: str = "flagged") -> pl.DataFrame:

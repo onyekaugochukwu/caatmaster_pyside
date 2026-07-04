@@ -793,6 +793,7 @@ class MainWindow(QMainWindow):
         transform_view.pipelineChanged.connect(self._on_pipeline_changed)
         transform_view.dataChanged.connect(self._on_transform_data_changed)
         sql_view.applyToPipelineRequested.connect(self._on_sql_apply_to_pipeline)
+        sql_view.createDatasetRequested.connect(self._on_sql_create_dataset)
 
         # Set project on data_view
         data_view.set_project(self.current_project) if self.current_project else None
@@ -1357,6 +1358,48 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("SQL query applied to dataset pipeline")
         except Exception as e:
             QMessageBox.critical(self, "Apply Failed", f"Failed to apply SQL query to pipeline:\n{str(e)}")
+
+    @Slot(str, object, list)
+    def _on_sql_create_dataset(self, name: str, df, source_table_names: list):
+        """Create a brand new dataset from a SQL query's results — the
+        right choice for a cross-dataset Model Query (join/union) whose
+        result doesn't belong to any single source dataset's pipeline."""
+        if not self.current_project:
+            QMessageBox.warning(self, "No Project", "Please create or open a project first.")
+            return
+
+        # Ensure a unique name within the project
+        base_name = name.strip() or "Query Result"
+        unique_name = base_name
+        counter = 1
+        existing_names = {ds.name for ds in self.current_project.list_datasets()}
+        while unique_name in existing_names:
+            unique_name = f"{base_name} ({counter})"
+            counter += 1
+
+        # Best-effort lineage: map registered table names back to dataset ids
+        source_dataset_ids = [
+            ds.id for ds in self.current_project.list_datasets()
+            if ds.name in source_table_names
+        ]
+
+        new_dataset = Dataset(
+            id=str(uuid.uuid4()),
+            name=unique_name,
+            dataframe=df,
+            source_dataset_ids=source_dataset_ids,
+            source_operation="sql_query"
+        )
+        self.current_project.add_dataset(new_dataset)
+        self.current_dataset = new_dataset
+        self.mark_project_dirty()
+
+        sql_view = self.views.get("sql")
+        if sql_view:
+            sql_view.refresh_dataset(new_dataset.name, df, dataset_id=new_dataset.id)
+
+        self.sidebar.set_project(self.current_project)
+        self.statusBar().showMessage(f"Created dataset '{unique_name}' from query results ({df.height:,} rows)")
 
     @Slot()
     def on_upload_requested(self):

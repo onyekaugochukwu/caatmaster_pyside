@@ -1589,6 +1589,22 @@ OPERATION_REGISTRY = {
     },
 
     # -------------------------------------------------------------------------
+    # COLUMN AUTOFILTER (checklist of allowed values, Excel AutoFilter-style)
+    # -------------------------------------------------------------------------
+    "column_value_filter": {
+        "display_name": "Column AutoFilter",
+        "type": TransformationStepType.FILTER,
+        "category": "table",
+        "description": "Keeps only rows whose value in a column is one of a checked set of values",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "allowed_values": {"type": "list[str]", "required": True, "label": "Allowed Values"},
+            "allow_blank": {"type": "bool", "required": False, "default": True, "label": "Include Blanks"}
+        },
+        "creates_columns": False
+    },
+
+    # -------------------------------------------------------------------------
     # ADVANCED FILTER (multi-condition, AND/OR)
     # -------------------------------------------------------------------------
     "filter_advanced": {
