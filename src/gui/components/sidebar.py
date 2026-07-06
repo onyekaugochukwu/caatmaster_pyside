@@ -124,6 +124,12 @@ class Sidebar(QFrame):
     dataset_visualize_requested = Signal(str)  # dataset_id
     join_datasets_requested = Signal(str)  # source_dataset_id
     append_datasets_requested = Signal(str)  # source_dataset_id
+    compare_datasets_requested = Signal(str)  # source_dataset_id
+    fuzzy_match_datasets_requested = Signal(str)  # source_dataset_id
+    profile_dataset_requested = Signal(str)  # source_dataset_id
+    import_folder_listing_requested = Signal()
+    verify_data_requested = Signal(str)  # source_dataset_id
+    cvs_dialog_requested = Signal(str)  # source_dataset_id (may be None)
     upload_requested = Signal()  # Request to upload dataset
     cleaning_wizard_requested = Signal()  # Request to open the Data Cleaning Wizard
     paste_requested = Signal()  # Request to create a dataset from clipboard
@@ -546,6 +552,34 @@ class Sidebar(QFrame):
         self.append_datasets_btn.clicked.connect(self._on_append_datasets_clicked)
         scroll_layout.addWidget(self.append_datasets_btn)
 
+        self.compare_datasets_btn = SidebarButton("Compare Datasets", "fa5s.not-equal")
+        self.compare_datasets_btn.clicked.connect(self._on_compare_datasets_clicked)
+        scroll_layout.addWidget(self.compare_datasets_btn)
+
+        self.fuzzy_match_btn = SidebarButton("Fuzzy Match Datasets", "fa5s.search-plus")
+        self.fuzzy_match_btn.clicked.connect(self._on_fuzzy_match_datasets_clicked)
+        scroll_layout.addWidget(self.fuzzy_match_btn)
+
+        self.profile_dataset_btn = SidebarButton("Profile Dataset", "fa5s.chart-bar")
+        self.profile_dataset_btn.clicked.connect(self._on_profile_dataset_clicked)
+        scroll_layout.addWidget(self.profile_dataset_btn)
+
+        self.project_lineage_btn = SidebarButton("Project Lineage", "fa5s.project-diagram")
+        self.project_lineage_btn.clicked.connect(lambda: self.navigation_requested.emit("project_lineage"))
+        scroll_layout.addWidget(self.project_lineage_btn)
+
+        self.import_folder_listing_btn = SidebarButton("Import Folder Listing", "fa5s.folder-open")
+        self.import_folder_listing_btn.clicked.connect(self.import_folder_listing_requested.emit)
+        scroll_layout.addWidget(self.import_folder_listing_btn)
+
+        self.verify_data_btn = SidebarButton("Verify Data", "fa5s.check-double")
+        self.verify_data_btn.clicked.connect(self._on_verify_data_clicked)
+        scroll_layout.addWidget(self.verify_data_btn)
+
+        self.cvs_dialog_btn = SidebarButton("Variables Sampling", "fa5s.calculator")
+        self.cvs_dialog_btn.clicked.connect(self._on_cvs_dialog_clicked)
+        scroll_layout.addWidget(self.cvs_dialog_btn)
+
         self.audit_programs_btn = SidebarButton("Audit Programs", "fa5s.clipboard-list")
         self.audit_programs_btn.clicked.connect(self.audit_programs_requested.emit)
         scroll_layout.addWidget(self.audit_programs_btn)
@@ -620,6 +654,41 @@ class Sidebar(QFrame):
             self.append_datasets_requested.emit(self.current_dataset_id)
         else:
             self.append_datasets_requested.emit(None)
+
+    def _on_compare_datasets_clicked(self):
+        """Handle Compare Datasets button click"""
+        if self.current_dataset_id:
+            self.compare_datasets_requested.emit(self.current_dataset_id)
+        else:
+            self.compare_datasets_requested.emit(None)
+
+    def _on_fuzzy_match_datasets_clicked(self):
+        """Handle Fuzzy Match Datasets button click"""
+        if self.current_dataset_id:
+            self.fuzzy_match_datasets_requested.emit(self.current_dataset_id)
+        else:
+            self.fuzzy_match_datasets_requested.emit(None)
+
+    def _on_profile_dataset_clicked(self):
+        """Handle Profile Dataset button click"""
+        if self.current_dataset_id:
+            self.profile_dataset_requested.emit(self.current_dataset_id)
+        else:
+            self.profile_dataset_requested.emit(None)
+
+    def _on_verify_data_clicked(self):
+        """Handle Verify Data button click"""
+        if self.current_dataset_id:
+            self.verify_data_requested.emit(self.current_dataset_id)
+        else:
+            self.verify_data_requested.emit(None)
+
+    def _on_cvs_dialog_clicked(self):
+        """Handle Variables Sampling button click"""
+        if self.current_dataset_id:
+            self.cvs_dialog_requested.emit(self.current_dataset_id)
+        else:
+            self.cvs_dialog_requested.emit(None)
 
     def get_dataset_names(self) -> List[str]:
         """Get list of dataset names in the current project"""

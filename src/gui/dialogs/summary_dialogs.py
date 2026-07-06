@@ -4,6 +4,7 @@ Includes: Group Summary, Top/Bottom, Stratification, Sampling, Cross-Tabulation,
 """
 import polars as pl
 import numpy as np
+import datetime as dt
 from typing import Optional, List, Dict, Any
 import random
 
@@ -441,6 +442,185 @@ class StratificationDialog(BaseModal):
         return pl.DataFrame(results)
 
 
+class AgingAnalysisDialog(BaseModal):
+    """Dialog for the classic AR/AP aging report - buckets a date column by
+    age in days as of a reference date and summarizes per bucket, mirroring
+    ActiveData for Excel's Age... function."""
+
+    def __init__(self, dataframe: pl.DataFrame, parent=None):
+        self.original_df = dataframe
+        super().__init__("Aging Analysis", dataframe, parent)
+        self.setMinimumSize(600, 480)
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+
+        date_group = QGroupBox("Date Column")
+        date_layout = QVBoxLayout(date_group)
+        date_columns = [c for c in self.original_df.columns
+                        if self.original_df[c].dtype in (pl.Date, pl.Datetime) or "date" in c.lower()]
+        self.date_combo = QComboBox()
+        self.date_combo.addItems(date_columns or self.original_df.columns)
+        date_layout.addWidget(QLabel("Column to age (e.g. invoice date, due date):"))
+        date_layout.addWidget(self.date_combo)
+        layout.addWidget(date_group)
+
+        asof_group = QGroupBox("As Of Date")
+        asof_layout = QVBoxLayout(asof_group)
+        self.asof_edit = QLineEdit()
+        self.asof_edit.setPlaceholderText("YYYY-MM-DD - leave blank for today")
+        asof_layout.addWidget(self.asof_edit)
+        layout.addWidget(asof_group)
+
+        bounds_group = QGroupBox("Age Boundaries (Days)")
+        bounds_layout = QVBoxLayout(bounds_group)
+        bounds_layout.addWidget(QLabel("Comma-separated bucket boundaries, in days:"))
+        self.boundaries_edit = QLineEdit("0, 30, 60, 90")
+        bounds_layout.addWidget(self.boundaries_edit)
+        preset_layout = QHBoxLayout()
+        preset_layout.addWidget(QLabel("Presets:"))
+        for name, value in [("Standard (30/60/90)", "0, 30, 60, 90"),
+                           ("Fine (15-day)", "0, 15, 30, 45, 60, 90, 120"),
+                           ("Quarterly", "0, 90, 180, 270, 365")]:
+            btn = QPushButton(name)
+            btn.clicked.connect(lambda checked, v=value: self.boundaries_edit.setText(v))
+            preset_layout.addWidget(btn)
+        preset_layout.addStretch()
+        bounds_layout.addLayout(preset_layout)
+        layout.addWidget(bounds_group)
+
+        value_group = QGroupBox("Value Column (Optional)")
+        value_layout = QVBoxLayout(value_group)
+        numeric_columns = [c for c in self.original_df.columns if self.original_df[c].dtype.is_numeric()]
+        self.value_combo = QComboBox()
+        self.value_combo.addItems([""] + numeric_columns)
+        value_layout.addWidget(QLabel("Sum/average this column per age bucket:"))
+        value_layout.addWidget(self.value_combo)
+        layout.addWidget(value_group)
+
+        self.counts_check = QCheckBox("Include row counts")
+        self.counts_check.setChecked(True)
+        layout.addWidget(self.counts_check)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(self.cancel_btn)
+
+        self.apply_btn = QPushButton("Generate Aging Report")
+        self.apply_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                padding: 8px 20px;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #106ebe;
+            }
+        """)
+        self.apply_btn.clicked.connect(self._apply_aging)
+        btn_layout.addWidget(self.apply_btn)
+
+        layout.addLayout(btn_layout)
+
+    def _apply_aging(self):
+        """Accept aging analysis parameters"""
+        as_of_text = self.asof_edit.text().strip()
+        if as_of_text:
+            try:
+                dt.date.fromisoformat(as_of_text)
+            except ValueError:
+                QMessageBox.warning(self, "Warning", "As Of Date must be in YYYY-MM-DD format.")
+                return
+
+        boundaries_text = self.boundaries_edit.text().strip()
+        if not boundaries_text:
+            QMessageBox.warning(self, "Warning", "Please enter age boundaries.")
+            return
+        try:
+            boundaries = [float(b.strip()) for b in boundaries_text.split(",")]
+        except ValueError:
+            QMessageBox.warning(self, "Warning", "Invalid boundary values - use numbers only.")
+            return
+
+        self.current_params = {
+            "date_column": self.date_combo.currentText(),
+            "as_of_date": as_of_text or None,
+            "boundaries": boundaries,
+            "value_column": self.value_combo.currentText() or None,
+            "include_counts": self.counts_check.isChecked()
+        }
+        self.accept()
+
+    def get_parameters(self) -> dict:
+        return getattr(self, 'current_params', {})
+
+
+class FieldStatisticsDialog(BaseModal):
+    """Dialog for the comprehensive per-field statistics report - mirrors
+    CaseWare IDEA's Field Statistics."""
+
+    def __init__(self, dataframe: pl.DataFrame, parent=None):
+        self.original_df = dataframe
+        super().__init__("Field Statistics", dataframe, parent)
+        self.setMinimumSize(500, 480)
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+
+        col_group = QGroupBox("Columns")
+        col_layout = QVBoxLayout(col_group)
+        col_layout.addWidget(QLabel("Select columns to profile (default: all):"))
+        self.column_list = QListWidget()
+        self.column_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.column_list.addItems(self.original_df.columns)
+        for i in range(self.column_list.count()):
+            self.column_list.item(i).setSelected(True)
+        col_layout.addWidget(self.column_list)
+        layout.addWidget(col_group)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(self.cancel_btn)
+
+        self.apply_btn = QPushButton("Generate Field Statistics")
+        self.apply_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                padding: 8px 20px;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #106ebe;
+            }
+        """)
+        self.apply_btn.clicked.connect(self._apply_field_statistics)
+        btn_layout.addWidget(self.apply_btn)
+
+        layout.addLayout(btn_layout)
+
+    def _apply_field_statistics(self):
+        selected = [item.text() for item in self.column_list.selectedItems()]
+        self.current_params = {"columns": selected or None}
+        self.accept()
+
+    def get_parameters(self) -> dict:
+        return getattr(self, 'current_params', {})
+
+
 class SamplingDialog(BaseModal):
     """Dialog for creating sample-based analytical views"""
 
@@ -470,6 +650,15 @@ class SamplingDialog(BaseModal):
         self.systematic_radio = QRadioButton("Systematic Sample (Every Nth)")
         method_layout.addWidget(self.systematic_radio)
         self.method_group.addButton(self.systematic_radio)
+
+        self.mus_radio = QRadioButton("Monetary Unit Sample (MUS/PPS)")
+        self.mus_radio.setToolTip(
+            "Probability-proportional-to-size sampling: larger dollar amounts are more likely to be "
+            "selected, and any item whose value alone exceeds the sampling interval is selected with "
+            "certainty. A standard substantive-testing technique for account balances."
+        )
+        method_layout.addWidget(self.mus_radio)
+        self.method_group.addButton(self.mus_radio)
 
         layout.addWidget(method_group)
 
@@ -507,6 +696,18 @@ class SamplingDialog(BaseModal):
         strat_layout.addWidget(self.stratify_combo)
 
         layout.addWidget(strat_group)
+
+        # Value column (shown when Monetary Unit Sample selected)
+        mus_group = QGroupBox("Monetary Unit Sampling")
+        mus_layout = QVBoxLayout(mus_group)
+
+        numeric_columns = [c for c in self.original_df.columns if self.original_df[c].dtype.is_numeric()]
+        self.value_column_combo = QComboBox()
+        self.value_column_combo.addItems([""] + numeric_columns)
+        mus_layout.addWidget(QLabel("Value column (dollar amount):"))
+        mus_layout.addWidget(self.value_column_combo)
+
+        layout.addWidget(mus_group)
 
         # Random seed
         seed_group = QGroupBox("Random Options")
@@ -554,7 +755,12 @@ class SamplingDialog(BaseModal):
     def _apply_sampling(self):
         """Accept sampling parameters"""
         method = "random" if self.random_radio.isChecked() else \
-                 "stratified" if self.stratified_radio.isChecked() else "systematic"
+                 "stratified" if self.stratified_radio.isChecked() else \
+                 "monetary_unit" if self.mus_radio.isChecked() else "systematic"
+
+        if method == "monetary_unit" and not self.value_column_combo.currentText():
+            QMessageBox.warning(self, "Warning", "Please select a value column for Monetary Unit Sampling.")
+            return
 
         if self.percentage_radio.isChecked():
             sample_size = None
@@ -568,6 +774,7 @@ class SamplingDialog(BaseModal):
             "sample_size": sample_size,
             "percentage": percentage,
             "stratify_column": self.stratify_combo.currentText() if self.stratified_radio.isChecked() else None,
+            "value_column": self.value_column_combo.currentText() if method == "monetary_unit" else None,
             "random_seed": self.seed_edit.text().strip() if self.seed_edit.text().strip() else None
         }
         self.accept()

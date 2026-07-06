@@ -28,11 +28,12 @@ from .column_dialogs import RenameColumnsDialog, ChooseColumnsDialog, ChangeData
 from .table_dialogs import (
     SplitSheetDialog, TransposeDialog, CombineSheetsDialog,
     QuerySheetDialog, SelectNRowsDialog, JoinDatasetsDialog,
-    AppendDatasetsDialog
+    AppendDatasetsDialog, CompareDatasetsDialog, FuzzyMatchDatasetsDialog
 )
 from .summary_dialogs import (
     GroupSummaryDialog, TopBottomDialog, StratificationDialog,
-    SamplingDialog, CrossTabulationDialog, TrendAnalysisDialog
+    SamplingDialog, CrossTabulationDialog, TrendAnalysisDialog,
+    AgingAnalysisDialog, FieldStatisticsDialog
 )
 from .split_columns_dialog import SplitColumnsDialog
 from .financial_ratios_dialog import FinancialRatiosDialog
@@ -140,11 +141,15 @@ class TransformationDialogFactory:
         'select_n_rows': SelectNRowsDialog,
         'join_datasets': JoinDatasetsDialog,
         'append_datasets': AppendDatasetsDialog,
+        'compare_datasets': CompareDatasetsDialog,
+        'fuzzy_match_datasets': FuzzyMatchDatasetsDialog,
 
         # Summary report operations
         'group_summary': GroupSummaryDialog,
         'top_bottom': TopBottomDialog,
         'stratification': StratificationDialog,
+        'aging_analysis': AgingAnalysisDialog,
+        'field_statistics': FieldStatisticsDialog,
         'sampling': SamplingDialog,
         'cross_tabulation': CrossTabulationDialog,
         'trend_analysis': TrendAnalysisDialog,

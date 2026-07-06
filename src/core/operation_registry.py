@@ -854,6 +854,25 @@ OPERATION_REGISTRY = {
         "creates_columns": ["{column}_min", "{column}_max", "{column}_mean", "{column}_std"]
     },
 
+    # -------------------------------------------------------------------------
+    # FIELD STATISTICS
+    # -------------------------------------------------------------------------
+    "field_statistics": {
+        "display_name": "Field Statistics",
+        "type": TransformationStepType.AGGREGATE,
+        "category": "statistics",
+        "description": "Comprehensive per-field statistics report, one row per column - count, "
+                       "missing, unique, and (for numeric fields) min/max/range/sum/mean/median/std/"
+                       "variance/skewness/kurtosis/percentiles/coefficient of variation, plus the "
+                       "most and least frequent value for every field. Mirrors CaseWare IDEA's Field "
+                       "Statistics.",
+        "parameter_schema": {
+            "columns": {"type": "list[column]", "required": False,
+                       "label": "Columns (blank = every column)"}
+        },
+        "creates_columns": False  # Creates a statistics summary
+    },
+
     # Note: "stat_group_stats" used to live here as a near-duplicate of
     # stat_add_group_stats below (same display name, same params, no
     # execution method — always crashed). Removed rather than fixed, since
@@ -1176,6 +1195,21 @@ OPERATION_REGISTRY = {
             "missing_count_column": {"type": "string", "required": "False", "default": "gaps_after_this", "label": "Gap Count Column"}
         },
         "creates_columns": ["{output_column}", "{missing_count_column}"]
+    },
+    "audit_sequence_check": {
+        "display_name": "Sequence Check",
+        "type": TransformationStepType.AUDIT_FLAG,
+        "category": "audit",
+        "description": "Flags records that break ascending/descending order relative to the row "
+                       "before them, in the table's actual current row order - distinct from Gap "
+                       "Analysis, which looks for missing values rather than out-of-order ones. "
+                       "Mirrors ACL's SEQUENCE command (e.g. a check issued out of chronological order).",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column To Check"},
+            "ascending": {"type": "bool", "required": False, "default": True, "label": "Expected Ascending Order"},
+            "output_col": {"type": "string", "required": False, "default": "out_of_sequence", "label": "Flag Column"}
+        },
+        "creates_columns": ["{output_col}"]
     },
     "audit_outlier_detection": {
         "display_name": "Audit Outlier Detection",
@@ -1770,6 +1804,28 @@ OPERATION_REGISTRY = {
     },
 
     # -------------------------------------------------------------------------
+    # AGING ANALYSIS
+    # -------------------------------------------------------------------------
+    "aging_analysis": {
+        "display_name": "Aging Analysis",
+        "type": TransformationStepType.AGGREGATE,
+        "category": "statistics",
+        "description": "Classic AR/AP aging report: buckets a date column by age in days as of a "
+                       "reference date (e.g. Current, 1-30, 31-60, 61-90, 90+ days) and summarizes "
+                       "count/sum/mean per bucket",
+        "parameter_schema": {
+            "date_column": {"type": "column", "required": True, "label": "Date Column"},
+            "as_of_date": {"type": "string", "required": False, "label": "As Of Date (blank = today)",
+                          "placeholder": "YYYY-MM-DD"},
+            "boundaries": {"type": "list[float]", "required": False, "default": [0, 30, 60, 90],
+                          "label": "Age Boundaries (days)", "placeholder": "e.g., 0, 30, 60, 90"},
+            "value_column": {"type": "column", "required": False, "label": "Value Column (optional, to sum per bucket)"},
+            "include_counts": {"type": "bool", "required": False, "default": True, "label": "Include Counts"}
+        },
+        "creates_columns": False  # Creates aging summary
+    },
+
+    # -------------------------------------------------------------------------
     # SAMPLING
     # -------------------------------------------------------------------------
     "sampling": {
@@ -1779,10 +1835,12 @@ OPERATION_REGISTRY = {
         "description": "Creates a sample-based analytical view without changing original data",
         "parameter_schema": {
             "method": {"type": "string", "required": True, "label": "Sampling Method",
-                      "options": ["random", "stratified", "systematic", "cluster"]},
+                      "options": ["random", "stratified", "systematic", "cluster", "monetary_unit"]},
             "sample_size": {"type": "int", "required": False, "label": "Sample Size (or percentage if < 1)"},
             "percentage": {"type": "float", "required": False, "label": "Sample Percentage (0-100)"},
             "stratify_column": {"type": "column", "required": False, "label": "Stratify Column (for stratified)"},
+            "value_column": {"type": "column", "required": False,
+                             "label": "Value Column (dollar amount, for Monetary Unit Sampling)"},
             "random_seed": {"type": "int", "required": False, "label": "Random Seed"},
             "output_type": {"type": "string", "required": False, "default": "sample_view",
                            "options": ["sample_view", "sample_table"], "label": "Output Type"}
@@ -1841,13 +1899,15 @@ OPERATION_REGISTRY = {
         "display_name": "Join Datasets",
         "type": TransformationStepType.CALCULATE,
         "category": "table",
-        "description": "Join two datasets using various join types (left, right, inner, outer, cross)",
+        "description": "Join two datasets using various join types (left, right, inner, outer, cross, "
+                       "semi, anti). Semi/anti mirror ActiveData for Excel's 'Match Sheets': keep only "
+                       "left rows that do (semi) or don't (anti) have a matching key on the right.",
         "parameter_schema": {
             "right_dataset": {"type": "string", "required": True, "label": "Right Dataset Name"},
             "left_key": {"type": "column", "required": True, "label": "Left Join Key"},
             "right_key": {"type": "string", "required": True, "label": "Right Join Key"},
-            "join_type": {"type": "string", "required": False, "default": "left_join",
-                         "options": ["left_join", "right_join", "inner_join", "outer_join", "cross_join"],
+            "join_type": {"type": "string", "required": False, "default": "left",
+                         "options": ["left", "right", "inner", "outer", "cross", "semi", "anti"],
                          "label": "Join Type"},
             "suffix": {"type": "string", "required": False, "default": "_right", "label": "Column Suffix"}
         },
@@ -1867,6 +1927,48 @@ OPERATION_REGISTRY = {
                               "placeholder": "dataset1, dataset2, ..."},
             "align_columns": {"type": "bool", "required": False, "default": True, "label": "Auto-align Columns"},
             "fill_missing": {"type": "bool", "required": False, "default": True, "label": "Fill Missing with Null"}
+        },
+        "creates_columns": True
+    },
+
+    # -------------------------------------------------------------------------
+    # COMPARE DATASETS
+    # -------------------------------------------------------------------------
+    "compare_datasets": {
+        "display_name": "Compare Datasets",
+        "type": TransformationStepType.CALCULATE,
+        "category": "table",
+        "description": "Cell-by-cell comparison of two datasets by key - classifies every record as "
+                       "only-in-left, only-in-right, matched-identical, or matched-different. Mirrors "
+                       "ActiveData for Excel's Compare Sheets.",
+        "parameter_schema": {
+            "right_dataset": {"type": "string", "required": True, "label": "Right Dataset Name"},
+            "key_columns": {"type": "list[string]", "required": True, "label": "Key Column(s)"},
+            "compare_columns": {"type": "list[string]", "required": False,
+                               "label": "Columns To Compare (blank = all common columns)"},
+        },
+        "creates_columns": True
+    },
+
+    # -------------------------------------------------------------------------
+    # FUZZY MATCH DATASETS
+    # -------------------------------------------------------------------------
+    "fuzzy_match_datasets": {
+        "display_name": "Fuzzy Match Datasets",
+        "type": TransformationStepType.CALCULATE,
+        "category": "table",
+        "description": "Approximate text matching between two datasets by similarity score, not an "
+                       "exact key - e.g. matching an employee's address against a vendor's to catch "
+                       "near-identical (but not exactly typed) matches. Mirrors ActiveData for Excel's "
+                       "Approximate Column Match.",
+        "parameter_schema": {
+            "right_dataset": {"type": "string", "required": True, "label": "Right Dataset Name"},
+            "left_column": {"type": "column", "required": True, "label": "Left Text Column"},
+            "right_column": {"type": "string", "required": True, "label": "Right Text Column"},
+            "threshold": {"type": "float", "required": False, "default": 0.8,
+                         "label": "Similarity Threshold (0-1)"},
+            "max_matches_per_row": {"type": "int", "required": False, "default": 1,
+                                    "label": "Max Matches Per Left Row"},
         },
         "creates_columns": True
     },

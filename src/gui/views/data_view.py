@@ -102,7 +102,9 @@ class DataView(QWidget):
             self,
             "Import Data",
             "",
-            "All Supported Files (*.csv *.xlsx *.xls *.json *.parquet);;CSV Files (*.csv);;Excel Files (*.xlsx *.xls);;JSON Files (*.json);;Parquet Files (*.parquet)"
+            "All Supported Files (*.csv *.txt *.dat *.xlsx *.xls *.json *.parquet);;"
+            "CSV Files (*.csv);;Text Files (*.txt *.dat);;Excel Files (*.xlsx *.xls);;"
+            "JSON Files (*.json);;Parquet Files (*.parquet)"
         )
 
         if file_path:
@@ -145,10 +147,26 @@ class DataView(QWidget):
                     QMessageBox.warning(self, "Warning", f"Could not read Excel sheets: {str(e)}\nLoading first sheet.")
                     sheet_name = None
 
+            elif file_path.endswith(('.txt', '.dat')):
+                from core.data_processor import LegacyDataProcessor
+                detection = LegacyDataProcessor.detect_text_file_format(file_path)
+                if detection["format"] == "fixed_width":
+                    # Auto-detected column alignment isn't always reliable
+                    # (a value wider than earlier rows suggested can shift
+                    # the boundaries) - let the auditor review/adjust before
+                    # anything is actually imported.
+                    from gui.dialogs.fixed_width_import_dialog import FixedWidthImportDialog
+                    dialog = FixedWidthImportDialog(file_path, self)
+                    if dialog.exec() and dialog.result_df is not None:
+                        self.load_data(file_path, preloaded_df=dialog.result_df)
+                    return
+
             self.load_data(file_path, sheet_name)
 
-    def load_data(self, file_path: str, sheet_name: str = None):
-        """Load data from file"""
+    def load_data(self, file_path: str, sheet_name: str = None, preloaded_df=None):
+        """Load data from file. `preloaded_df` skips the normal read_file()
+        call - used when a dialog (e.g. the fixed-width text import
+        review) has already produced the confirmed dataframe itself."""
         try:
             from core.data_processor import LegacyDataProcessor
 
@@ -156,7 +174,10 @@ class DataView(QWidget):
                 self.data_processor = LegacyDataProcessor()
 
             # Load the data
-            df = self.data_processor.read_file(file_path, sheet_name)
+            if preloaded_df is not None:
+                df = LegacyDataProcessor._trim_column_names(preloaded_df)
+            else:
+                df = self.data_processor.read_file(file_path, sheet_name)
             
             if df is None or len(df.columns) == 0:
                 QMessageBox.warning(self, "Empty Data", "The selected file/sheet contains no columns or data.")
@@ -241,6 +262,56 @@ class DataView(QWidget):
 
         # Pasted data has no source file — can't be refreshed later, only re-pasted
         dataset = Dataset(name=dataset_name.strip(), dataframe=df)
+        self._finalize_new_dataset(dataset, df)
+
+    def import_folder_listing(self):
+        """Create a new dataset by listing every file in a folder - name,
+        path, extension, size, modified/created dates - the classic
+        "inventory the evidence folder" audit test (ACL's DIRECTORY
+        command)."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox, QCheckBox
+
+        if not self.current_project:
+            QMessageBox.warning(
+                self, "No Project Selected",
+                "Please create or open a project before importing a folder listing."
+            )
+            return
+
+        folder_path = QFileDialog.getExistingDirectory(self, "Select Folder to List")
+        if not folder_path:
+            return
+
+        recursive = QMessageBox.question(
+            self, "Include Subfolders?",
+            "Include files in subfolders as well?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        ) == QMessageBox.Yes
+
+        try:
+            from core.data_processor import list_directory_as_dataframe
+            df = list_directory_as_dataframe(folder_path, recursive=recursive)
+        except Exception as e:
+            QMessageBox.critical(self, "Listing Failed", f"Could not list the folder:\n{str(e)}")
+            return
+
+        if df.height == 0:
+            QMessageBox.information(self, "No Files Found", "No files were found in that folder.")
+            return
+
+        self.current_dataframe = df
+
+        from pathlib import Path
+        default_name = f"Files_{Path(folder_path).name}"
+        dataset_name, ok = QInputDialog.getText(
+            self, "Dataset Name",
+            "Enter a name for this folder listing:",
+            text=default_name
+        )
+        if not ok or not dataset_name.strip():
+            dataset_name = default_name
+
+        dataset = Dataset(name=dataset_name.strip(), dataframe=df, source_file_path=folder_path)
         self._finalize_new_dataset(dataset, df)
 
     def _finalize_new_dataset(self, dataset: Dataset, df):

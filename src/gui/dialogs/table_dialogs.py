@@ -380,7 +380,9 @@ class JoinDatasetsDialog(BaseModal):
             ("right", "Right Join", "Keep all rows from right dataset, matching left rows"),
             ("inner", "Inner Join", "Keep only rows that match in both datasets"),
             ("outer", "Outer Join", "Keep all rows from both datasets"),
-            ("cross", "Cross Join", "Cartesian product of both datasets")
+            ("cross", "Cross Join", "Cartesian product of both datasets"),
+            ("semi", "Match (Semi Join)", "Keep only left rows that DO have a matching key in the right dataset - no right-side columns are added"),
+            ("anti", "Non-Match (Anti Join)", "Keep only left rows that DON'T have a matching key in the right dataset - useful for finding orphaned/missing records"),
         ]
 
         self.join_radios = {}
@@ -518,6 +520,243 @@ class JoinDatasetsDialog(BaseModal):
             "right_key": right_key,
             "join_type": join_type,
             "suffix": self.suffix_edit.text() or "_right"
+        }
+        self.accept()
+
+    def get_parameters(self) -> dict:
+        return getattr(self, 'current_params', {})
+
+
+class CompareDatasetsDialog(BaseModal):
+    """Dialog for a cell-by-cell comparison of two datasets by key -
+    mirrors ActiveData for Excel's Compare Sheets. Classifies every key as
+    only-in-left, only-in-right, matched-identical, or matched-different."""
+
+    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None,
+                 available_datasets: List[str] = None, source_dataset_name: str = None):
+        self.original_df = dataframe
+        self.selected_column = selected_column
+        self.available_datasets = available_datasets or []
+        self.source_dataset_name = source_dataset_name or "Current Dataset"
+        super().__init__("Compare Datasets", dataframe, parent, selected_column=selected_column)
+        self.setMinimumSize(650, 600)
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+
+        left_group = QGroupBox(f"Left Dataset ({self.source_dataset_name})")
+        left_layout = QVBoxLayout(left_group)
+        left_layout.addWidget(QLabel("Key column(s) - identify the same record on both sides (Ctrl/Shift-click for multiple):"))
+        self.key_list = QListWidget()
+        self.key_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.key_list.addItems(self.original_df.columns)
+        self.key_list.setMaximumHeight(120)
+        if self.selected_column:
+            for item in self.key_list.findItems(self.selected_column, Qt.MatchExactly):
+                item.setSelected(True)
+        left_layout.addWidget(self.key_list)
+        layout.addWidget(left_group)
+
+        right_group = QGroupBox("Right Dataset")
+        right_layout = QFormLayout(right_group)
+        right_layout.setLabelAlignment(Qt.AlignRight)
+        right_layout.setFormAlignment(Qt.AlignLeft)
+        self.right_dataset_combo = QComboBox()
+        self.right_dataset_combo.setEditable(False)
+        self.right_dataset_combo.setMinimumWidth(200)
+        other_datasets = [ds for ds in self.available_datasets if ds != self.source_dataset_name]
+        self.right_dataset_combo.addItems(other_datasets)
+        if other_datasets:
+            self.right_dataset_combo.setCurrentIndex(0)
+        right_layout.addRow("Compare against:", self.right_dataset_combo)
+        layout.addWidget(right_group)
+
+        compare_group = QGroupBox("Columns To Compare (Optional)")
+        compare_layout = QVBoxLayout(compare_group)
+        compare_layout.addWidget(QLabel("Leave unselected to compare every column common to both datasets:"))
+        self.compare_list = QListWidget()
+        self.compare_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.compare_list.addItems([c for c in self.original_df.columns])
+        self.compare_list.setMaximumHeight(120)
+        compare_layout.addWidget(self.compare_list)
+        layout.addWidget(compare_group)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(self.cancel_btn)
+
+        self.apply_btn = QPushButton("Compare Datasets")
+        self.apply_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                padding: 8px 20px;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #106ebe;
+            }
+        """)
+        self.apply_btn.clicked.connect(self._apply_compare)
+        btn_layout.addWidget(self.apply_btn)
+
+        layout.addLayout(btn_layout)
+
+    def _apply_compare(self):
+        """Validate and accept compare parameters"""
+        dataset_name = self.right_dataset_combo.currentText()
+        if not dataset_name:
+            QMessageBox.warning(self, "Warning", "Please select a dataset to compare against.")
+            return
+
+        key_columns = [item.text() for item in self.key_list.selectedItems()]
+        if not key_columns:
+            QMessageBox.warning(self, "Warning", "Please select at least one key column.")
+            return
+
+        compare_columns = [item.text() for item in self.compare_list.selectedItems()]
+
+        self.current_params = {
+            "right_dataset": dataset_name,
+            "key_columns": key_columns,
+            "compare_columns": compare_columns or None,
+        }
+        self.accept()
+
+    def get_parameters(self) -> dict:
+        return getattr(self, 'current_params', {})
+
+
+class FuzzyMatchDatasetsDialog(BaseModal):
+    """Dialog for approximate/fuzzy text matching between two datasets -
+    mirrors ActiveData for Excel's Approximate Column Match, e.g. matching
+    an employee's address against a vendor's to catch a conflict of
+    interest even when the text isn't typed identically."""
+
+    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None,
+                 available_datasets: List[str] = None, source_dataset_name: str = None):
+        self.original_df = dataframe
+        self.selected_column = selected_column
+        self.available_datasets = available_datasets or []
+        self.source_dataset_name = source_dataset_name or "Current Dataset"
+        super().__init__("Fuzzy Match Datasets", dataframe, parent, selected_column=selected_column)
+        self.setMinimumSize(650, 500)
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+
+        left_group = QGroupBox(f"Left Dataset ({self.source_dataset_name})")
+        left_layout = QFormLayout(left_group)
+        left_layout.setLabelAlignment(Qt.AlignRight)
+        left_layout.setFormAlignment(Qt.AlignLeft)
+        self.left_column_combo = QComboBox()
+        self.left_column_combo.addItems(self.original_df.columns)
+        self.left_column_combo.setMinimumWidth(200)
+        if self.selected_column:
+            self.left_column_combo.setCurrentText(self.selected_column)
+        left_layout.addRow("Text Column:", self.left_column_combo)
+        layout.addWidget(left_group)
+
+        right_group = QGroupBox("Right Dataset")
+        right_layout = QFormLayout(right_group)
+        right_layout.setLabelAlignment(Qt.AlignRight)
+        right_layout.setFormAlignment(Qt.AlignLeft)
+        self.right_dataset_combo = QComboBox()
+        self.right_dataset_combo.setEditable(False)
+        self.right_dataset_combo.setMinimumWidth(200)
+        other_datasets = [ds for ds in self.available_datasets if ds != self.source_dataset_name]
+        self.right_dataset_combo.addItems(other_datasets)
+        if other_datasets:
+            self.right_dataset_combo.setCurrentIndex(0)
+        right_layout.addRow("Dataset:", self.right_dataset_combo)
+        self.right_column_combo = QComboBox()
+        self.right_column_combo.setEditable(False)
+        self.right_column_combo.setMinimumWidth(200)
+        self.right_column_combo.addItems(self.original_df.columns)
+        right_layout.addRow("Text Column:", self.right_column_combo)
+        layout.addWidget(right_group)
+
+        options_group = QGroupBox("Matching Options")
+        options_layout = QFormLayout(options_group)
+        options_layout.setLabelAlignment(Qt.AlignRight)
+        options_layout.setFormAlignment(Qt.AlignLeft)
+
+        self.threshold_spin = QDoubleSpinBox()
+        self.threshold_spin.setRange(0.5, 1.0)
+        self.threshold_spin.setSingleStep(0.05)
+        self.threshold_spin.setValue(0.8)
+        self.threshold_spin.setToolTip(
+            "How similar two values must be to count as a match, from 0.5 (loose) to 1.0 (exact). "
+            "0.8 is a reasonable starting point for names/addresses with minor formatting differences."
+        )
+        options_layout.addRow("Similarity Threshold:", self.threshold_spin)
+
+        self.max_matches_spin = QSpinBox()
+        self.max_matches_spin.setRange(1, 10)
+        self.max_matches_spin.setValue(1)
+        options_layout.addRow("Max Matches Per Row:", self.max_matches_spin)
+
+        layout.addWidget(options_group)
+
+        note = QLabel(
+            "Note: this compares every left row against every right row (an O(n×m) operation), "
+            "so it may take a while on very large datasets."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #666; font-size: 11px;")
+        layout.addWidget(note)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(self.cancel_btn)
+
+        self.apply_btn = QPushButton("Find Matches")
+        self.apply_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                padding: 8px 20px;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #106ebe;
+            }
+        """)
+        self.apply_btn.clicked.connect(self._apply_fuzzy_match)
+        btn_layout.addWidget(self.apply_btn)
+
+        layout.addLayout(btn_layout)
+
+    def _apply_fuzzy_match(self):
+        """Validate and accept fuzzy match parameters"""
+        dataset_name = self.right_dataset_combo.currentText()
+        if not dataset_name:
+            QMessageBox.warning(self, "Warning", "Please select a dataset to match against.")
+            return
+
+        right_column = self.right_column_combo.currentText()
+        if not right_column:
+            QMessageBox.warning(self, "Warning", "Please select the right text column.")
+            return
+
+        self.current_params = {
+            "right_dataset": dataset_name,
+            "left_column": self.left_column_combo.currentText(),
+            "right_column": right_column,
+            "threshold": self.threshold_spin.value(),
+            "max_matches_per_row": self.max_matches_spin.value(),
         }
         self.accept()
 

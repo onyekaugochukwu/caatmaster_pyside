@@ -474,6 +474,8 @@ class DataProcessor:
             return self._call_mapped_method(self.audit_duplicate_detection, df, params)
         elif operation_id == 'audit_gap_analysis':
             return self._call_mapped_method(self.audit_gap_analysis, df, params)
+        elif operation_id == 'audit_sequence_check':
+            return self._call_mapped_method(self.audit_sequence_check, df, params)
         elif operation_id == 'audit_outlier_detection':
             return self._call_mapped_method(self.audit_outlier_detection, df, params)
         elif operation_id == 'audit_round_numbers':
@@ -484,6 +486,8 @@ class DataProcessor:
             return self._call_mapped_method(self.stat_add_group_stats, df, params)
         elif operation_id == 'stat_quick_stats':
             return self._call_mapped_method(self.quick_stats, df, params)
+        elif operation_id == 'field_statistics':
+            return self._call_mapped_method(self.field_statistics, df, params)
 
         # Column operations
         elif operation_id == 'column_rename':
@@ -539,6 +543,10 @@ class DataProcessor:
             return self._call_mapped_method(self.join_datasets, df, params)
         elif operation_id == 'append_datasets':
             return self._call_mapped_method(self.append_datasets, df, params)
+        elif operation_id == 'compare_datasets':
+            return self._call_mapped_method(self.compare_datasets, df, params)
+        elif operation_id == 'fuzzy_match_datasets':
+            return self._call_mapped_method(self.fuzzy_match_datasets, df, params)
         elif operation_id == 'select_n_rows':
             return self._call_mapped_method(self.select_n_rows, df, params)
         elif operation_id == 'query_sheet':
@@ -553,6 +561,8 @@ class DataProcessor:
             return self._call_mapped_method(self.group_summary, df, params)
         elif operation_id == 'stratification':
             return self._call_mapped_method(self.stratification, df, params)
+        elif operation_id == 'aging_analysis':
+            return self._call_mapped_method(self.aging_analysis, df, params)
         elif operation_id == 'cross_tabulation':
             return self._call_mapped_method(self.cross_tabulation, df, params)
         elif operation_id == 'trend_analysis':
@@ -2329,6 +2339,27 @@ class DataProcessor:
             pl.Series(name=missing_count_col, values=gaps_after)
         ])
 
+    def audit_sequence_check(self, df: pl.DataFrame, column: str, ascending: bool = True,
+                            output_col: str = None) -> pl.DataFrame:
+        """Flags each row whose value breaks strict ascending (or
+        descending) order relative to the row directly before it, in the
+        table's ACTUAL current row order - not sorted first, unlike gap
+        analysis. Mirrors ACL's SEQUENCE command: a check or invoice
+        number issued out of chronological order is a classic fraud/error
+        indicator that a gap check alone won't catch (nothing is missing,
+        it's just out of order)."""
+        output_col = output_col or f"{column}_out_of_sequence"
+        values = df[column].to_list()
+
+        flags = [False] * len(values)
+        for i in range(1, len(values)):
+            prev, curr = values[i - 1], values[i]
+            if prev is None or curr is None:
+                continue
+            flags[i] = (curr < prev) if ascending else (curr > prev)
+
+        return df.with_columns(pl.Series(name=output_col, values=flags))
+
     def audit_outlier_detection(self, df: pl.DataFrame, column: str, method: str, output_col: str,
                                deviation_col: str, **kwargs) -> pl.DataFrame:
         """Detect statistical outliers for audit"""
@@ -2392,6 +2423,72 @@ class DataProcessor:
     # ============================================================================
     # STATISTICS ADD GROUP IMPLEMENTATIONS
     # ============================================================================
+
+    def field_statistics(self, df: pl.DataFrame, columns: List[str] = None) -> pl.DataFrame:
+        """Comprehensive per-field statistics report, one row per column -
+        mirrors CaseWare IDEA's Field Statistics. Numeric columns get the
+        full descriptive set (min/max/range/sum/mean/median/mode/std/
+        variance/skewness/kurtosis/percentiles/coefficient of variation);
+        every column (numeric or not) gets count/missing/unique/most-and-
+        least-frequent value. quick_stats() above only ever added 4 values
+        as duplicated columns onto the original data - this is a real
+        summary table instead, one row per field."""
+        import numpy as np
+        from scipy import stats as scipy_stats
+
+        columns = columns or df.columns
+        n_total = len(df)
+        rows = []
+
+        for col in columns:
+            s = df[col]
+            dtype = s.dtype
+            missing = s.null_count()
+            non_null = s.drop_nulls()
+            is_numeric = dtype.is_numeric()
+
+            row = {
+                "column": col, "dtype": str(dtype), "count": n_total,
+                "missing": missing,
+                "missing_pct": round(missing / n_total * 100, 2) if n_total else 0.0,
+                "unique": s.n_unique(),
+                "min": None, "max": None, "range": None, "sum": None,
+                "mean": None, "median": None, "std": None, "variance": None,
+                "skewness": None, "kurtosis": None,
+                "p5": None, "p25": None, "p50": None, "p75": None, "p95": None,
+                "coefficient_of_variation": None,
+                "most_frequent_value": None, "most_frequent_count": None,
+                "least_frequent_value": None, "least_frequent_count": None,
+            }
+
+            if is_numeric and len(non_null) > 0:
+                arr = non_null.to_numpy().astype(float)
+                mean = float(np.mean(arr))
+                std = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+                row.update({
+                    "min": float(np.min(arr)), "max": float(np.max(arr)),
+                    "range": float(np.max(arr) - np.min(arr)), "sum": float(np.sum(arr)),
+                    "mean": mean, "median": float(np.median(arr)),
+                    "std": std, "variance": float(np.var(arr, ddof=1)) if len(arr) > 1 else 0.0,
+                    "skewness": float(scipy_stats.skew(arr)) if len(arr) > 2 else None,
+                    "kurtosis": float(scipy_stats.kurtosis(arr)) if len(arr) > 3 else None,
+                    "p5": float(np.percentile(arr, 5)), "p25": float(np.percentile(arr, 25)),
+                    "p50": float(np.percentile(arr, 50)), "p75": float(np.percentile(arr, 75)),
+                    "p95": float(np.percentile(arr, 95)),
+                    "coefficient_of_variation": (std / mean) if mean != 0 and len(arr) > 1 else None,
+                })
+
+            if len(non_null) > 0:
+                vc = non_null.value_counts().sort("count", descending=True)
+                row["most_frequent_value"] = str(vc[col][0])
+                row["most_frequent_count"] = int(vc["count"][0])
+                vc_least = vc.sort("count")
+                row["least_frequent_value"] = str(vc_least[col][0])
+                row["least_frequent_count"] = int(vc_least["count"][0])
+
+            rows.append(row)
+
+        return pl.DataFrame(rows)
 
     def quick_stats(self, df: pl.DataFrame, column: str, output_cols: List[str] = None) -> pl.DataFrame:
         """Add the column's min/max/mean/std as new columns (same value on every row)."""
@@ -2859,36 +2956,41 @@ class DataProcessor:
         return df.filter(expr)
 
     def join_datasets(self, left_df: pl.DataFrame, right_df: pl.DataFrame, left_key: str, right_key: str, join_type: str = "left", suffix: str = "_right") -> pl.DataFrame:
-        """Join two datasets by a key column"""
+        """Join two datasets by a key column. "semi"/"anti" are polars'
+        native match/non-match filters - the same result as ActiveData for
+        Excel's "Match Sheets" (rows in the left dataset that do, or don't,
+        have a matching key in the right one), just built on polars' own
+        join strategies rather than a bespoke comparison routine."""
         if left_df is None:
             raise ValueError("Left dataframe is None")
         if right_df is None:
             raise ValueError("Right dataframe is None")
 
-        # Map join type to polars join strategy
+        # Map join type to polars join strategy. ("right" used to be mapped
+        # to "outer" here, which kept unmatched rows from BOTH sides instead
+        # of just the right one - polars supports "right" natively now, so
+        # this uses that directly instead of the wrong workaround.)
         join_map = {
             "left": "left",
-            "right": "outer",
+            "right": "right",
             "inner": "inner",
             "outer": "outer",
-            "cross": "cross"
+            "cross": "cross",
+            "semi": "semi",
+            "anti": "anti",
         }
 
         strategy = join_map.get(join_type, "left")
 
         # Perform the join
-        if strategy == "left":
-            return left_df.join(right_df, left_on=left_key, right_on=right_key, how=strategy, suffix=suffix)
-        elif strategy == "right":
-            return left_df.join(right_df, left_on=left_key, right_on=right_key, how="outer", suffix=suffix)
-        elif strategy == "inner":
-            return left_df.join(right_df, left_on=left_key, right_on=right_key, how=strategy, suffix=suffix)
-        elif strategy == "outer":
-            return left_df.join(right_df, left_on=left_key, right_on=right_key, how=strategy, suffix=suffix)
-        elif strategy == "cross":
+        if strategy == "cross":
             return left_df.join(right_df, how=strategy, suffix=suffix)
-
-        return left_df
+        elif strategy in ("semi", "anti"):
+            # semi/anti only ever return left-side columns (there's nothing
+            # from the right to suffix-collide with), so suffix is unused.
+            return left_df.join(right_df, left_on=left_key, right_on=right_key, how=strategy)
+        else:
+            return left_df.join(right_df, left_on=left_key, right_on=right_key, how=strategy, suffix=suffix)
 
     def append_datasets(self, dataframes: List[pl.DataFrame], align_columns: bool = True, fill_missing: bool = True) -> pl.DataFrame:
         """Append/stack multiple datasets vertically"""
@@ -2950,6 +3052,120 @@ class DataProcessor:
 
         return result
 
+    def compare_datasets(self, left_df: pl.DataFrame, right_df: pl.DataFrame, key_columns: List[str],
+                         compare_columns: List[str] = None, suffix: str = "_right") -> pl.DataFrame:
+        """Cell-by-cell comparison of two datasets by key - mirrors
+        ActiveData for Excel's Compare Sheets. Classifies every row by
+        `_diff_status`: "only_in_left", "only_in_right", "matched_same", or
+        "matched_different" (with `_diff_columns` listing which compared
+        columns actually differ). Built on polars' own anti/inner joins
+        rather than a bespoke row-matching routine."""
+        if not key_columns:
+            raise ValueError("At least one key column is required to compare datasets.")
+
+        only_left = left_df.join(right_df, on=key_columns, how="anti").with_columns(
+            pl.lit("only_in_left").alias("_diff_status"),
+            pl.lit("").alias("_diff_columns"),
+        )
+        only_right = right_df.join(left_df, on=key_columns, how="anti").with_columns(
+            pl.lit("only_in_right").alias("_diff_status"),
+            pl.lit("").alias("_diff_columns"),
+        )
+
+        matched = left_df.join(right_df, on=key_columns, how="inner", suffix=suffix)
+
+        if compare_columns is None:
+            compare_columns = [c for c in left_df.columns if c not in key_columns and c in right_df.columns]
+
+        diff_exprs = []
+        for c in compare_columns:
+            right_col = f"{c}{suffix}"
+            if right_col not in matched.columns:
+                continue
+            diff_exprs.append(
+                pl.when(pl.col(c) != pl.col(right_col)).then(pl.lit(c)).otherwise(pl.lit(None))
+            )
+
+        if diff_exprs:
+            matched = matched.with_columns(
+                pl.concat_list(diff_exprs).list.drop_nulls().list.join(", ").alias("_diff_columns")
+            )
+        else:
+            matched = matched.with_columns(pl.lit("").alias("_diff_columns"))
+
+        matched = matched.with_columns(
+            pl.when(pl.col("_diff_columns") == "")
+            .then(pl.lit("matched_same"))
+            .otherwise(pl.lit("matched_different"))
+            .alias("_diff_status")
+        )
+
+        # only_left/only_right and matched have different (non-overlapping)
+        # sets of columns - diagonal_relaxed fills the gaps with nulls
+        # instead of erroring, which is exactly what a diff report wants.
+        return pl.concat([only_left, only_right, matched], how="diagonal_relaxed")
+
+    def fuzzy_match_datasets(self, left_df: pl.DataFrame, right_df: pl.DataFrame, left_column: str,
+                             right_column: str, threshold: float = 0.8, suffix: str = "_right",
+                             max_matches_per_row: int = 1) -> pl.DataFrame:
+        """Approximate/fuzzy text matching between two datasets - mirrors
+        ActiveData for Excel's Approximate Column Match (the classic fraud
+        test: does this vendor's address approximately match an
+        employee's, even when it's not typed identically). Uses the
+        standard library's difflib ratio (0-1, comparable across different
+        string lengths) rather than a raw edit-distance count, so no new
+        dependency (rapidfuzz/python-Levenshtein) is needed for this.
+        Deliberately bounded: this is an O(rows_left * rows_right) string
+        comparison, not viable much past a few thousand rows per side."""
+        import difflib
+
+        left_vals = left_df[left_column].cast(pl.Utf8).fill_null("").to_list()
+        right_vals = right_df[right_column].cast(pl.Utf8).fill_null("").to_list()
+
+        if len(left_vals) * len(right_vals) > 2_000_000:
+            raise ValueError(
+                f"Fuzzy matching {len(left_vals):,} x {len(right_vals):,} rows is too large to run "
+                f"interactively (limit ~2,000,000 comparisons) - filter one side down first."
+            )
+
+        matcher = difflib.SequenceMatcher()
+        left_indices, right_indices, scores = [], [], []
+        for i, lv in enumerate(left_vals):
+            if not lv:
+                continue
+            lv_lower = lv.lower()
+            matcher.set_seq2(lv_lower)
+            candidates = []
+            for j, rv in enumerate(right_vals):
+                if not rv:
+                    continue
+                matcher.set_seq1(rv.lower())
+                # quick_ratio() is a cheap upper bound - skip the full
+                # (more expensive) ratio() computation whenever it can't
+                # possibly clear the threshold.
+                if matcher.quick_ratio() < threshold:
+                    continue
+                score = matcher.ratio()
+                if score >= threshold:
+                    candidates.append((j, score))
+            candidates.sort(key=lambda t: t[1], reverse=True)
+            for j, score in candidates[:max_matches_per_row]:
+                left_indices.append(i)
+                right_indices.append(j)
+                scores.append(score)
+
+        right_renamed_cols = {c: f"{c}{suffix}" for c in right_df.columns}
+        if not left_indices:
+            empty_right = right_df.head(0).rename(right_renamed_cols)
+            return pl.concat([left_df.head(0), empty_right], how="horizontal").with_columns(
+                pl.lit(None, dtype=pl.Float64).alias("match_score")
+            )
+
+        left_part = left_df[left_indices]
+        right_part = right_df[right_indices].rename(right_renamed_cols)
+        result = pl.concat([left_part, right_part], how="horizontal")
+        return result.with_columns(pl.Series("match_score", scores)).sort("match_score", descending=True)
+
     def split_sheet(self, df: pl.DataFrame, column: str) -> List[tuple]:
         """
         Split a dataframe into multiple dataframes based on unique values in a column.
@@ -2995,14 +3211,19 @@ class DataProcessor:
 
     def stratification(self, df: pl.DataFrame, column: str, strata: List[float], value_column: str = None, include_counts: bool = True) -> pl.DataFrame:
         """Create stratified summary by value ranges"""
-        # Create strata labels
-        labels = []
+        # N bin edges produce N+1 categories (below the first edge, between
+        # each pair, above the last) - `pl.cut` is also gone as a top-level
+        # function in current polars; it's now the Expr/Series method used
+        # below.
+        strata = sorted(strata)
+        labels = [f"< {strata[0]}"]
         for i in range(len(strata) - 1):
             labels.append(f"{strata[i]}-{strata[i+1]}")
+        labels.append(f"> {strata[-1]}")
 
         # Create strata column
         result = df.with_columns(
-            pl.cut(pl.col(column), bins=strata, labels=labels).alias("_stratum")
+            pl.col(column).cut(strata, labels=labels).alias("_stratum")
         )
 
         # Create summary
@@ -3016,6 +3237,44 @@ class DataProcessor:
                 pl.col(value_column).count().alias("count")
             )
         return result.group_by("_stratum").agg(pl.count().alias("count"))
+
+    def aging_analysis(self, df: pl.DataFrame, date_column: str, as_of_date: str = None,
+                        boundaries: List[float] = None, value_column: str = None,
+                        include_counts: bool = True) -> pl.DataFrame:
+        """Classic AR/AP aging report: buckets rows by the age (in days) of
+        a date column as of a reference date (default today), and
+        summarizes count/sum/mean per bucket - mirrors ActiveData for
+        Excel's Age... function. Negative ages (the date is after the
+        as-of date, i.e. not yet due) fall into their own leading bucket."""
+        import datetime as dt
+
+        boundaries = sorted(boundaries) if boundaries else [0, 30, 60, 90]
+        ref_date = dt.date.fromisoformat(as_of_date) if as_of_date else dt.date.today()
+
+        working = df.with_columns(
+            (pl.lit(ref_date) - pl.col(date_column).cast(pl.Date, strict=False)).dt.total_days().alias("_age_days")
+        )
+
+        labels = ["Not yet due"] if boundaries[0] <= 0 else [f"< {boundaries[0]} days"]
+        for i in range(len(boundaries) - 1):
+            labels.append(f"{boundaries[i]}-{boundaries[i+1]} days")
+        labels.append(f"{boundaries[-1]}+ days")
+
+        working = working.with_columns(
+            pl.col("_age_days").cut(boundaries, labels=labels).alias("_age_bucket")
+        )
+
+        if value_column:
+            agg = [
+                pl.col(value_column).sum().alias(f"{value_column}_sum"),
+                pl.col(value_column).mean().alias(f"{value_column}_mean"),
+            ]
+        else:
+            agg = []
+        if include_counts or not value_column:
+            agg.append(pl.len().alias("count"))
+
+        return working.group_by("_age_bucket").agg(agg).sort("_age_bucket")
 
     def cross_tabulation(self, df: pl.DataFrame, rows: str, columns: str, values: str = None, agg_function: str = "count", show_percentages: bool = False, percentages_by: str = "total") -> pl.DataFrame:
         """Create cross-tabulation (contingency table)"""
@@ -3072,7 +3331,7 @@ class DataProcessor:
         else:
             return sorted_df.head(n)
 
-    def sampling(self, df: pl.DataFrame, method: str = "random", sample_size: int = None, percentage: float = None, stratify_column: str = None, random_seed: int = None, output_type: str = "sample_view") -> pl.DataFrame:
+    def sampling(self, df: pl.DataFrame, method: str = "random", sample_size: int = None, percentage: float = None, stratify_column: str = None, value_column: str = None, random_seed: int = None, output_type: str = "sample_view") -> pl.DataFrame:
         """Create sample of data"""
         import numpy as np
 
@@ -3111,6 +3370,42 @@ class DataProcessor:
                 n_clusters = max(1, len(unique_vals) // 4)
                 selected = np.random.choice(unique_vals, size=n_clusters, replace=False) if random_seed is None else unique_vals[:n_clusters]
                 return df.filter(pl.col(stratify_column).is_in(selected))
+
+        elif method == "monetary_unit":
+            # Monetary Unit Sampling (MUS/PPS): classic substantive-testing
+            # technique where each *dollar*, not each row, is a sampling
+            # unit - so a row with a larger absolute value is proportionally
+            # more likely to land on a selection point, and any row whose
+            # value alone exceeds the sampling interval is selected with
+            # certainty (a "high-value" item). Implemented as fixed-interval
+            # selection over the cumulative value: pick a random start in
+            # [0, interval), then walk the cumulative sum at start,
+            # start+interval, start+2*interval, ... .
+            if not value_column:
+                raise ValueError("Monetary Unit Sampling requires a value column (the dollar amount to sample against).")
+            if random_seed is not None:
+                np.random.seed(random_seed)
+
+            values = df[value_column].fill_null(0).cast(pl.Float64).abs().to_numpy()
+            total = float(values.sum())
+            if total <= 0 or n <= 0 or len(df) == 0:
+                return df.head(0)
+
+            interval = total / n
+            start = np.random.uniform(0, interval)
+            selection_points = start + interval * np.arange(n)
+            cumulative = np.cumsum(values)
+            hit_indices = np.searchsorted(cumulative, selection_points, side="left")
+            hit_indices = np.clip(hit_indices, 0, len(df) - 1)
+
+            # A single high-value row can span multiple selection points -
+            # it's still only one physical item to examine, but count how
+            # many points it absorbed so the auditor can see which items
+            # were selected with certainty (times_hit > 1).
+            unique_indices, hit_counts = np.unique(hit_indices, return_counts=True)
+            order = np.argsort(unique_indices)
+            result = df[unique_indices[order].tolist()]
+            return result.with_columns(pl.Series("mus_times_hit", hit_counts[order].tolist()))
 
         return df.head(n)
 
@@ -3744,6 +4039,43 @@ def parse_clipboard_text(text: str) -> pl.DataFrame:
         )
 
 
+def list_directory_as_dataframe(folder_path: str, recursive: bool = False, pattern: str = "*") -> pl.DataFrame:
+    """List every file in a folder as a real dataset - name, path,
+    extension, size, and modified/created timestamps. The classic
+    "inventory the evidence folder" audit test (ACL's DIRECTORY command):
+    confirming exactly what files exist, when they were touched, and how
+    big they are, as data you can filter/sort/join like anything else."""
+    from pathlib import Path
+    from datetime import datetime as _dt
+
+    base = Path(folder_path)
+    if not base.is_dir():
+        raise ValueError(f"'{folder_path}' is not a folder.")
+
+    paths = base.rglob(pattern) if recursive else base.glob(pattern)
+    rows = []
+    for p in paths:
+        if not p.is_file():
+            continue
+        stat = p.stat()
+        rows.append({
+            "file_name": p.name,
+            "file_path": str(p),
+            "folder": str(p.parent),
+            "extension": p.suffix.lower(),
+            "size_bytes": stat.st_size,
+            "modified_date": _dt.fromtimestamp(stat.st_mtime),
+            "created_date": _dt.fromtimestamp(stat.st_ctime),
+        })
+
+    if not rows:
+        return pl.DataFrame({
+            "file_name": [], "file_path": [], "folder": [], "extension": [],
+            "size_bytes": [], "modified_date": [], "created_date": [],
+        })
+    return pl.DataFrame(rows)
+
+
 # ============================================================================
 # LEGACY DATA PROCESSOR - All transformation methods
 # ============================================================================
@@ -3766,6 +4098,45 @@ class LegacyDataProcessor:
         """Read various file formats using Polars, with column names
         trimmed of leading/trailing whitespace (see _trim_column_names)."""
         return self._trim_column_names(self._read_file_impl(file_path, sheet_name))
+
+    @staticmethod
+    def detect_text_file_format(file_path: str, sample_lines: int = 50) -> Dict[str, Any]:
+        """Sniff whether a .txt/.dat file is delimited or fixed-width.
+        Legacy/mainframe system exports are very often NOT real CSV -
+        flat fixed-width extracts (or print-formatted reports with
+        column-aligned whitespace) are common there, and pandas' read_fwf
+        column-alignment inference handles that case well once a real
+        delimiter can't be sniffed."""
+        import csv as csv_module
+
+        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            lines = [f.readline() for _ in range(sample_lines)]
+        lines = [l for l in lines if l.strip()]
+        sample_text = "".join(lines)
+
+        try:
+            dialect = csv_module.Sniffer().sniff(sample_text, delimiters=",\t|;")
+            return {"format": "delimited", "delimiter": dialect.delimiter}
+        except csv_module.Error:
+            return {"format": "fixed_width", "colspecs": "infer"}
+
+    @staticmethod
+    def read_fixed_width_file(file_path: str, colspecs="infer", column_names: List[str] = None) -> pl.DataFrame:
+        """Parse a fixed-width text file (the classic legacy/mainframe
+        report export) using pandas' column-alignment inference, then hand
+        back a polars dataframe. Read entirely as text, same as a fresh
+        CSV import, so downstream dtype casting works exactly the same way
+        it does for any other import - fixed-width text carries no type
+        information of its own."""
+        import pandas as pd
+
+        read_kwargs: Dict[str, Any] = {"dtype": str}
+        read_kwargs["colspecs"] = colspecs if (isinstance(colspecs, list) and colspecs) else "infer"
+        if column_names:
+            read_kwargs["names"] = column_names
+            read_kwargs["header"] = None
+        pdf = pd.read_fwf(file_path, **read_kwargs)
+        return pl.from_pandas(pdf)
 
     @staticmethod
     def _trim_column_names(df: pl.DataFrame) -> pl.DataFrame:
@@ -3801,6 +4172,17 @@ class LegacyDataProcessor:
 
         if file_extension == '.csv':
             return pl.read_csv(file_path_obj)
+        elif file_extension in ('.txt', '.dat'):
+            # A plain .txt/.dat isn't necessarily real CSV - sniff for a
+            # real delimiter first, and fall back to fixed-width column
+            # inference (the classic legacy/mainframe report export) when
+            # none can be found. A dialog-driven, reviewable version of
+            # this same detection is also offered at upload time so a
+            # column-width misdetection can be corrected before import.
+            detection = self.detect_text_file_format(file_path)
+            if detection["format"] == "delimited":
+                return pl.read_csv(file_path_obj, separator=detection["delimiter"])
+            return self.read_fixed_width_file(file_path)
         elif file_extension in ['.xlsx', '.xls']:
             import io
             # Read file into memory to avoid path-handling issues in lower-level engines

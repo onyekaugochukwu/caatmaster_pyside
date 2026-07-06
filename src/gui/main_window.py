@@ -200,9 +200,15 @@ class MainWindow(QMainWindow):
         self.sidebar.dataset_visualize_requested.connect(self.on_dataset_visualize_requested)
         self.sidebar.join_datasets_requested.connect(self.on_join_datasets_requested)
         self.sidebar.append_datasets_requested.connect(self.on_append_datasets_requested)
+        self.sidebar.compare_datasets_requested.connect(self.on_compare_datasets_requested)
+        self.sidebar.fuzzy_match_datasets_requested.connect(self.on_fuzzy_match_datasets_requested)
+        self.sidebar.profile_dataset_requested.connect(self.on_profile_dataset_requested)
+        self.sidebar.verify_data_requested.connect(self.on_verify_data_requested)
+        self.sidebar.cvs_dialog_requested.connect(self.on_cvs_dialog_requested)
         self.sidebar.upload_requested.connect(self.on_upload_requested)
         self.sidebar.cleaning_wizard_requested.connect(self.on_cleaning_wizard_requested)
         self.sidebar.paste_requested.connect(self.on_paste_requested)
+        self.sidebar.import_folder_listing_requested.connect(self.on_import_folder_listing_requested)
         self.sidebar.project_edit_requested.connect(self.edit_current_project)
         self.sidebar.project_delete_requested.connect(self.delete_current_project)
         self.sidebar.toggle_ai_panel.connect(self.toggle_ai_panel)
@@ -1215,8 +1221,21 @@ class MainWindow(QMainWindow):
                 data_view.show_import_dialog()
         elif view_name == "export_review":
             self.export_for_review()
+        elif view_name == "project_lineage":
+            self._show_project_lineage()
         else:
             self.statusBar().showMessage(f"Navigation: {view_name}")
+
+    def _show_project_lineage(self):
+        """Show the project-wide graphical lineage map - how every
+        dataset was created and relates to the others, mirroring
+        CaseWare IDEA's Project Overview. Read-only."""
+        if not self.current_project:
+            QMessageBox.warning(self, "No Project", "Please create or open a project first.")
+            return
+        from gui.dialogs.project_lineage_dialog import ProjectLineageDialog
+        dialog = ProjectLineageDialog(self.current_project, self)
+        dialog.exec()
 
     @Slot(str)
     def on_dataset_selected(self, dataset_id):
@@ -1602,6 +1621,235 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Join Failed", f"Failed to join datasets: {str(e)}")
 
     @Slot(str)
+    def on_compare_datasets_requested(self, source_dataset_id):
+        """Handle compare datasets request from sidebar - a cell-by-cell
+        diff by key, mirroring ActiveData for Excel's Compare Sheets."""
+        if not self.current_project:
+            return
+
+        source_dataset = None
+        if source_dataset_id:
+            source_dataset = self.current_project.datasets.get(source_dataset_id)
+
+        if not source_dataset:
+            QMessageBox.warning(self, "No Dataset", "Please select a dataset first.")
+            return
+
+        current_df = source_dataset.get_current_dataframe()
+        if current_df is None or current_df.is_empty():
+            QMessageBox.warning(self, "No Data", "The dataset is empty.")
+            return
+
+        dataset_names = self.sidebar.get_dataset_names()
+        if len(dataset_names) < 2:
+            QMessageBox.warning(self, "Not Enough Datasets",
+                              "You need at least 2 datasets to run a comparison.")
+            return
+
+        from gui.dialogs.table_dialogs import CompareDatasetsDialog
+        dialog = CompareDatasetsDialog(
+            current_df,
+            self,
+            available_datasets=dataset_names,
+            source_dataset_name=source_dataset.name
+        )
+
+        if not dialog.exec():
+            return
+
+        params = dialog.get_parameters()
+        right_dataset_name = params["right_dataset"]
+
+        right_dataset = None
+        for ds in self.current_project.list_datasets():
+            if ds.name == right_dataset_name:
+                right_dataset = ds
+                break
+
+        if not right_dataset:
+            QMessageBox.warning(self, "Dataset Not Found", f"Could not find dataset: {right_dataset_name}")
+            return
+
+        right_df = right_dataset.get_current_dataframe()
+
+        try:
+            import polars as pl
+            from core.data_processor import DataProcessor
+            processor = DataProcessor()
+
+            diff_df = processor.compare_datasets(
+                current_df, right_df, params["key_columns"], params.get("compare_columns")
+            )
+
+            new_dataset = self._create_dataset_from_dataframe(
+                f"{source_dataset.name} vs {right_dataset.name}", diff_df,
+                source_dataset_ids=[source_dataset.id, right_dataset.id],
+                source_operation="compare"
+            )
+            if new_dataset is None:
+                return
+
+            only_left = diff_df.filter(pl.col("_diff_status") == "only_in_left").height
+            only_right = diff_df.filter(pl.col("_diff_status") == "only_in_right").height
+            different = diff_df.filter(pl.col("_diff_status") == "matched_different").height
+            self.statusBar().showMessage(
+                f"Compared datasets: {only_left:,} only in {source_dataset.name}, "
+                f"{only_right:,} only in {right_dataset.name}, {different:,} differ"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Compare Failed", f"Failed to compare datasets: {str(e)}")
+
+    @Slot(str)
+    def on_fuzzy_match_datasets_requested(self, source_dataset_id):
+        """Handle fuzzy match datasets request from sidebar - approximate
+        text matching (e.g. employee-to-vendor address matches), mirroring
+        ActiveData for Excel's Approximate Column Match."""
+        if not self.current_project:
+            return
+
+        source_dataset = None
+        if source_dataset_id:
+            source_dataset = self.current_project.datasets.get(source_dataset_id)
+
+        if not source_dataset:
+            QMessageBox.warning(self, "No Dataset", "Please select a dataset first.")
+            return
+
+        current_df = source_dataset.get_current_dataframe()
+        if current_df is None or current_df.is_empty():
+            QMessageBox.warning(self, "No Data", "The dataset is empty.")
+            return
+
+        dataset_names = self.sidebar.get_dataset_names()
+        if len(dataset_names) < 2:
+            QMessageBox.warning(self, "Not Enough Datasets",
+                              "You need at least 2 datasets to run a fuzzy match.")
+            return
+
+        from gui.dialogs.table_dialogs import FuzzyMatchDatasetsDialog
+        dialog = FuzzyMatchDatasetsDialog(
+            current_df,
+            self,
+            available_datasets=dataset_names,
+            source_dataset_name=source_dataset.name
+        )
+
+        if not dialog.exec():
+            return
+
+        params = dialog.get_parameters()
+        right_dataset_name = params["right_dataset"]
+
+        right_dataset = None
+        for ds in self.current_project.list_datasets():
+            if ds.name == right_dataset_name:
+                right_dataset = ds
+                break
+
+        if not right_dataset:
+            QMessageBox.warning(self, "Dataset Not Found", f"Could not find dataset: {right_dataset_name}")
+            return
+
+        right_df = right_dataset.get_current_dataframe()
+
+        try:
+            from core.data_processor import DataProcessor
+            processor = DataProcessor()
+
+            matches_df = processor.fuzzy_match_datasets(
+                current_df, right_df, params["left_column"], params["right_column"],
+                threshold=params["threshold"], max_matches_per_row=params["max_matches_per_row"]
+            )
+
+            new_dataset = self._create_dataset_from_dataframe(
+                f"{source_dataset.name} ~ {right_dataset.name} (fuzzy match)", matches_df,
+                source_dataset_ids=[source_dataset.id, right_dataset.id],
+                source_operation="fuzzy_match"
+            )
+            if new_dataset is None:
+                return
+
+            self.statusBar().showMessage(f"Found {matches_df.height:,} fuzzy matches between the two datasets")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Fuzzy Match Failed", f"Failed to fuzzy match datasets: {str(e)}")
+
+    @Slot(str)
+    def on_profile_dataset_requested(self, source_dataset_id):
+        """Handle profile dataset request from sidebar - an automatic
+        "what's interesting about this data" summary (duplicates, per-
+        column completeness/outliers, Benford's Law, correlations),
+        mirroring CaseWare IDEA's Discover feature. Entirely read-only."""
+        if not self.current_project:
+            return
+
+        source_dataset = None
+        if source_dataset_id:
+            source_dataset = self.current_project.datasets.get(source_dataset_id)
+
+        if not source_dataset:
+            QMessageBox.warning(self, "No Dataset", "Please select a dataset first.")
+            return
+
+        df = source_dataset.get_current_dataframe()
+        if df is None or df.is_empty():
+            QMessageBox.warning(self, "No Data", "The dataset is empty.")
+            return
+
+        try:
+            from services.dataset_profiler import profile_dataset
+            from gui.dialogs.dataset_profile_dialog import DatasetProfileDialog
+
+            profile = profile_dataset(df)
+            dialog = DatasetProfileDialog(source_dataset.name, profile, self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "Profile Failed", f"Failed to profile dataset: {str(e)}")
+
+    @Slot(str)
+    def on_verify_data_requested(self, source_dataset_id):
+        """Handle verify data request from sidebar - build and run a
+        checklist of data-integrity expectations, mirroring ACL's VERIFY
+        command. Entirely read-only."""
+        if not self.current_project:
+            return
+
+        source_dataset = None
+        if source_dataset_id:
+            source_dataset = self.current_project.datasets.get(source_dataset_id)
+
+        if not source_dataset:
+            QMessageBox.warning(self, "No Dataset", "Please select a dataset first.")
+            return
+
+        df = source_dataset.get_current_dataframe()
+        if df is None or df.is_empty():
+            QMessageBox.warning(self, "No Data", "The dataset is empty.")
+            return
+
+        from gui.dialogs.verify_data_dialog import VerifyDataDialog
+        dialog = VerifyDataDialog(df, self)
+        dialog.exec()
+
+    @Slot(str)
+    def on_cvs_dialog_requested(self, source_dataset_id):
+        """Handle Classical Variables Sampling request from sidebar -
+        sample size planning and sample result evaluation/projection,
+        mirroring ACL's SIZE/EVALUATE/CVSEVALUATE commands. The size
+        calculator tab works standalone; the evaluate tab needs an
+        active dataset with book/audited value columns."""
+        df = None
+        if source_dataset_id and self.current_project:
+            source_dataset = self.current_project.datasets.get(source_dataset_id)
+            if source_dataset:
+                df = source_dataset.get_current_dataframe()
+
+        from gui.dialogs.cvs_dialog import ClassicalVariablesSamplingDialog
+        dialog = ClassicalVariablesSamplingDialog(df, self)
+        dialog.exec()
+
+    @Slot(str)
     def on_append_datasets_requested(self, source_dataset_id):
         """Handle append datasets request from sidebar"""
         if not self.current_project:
@@ -1920,6 +2168,16 @@ class MainWindow(QMainWindow):
         data_view = self.views.get("data")
         if data_view and hasattr(data_view, "paste_from_clipboard"):
             data_view.paste_from_clipboard()
+
+    @Slot()
+    def on_import_folder_listing_requested(self):
+        """Handle "import folder listing" request from the sidebar - the
+        classic 'inventory the evidence folder' audit test."""
+        self.content_stack.setCurrentWidget(self.views["data"])
+        self.sidebar.set_active_button("data")
+        data_view = self.views.get("data")
+        if data_view and hasattr(data_view, "import_folder_listing"):
+            data_view.import_folder_listing()
 
     def show_command_palette(self):
         """Open the Ctrl+K command palette — searches every transformation,
