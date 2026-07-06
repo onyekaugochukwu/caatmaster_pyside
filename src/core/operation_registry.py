@@ -1656,7 +1656,11 @@ OPERATION_REGISTRY = {
         "category": "table",
         "description": "Filters rows using one or more conditions combined with AND/OR",
         "parameter_schema": {
-            "conditions": {"type": "list[dict]", "required": True, "label": "Conditions"},
+            "conditions": {"type": "list[dict]", "required": True, "label": "Conditions",
+                           "schema": {"column": "<real column name>",
+                                      "operator": "one of: == != > >= < <= contains not_contains "
+                                                  "starts_with ends_with is_null is_not_null in_list between",
+                                      "value": "<match against a real value in that column>"}},
             "combine_operator": {"type": "string", "required": False, "default": "AND",
                                  "options": ["AND", "OR"], "label": "Combine With"}
         },

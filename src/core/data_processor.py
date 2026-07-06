@@ -3763,6 +3763,38 @@ class LegacyDataProcessor:
     # =========================================================================
 
     def read_file(self, file_path: str, sheet_name: str = None) -> pl.DataFrame:
+        """Read various file formats using Polars, with column names
+        trimmed of leading/trailing whitespace (see _trim_column_names)."""
+        return self._trim_column_names(self._read_file_impl(file_path, sheet_name))
+
+    @staticmethod
+    def _trim_column_names(df: pl.DataFrame) -> pl.DataFrame:
+        """Strip leading/trailing whitespace from column names - a common
+        real-world data-entry mistake (an Excel header typed with a
+        trailing space) that's invisible to the eye but breaks any
+        exact-name column reference downstream, including a SQL identifier
+        a generated or hand-typed query can never reproduce since the
+        extra whitespace was never visible to begin with."""
+        existing = set(df.columns)
+        seen = set()
+        rename_map = {}
+        for c in df.columns:
+            if not isinstance(c, str) or c == c.strip():
+                seen.add(c)
+                continue
+            trimmed = c.strip()
+            # Skip if trimming would collide with a real column name or
+            # another column's own trimmed name - leaving a rare ambiguous
+            # pair with its original (still-usable) name beats crashing the
+            # whole file load over a naming collision.
+            if trimmed in existing or trimmed in seen:
+                seen.add(c)
+                continue
+            rename_map[c] = trimmed
+            seen.add(trimmed)
+        return df.rename(rename_map) if rename_map else df
+
+    def _read_file_impl(self, file_path: str, sheet_name: str = None) -> pl.DataFrame:
         """Read various file formats using Polars"""
         file_path_obj = Path(file_path)
         file_extension = file_path_obj.suffix.lower()

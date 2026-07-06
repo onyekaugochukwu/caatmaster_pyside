@@ -139,6 +139,15 @@ class ColumnSuggestion:
 
 
 @dataclass
+class SQLSuggestion:
+    """AI-generated SQL suggestion for the SQL editor - never executed by
+    the generator itself; the caller always shows it to the user for
+    review before it's ever run."""
+    sql: str
+    explanation: str
+
+
+@dataclass
 class ComplianceFinding:
     """AI-drafted description wrapped around a real, deterministically
     computed result — affected_count/affected_amount/affected_pct/evidence
@@ -292,6 +301,69 @@ Provide clear recommendations.""",
 Use formal audit language appropriate for management reports.
 Be factual, objective, and constructive.
 Include specific evidence where available.""",
+
+            "sql_generation": """You are helping an auditor who does not write SQL express a request as a
+single DuckDB SQL query, to review and run themselves.
+Write exactly one read-only SELECT (or WITH ... SELECT) statement - never DDL/DML, never multiple
+statements, never a file-access function (read_csv, COPY, ATTACH, etc.) - only query the tables you were
+given, using their exact names. Use only the column names you were actually given; never invent a table
+or column name that merely sounds plausible - if what's needed wasn't listed, say so in the explanation
+instead of guessing at a name.
+When a query involves more than one table, give every table an explicit short alias (e.g. "FROM Customers c
+JOIN Orders o ON o.CustomerID = c.CustomerID") and qualify every column with that alias. Never reference a
+table by any name that is neither one of the exact table names you were given nor an alias you defined
+earlier in that same query.
+Always include a one-sentence plain-English restatement of what the query does, so accepting it is an
+informed choice rather than a leap of faith.""",
+
+            "agent_qa": """You are CaatMaster AI, an assistant that can answer questions about the auditor's
+data, visualize it, propose changes to it, materialize a query result as a new dataset, and answer
+questions about how to use CaatMaster itself. Decide which ONE of the following the auditor's message
+calls for:
+
+1. ANSWER directly, using the real summary statistics you were already given, when those already cover
+   the question precisely.
+2. QUERY: if the question needs something the summary stats don't cover - an exact count under a specific
+   filter, a join across datasets, a computation not already shown - do not estimate or guess. Request a
+   single read-only SQL SELECT against the listed tables; it will be run against the complete, real data
+   and the exact result given back to you before you answer.
+3. OPERATION: if the auditor wants a change made to their dataset (not a question) - e.g. "remove test
+   transactions", "rename this column", "sort by amount" - propose exactly ONE operation from the
+   operations menu you were given. Never assume it was applied - the auditor always sees a before/after
+   preview and clicks Apply themselves. IMPORTANT: an operation can only ever apply to the dataset marked
+   [CURRENTLY ACTIVE] above, using ONLY that dataset's real columns (listed in the operations menu) - if
+   the column/data the request needs actually belongs to a DIFFERENT listed dataset, do not propose an
+   operation against the active one; instead either answer that they should switch to that dataset first,
+   or use QUERY/DATASET instead, which can reference any dataset by name.
+4. CHART: if the auditor wants to see/visualize their data - e.g. "show me a chart of...", "visualize...",
+   "plot..." - propose exactly ONE chart from the chart menu you were given, specifying which dataset it's
+   from. Unlike OPERATION, a chart may use ANY dataset listed in the chart menu, not just the one marked
+   [CURRENTLY ACTIVE] - it never writes anywhere, so there's no reason to limit it to the active one.
+   Charts render immediately (no approval needed).
+5. DATASET: if the auditor asks to be GIVEN something - "give me a table/dataset/list of...", "create a
+   table of...", "extract..." - propose a single read-only SQL SELECT (same rules as QUERY) whose result
+   will become a new dataset, after the auditor confirms. This takes priority over OPERATION even when the
+   request also describes a filter/sort - "give me a table that only has approved transactions" is
+   DATASET (a new table filtered to approved rows), not OPERATION, because the auditor is asking to
+   receive a new thing, not asking to change the dataset they already have open. Only use OPERATION when
+   the auditor is clearly asking to edit their CURRENT, already-open dataset in place (no "give me"/
+   "create a table" framing).
+6. HELP: if the question is about how to use CaatMaster itself, not about the data - e.g. "how do I
+   promote a row to headers", "where is the SQL editor" - request a search of the app's feature reference;
+   matching entries will be given back to you before you answer.
+
+Respond with JSON only, in exactly one of these shapes:
+{"type": "answer", "answer": "..."}
+{"type": "query", "sql": "SELECT ...", "reason": "why the summary stats above aren't enough"}
+{"type": "operation", "operation_id": "...", "params": {...}, "reason": "one sentence, what this does and why"}
+{"type": "chart", "dataset": "<dataset name from the chart menu>", "chart_type": "...", "params": {...}, "reason": "one sentence, what this shows"}
+{"type": "dataset", "sql": "SELECT ...", "name": "suggested short dataset name", "reason": "..."}
+{"type": "help", "topic": "a short search phrase describing what they want to know how to do"}
+
+Only use an operation_id/chart_type and parameter names exactly as given in the menus you were given -
+never invent one. Never fabricate a number, feature, or menu location you were not given or did not
+look up. Keep "answer" concise and direct - don't add a disclaimer restating that a figure came from
+real or complete data; the auditor already trusts that, so just answer.""",
         }
         base_prompt = prompts.get(task_type, prompts["general"])
         return base_prompt
@@ -1550,6 +1622,557 @@ Requirements:
             sample = str(df[col].head(3).to_list())
             lines.append(f"  - {col} ({dtype}): {sample}")
         return "\n".join(lines)
+
+
+# =============================================================================
+# SQL Generator
+# =============================================================================
+
+class SQLGenerator:
+    """AI-powered SQL generation from natural language, for the SQL editor.
+
+    Generates one query only - never executes it. The caller (SQLTransformView)
+    is responsible for running it through is_safe_readonly_select() before
+    ever offering to execute it, and always shows it to the user for review
+    first, exactly like a query they'd typed themselves."""
+
+    def __init__(self, ai_manager: AIManager):
+        self.ai = ai_manager
+
+    async def generate_sql(self, instruction: str, table_schemas: Dict[str, pl.DataFrame]) -> SQLSuggestion:
+        """Generate a single SQL statement for the given instruction.
+
+        Args:
+            instruction: Natural-language description of the desired query
+            table_schemas: {table_name: dataframe} for every table currently
+                registered in the SQL editor's DuckDB connection
+        """
+        schema_info = self._format_schema_info(table_schemas)
+
+        prompt = f"""
+Tables available in this DuckDB session:
+{schema_info}
+
+Request: "{instruction}"
+
+Provide your response as JSON:
+{{
+    "sql": "The single SELECT (or WITH ... SELECT) statement, using only the tables/columns listed above",
+    "explanation": "One sentence, plain English, restating exactly what the query does"
+}}
+
+Requirements:
+- DuckDB SQL syntax
+- Exactly one SELECT statement - no DDL/DML, no multiple statements
+- Use only the table and column names given above; never invent one
+- Return only valid JSON
+"""
+
+        result = await self.ai.structured_complete(
+            prompt=prompt,
+            task_type="sql_generation",
+            response_format="json"
+        )
+
+        return SQLSuggestion(
+            sql=result.get("sql", "").strip(),
+            explanation=result.get("explanation", ""),
+        )
+
+    def _format_schema_info(self, table_schemas: Dict[str, pl.DataFrame]) -> str:
+        """Real, computed schema info for the prompt - table names, column
+        names/types, and a couple of sample values per column, so the model
+        writes SQL against what's actually there rather than guessing."""
+        lines = []
+        for table_name, df in table_schemas.items():
+            lines.append(f'Table "{table_name}" ({len(df):,} rows):')
+            for col in df.columns:
+                dtype = df[col].dtype
+                sample = str(df[col].drop_nulls().head(3).to_list())
+                lines.append(f"  - {col} ({dtype}): {sample}")
+        return "\n".join(lines) if lines else "(no tables registered)"
+
+
+# =============================================================================
+# Agent Chat (Phase 2: read-only actions, Phase 3: proposed write actions)
+# =============================================================================
+
+# The exact operator strings DataProcessor._build_condition_expr()
+# recognizes for filter_advanced's "conditions" - anything else is silently
+# DROPPED there (not rejected), and if it's the only condition, the whole
+# filter becomes a no-op that returns the complete, unfiltered dataframe.
+# Validating against this exact set here is what turns that into a clear
+# rejection instead of a filter that looks applied but does nothing.
+_VALID_FILTER_OPERATORS = {
+    "==", "!=", ">", ">=", "<", "<=",
+    "contains", "not_contains", "starts_with", "ends_with",
+    "is_null", "is_not_null", "in_list", "between",
+}
+
+# Deliberately a small subset of the ~100-operation registry, not all of
+# it: these are the operations already stress-tested this session (real
+# parameter validation, no known crashes), and simple enough for a model to
+# reliably target with valid parameters. Widen this list only once agent
+# write-actions have been trusted in practice.
+AGENT_WRITABLE_OPERATIONS = [
+    "filter_advanced", "remove_rows", "choose_columns", "rename_columns",
+    "sort_column", "change_dtype", "replace_values", "standardize_missing_values",
+    "select_n_rows", "split_into_rows", "split_columns_by_delimiter",
+]
+
+
+def build_operations_menu(df: pl.DataFrame) -> str:
+    """Plain-text menu of the operations the agent may propose against the
+    active dataset - operation_id, description, and full parameter schema,
+    plus the dataset's real column names, so the model has everything it
+    needs to construct valid parameters instead of inventing a column or
+    parameter name that doesn't exist."""
+    from core.operation_registry import OPERATION_REGISTRY
+
+    lines = [f"Active dataset columns: {', '.join(df.columns)}", "", "Operations you may propose:"]
+    for op_id in AGENT_WRITABLE_OPERATIONS:
+        op = OPERATION_REGISTRY.get(op_id)
+        if not op:
+            continue
+        lines.append(f'- operation_id "{op_id}" ({op["display_name"]}): {op["description"]}')
+        for pname, pschema in op.get("parameter_schema", {}).items():
+            req = "required" if pschema.get("required") else "optional"
+            extra = f", options: {pschema['options']}" if "options" in pschema else ""
+            if "schema" in pschema:
+                extra += f", each item shaped like: {pschema['schema']}"
+            lines.append(f'    param "{pname}": {pschema["type"]}, {req}{extra}')
+    return "\n".join(lines)
+
+
+def validate_operation_params(operation_id: str, params: Dict[str, Any], df: pl.DataFrame) -> tuple[bool, str]:
+    """Validate a model-proposed operation before it's ever previewed to
+    the user - checked against the real parameter schema and the real
+    dataframe's columns, the same validation a hand-built transform dialog
+    enforces. Returns (is_valid, reason); reason is empty when valid."""
+    from core.operation_registry import OPERATION_REGISTRY
+
+    if operation_id not in AGENT_WRITABLE_OPERATIONS:
+        return False, f"'{operation_id}' is not one of the operations the agent is allowed to propose."
+
+    op = OPERATION_REGISTRY.get(operation_id)
+    if not op:
+        return False, f"'{operation_id}' is not a known operation."
+    if not isinstance(params, dict):
+        return False, "Parameters must be a JSON object."
+
+    schema = op.get("parameter_schema", {})
+    for pname, pschema in schema.items():
+        if pschema.get("required") and not params.get(pname):
+            return False, f"Missing required parameter '{pname}' for '{operation_id}'."
+
+    for pname, value in params.items():
+        pschema = schema.get(pname)
+        if pschema is None:
+            continue  # unknown params are simply dropped when applied, not fatal here
+        ptype = pschema["type"]
+
+        if ptype == "column":
+            if value not in df.columns:
+                return False, f"Column '{value}' does not exist in the active dataset."
+        elif ptype == "list[column]":
+            if not isinstance(value, list) or not all(isinstance(c, str) and c in df.columns for c in value):
+                return False, f"Parameter '{pname}' must be a list of real column names from the active dataset."
+        elif ptype == "list[int]":
+            if not isinstance(value, list) or not all(isinstance(v, int) and not isinstance(v, bool) for v in value):
+                return False, f"Parameter '{pname}' must be a list of integers."
+        elif ptype == "list[str]":
+            if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+                return False, f"Parameter '{pname}' must be a list of strings."
+        elif ptype == "int":
+            if not isinstance(value, int) or isinstance(value, bool):
+                return False, f"Parameter '{pname}' must be an integer."
+        elif ptype == "float":
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                return False, f"Parameter '{pname}' must be a number."
+        elif ptype == "bool":
+            if not isinstance(value, bool):
+                return False, f"Parameter '{pname}' must be true or false."
+        elif ptype == "string" and "options" in pschema:
+            if value not in pschema["options"]:
+                return False, f"Parameter '{pname}' must be one of {pschema['options']}."
+        elif ptype == "list[dict]":
+            if not isinstance(value, list) or not value:
+                return False, f"Parameter '{pname}' must be a non-empty list."
+            for item in value:
+                if not isinstance(item, dict):
+                    return False, f"Each item in '{pname}' must be an object."
+                item_col = item.get("column") or item.get("old_name")
+                if item_col and item_col not in df.columns:
+                    return False, f"'{pname}' references column '{item_col}', which does not exist in the active dataset."
+
+                if "operator" in item:
+                    op = item.get("operator")
+                    if op not in _VALID_FILTER_OPERATORS:
+                        return False, (
+                            f"'{pname}' uses operator '{op}', which isn't recognized and would silently "
+                            f"match nothing. Valid operators: {', '.join(sorted(_VALID_FILTER_OPERATORS))}."
+                        )
+                    # For an equality check on a non-numeric column, verify
+                    # the value actually occurs - otherwise a plausible but
+                    # slightly-off guess (e.g. "MEA" vs the real "EMEA")
+                    # silently filters to zero matching rows instead of
+                    # being caught here.
+                    if op == "==" and item_col and not df[item_col].dtype.is_numeric():
+                        distinct_vals = [str(v) for v in df[item_col].drop_nulls().unique().to_list()]
+                        if str(item.get("value")) not in distinct_vals:
+                            sample = ", ".join(distinct_vals[:8])
+                            return False, (
+                                f"Value '{item.get('value')}' was not found in column '{item_col}' "
+                                f"(real values include: {sample})."
+                            )
+
+    # choose_columns' real requirement depends on which action was picked -
+    # the flat "required" flags above can't express that on their own.
+    if operation_id == "choose_columns":
+        action = params.get("action")
+        needed = {"keep": "columns_to_keep", "remove": "columns_to_remove", "reorder": "column_order"}.get(action)
+        if needed and not params.get(needed):
+            return False, f"action '{action}' requires a non-empty '{needed}' parameter."
+
+    return True, ""
+
+
+# =============================================================================
+# Agent charts - the agent may render a chart instead of just describing
+# numbers. Charts never mutate the dataset (read-only, like Phase 2's SQL
+# lookups), so there's no preview/accept gate - they render straight into
+# the chat once validated.
+# =============================================================================
+
+# operation_id (used as the "chart_type" the model picks) -> the real
+# VisualizationService method name and its required parameter names,
+# exactly as that method's signature expects them, so **params can be
+# passed straight through.
+AGENT_CHART_TYPES: Dict[str, Dict[str, Any]] = {
+    "column": {"method": "create_column_chart", "required": ["x_column", "y_column"],
+               "optional": ["color_column"]},
+    "bar": {"method": "create_bar_chart", "required": ["category_column", "value_column"],
+            "optional": ["color_column"]},
+    "line": {"method": "create_line_chart", "required": ["x_column", "y_columns"], "optional": []},
+    "scatter": {"method": "create_scatter_plot", "required": ["x_column", "y_column"],
+                "optional": ["color_column", "size_column"]},
+    "histogram": {"method": "create_histogram", "required": ["column"], "optional": []},
+    "pie": {"method": "create_pie_chart", "required": ["label_column", "value_column"], "optional": []},
+    "box": {"method": "create_box_plot", "required": ["value_column"], "optional": ["group_column"]},
+    "heatmap": {"method": "create_heatmap", "required": [], "optional": []},
+    "area": {"method": "create_area_chart", "required": ["x_column", "y_columns"], "optional": []},
+    "violin": {"method": "create_violin_plot", "required": ["value_column"], "optional": ["group_column"]},
+    "pareto": {"method": "create_pareto_chart", "required": ["category_column", "value_column"], "optional": []},
+    "control": {"method": "create_control_chart", "required": ["value_column"], "optional": ["x_column"]},
+    "stacked_column": {"method": "create_stacked_column_chart",
+                        "required": ["x_column", "value_column", "stack_column"], "optional": []},
+    "qq": {"method": "create_qq_plot", "required": ["column"], "optional": []},
+}
+
+# Parameters that take a list of column names rather than a single one.
+_CHART_LIST_COLUMN_PARAMS = {"y_columns"}
+
+
+def build_chart_menu(datasets: Dict[str, pl.DataFrame]) -> str:
+    """Plain-text menu of chart types the agent may propose, across every
+    dataset in the project - a chart is read-only (it never writes
+    anywhere), so unlike an operation there's no reason to limit it to
+    just the currently active dataset. Lists each dataset's real columns
+    split into numeric vs. categorical, so the model picks both a real
+    dataset and a chart type that dataset's columns can actually support."""
+    lines = ["Datasets available to chart (specify one by name in \"dataset\"):"]
+    for name, df in datasets.items():
+        numeric_cols = [c for c in df.columns if df[c].dtype.is_numeric()]
+        categorical_cols = [c for c in df.columns if c not in numeric_cols]
+        lines.append(
+            f'- "{name}": numeric columns: {", ".join(numeric_cols) or "(none)"}; '
+            f'categorical/text columns: {", ".join(categorical_cols) or "(none)"}'
+        )
+    lines.append("")
+    lines.extend([
+        "Chart types you may propose (chart_type: required params [optional params]):",
+        "- column (vertical bars): x_column (category), y_column (numeric) [color_column]",
+        "- bar (horizontal bars, good for many/long category labels): category_column, value_column (numeric) [color_column]",
+        "- line: x_column, y_columns (list of numeric columns)",
+        "- scatter: x_column (numeric), y_column (numeric) [color_column, size_column]",
+        "- histogram: column (numeric) - distribution of one column",
+        "- pie: label_column (category), value_column (numeric)",
+        "- box: value_column (numeric) [group_column] - distribution summary, optionally per group",
+        "- heatmap: (no params) - correlation matrix across all numeric columns",
+        "- area: x_column, y_columns (list of numeric columns, stacked)",
+        "- violin: value_column (numeric) [group_column] - like box, shows full distribution shape",
+        "- pareto: category_column, value_column (numeric) - bars sorted descending + cumulative % line",
+        "- control: value_column (numeric) [x_column] - run chart with mean/±3σ control limits",
+        "- stacked_column: x_column (category), value_column (numeric), stack_column (category)",
+        "- qq: column (numeric) - normality check against a theoretical normal distribution",
+    ])
+    return "\n".join(lines)
+
+
+def validate_chart_params(chart_type: str, params: Dict[str, Any], df: pl.DataFrame) -> tuple:
+    """Validate a model-proposed chart before it's ever rendered - checked
+    against the real chart signature and the real dataframe's columns.
+    Returns (is_valid, reason); reason is empty when valid."""
+    spec = AGENT_CHART_TYPES.get(chart_type)
+    if spec is None:
+        return False, f"'{chart_type}' is not a supported chart type."
+    if not isinstance(params, dict):
+        return False, "Parameters must be a JSON object."
+
+    for pname in spec["required"]:
+        if not params.get(pname):
+            return False, f"Missing required parameter '{pname}' for chart type '{chart_type}'."
+
+    allowed = set(spec["required"]) | set(spec["optional"])
+    for pname, value in params.items():
+        if pname not in allowed:
+            continue  # unknown params are simply dropped when applied, not fatal here
+        if pname in _CHART_LIST_COLUMN_PARAMS:
+            if not isinstance(value, list) or not value or not all(isinstance(c, str) and c in df.columns for c in value):
+                return False, f"Parameter '{pname}' must be a non-empty list of real column names."
+        elif isinstance(value, str) and value not in df.columns:
+            return False, f"Column '{value}' does not exist in the active dataset."
+
+    if chart_type == "heatmap":
+        numeric_count = sum(1 for c in df.columns if df[c].dtype.is_numeric())
+        if numeric_count < 2:
+            return False, "Need at least 2 numeric columns to compute a correlation heatmap."
+
+    return True, ""
+
+
+# =============================================================================
+# Agent app help - answering "how do I do X in CaatMaster" questions,
+# grounded in the real operation registry and a short curated list of the
+# app's major surfaces (wizard, SQL editor, visualizations, ...) that
+# aren't individual operations. Kept as a searchable index rather than
+# always included in every prompt, so a plain data question doesn't pay
+# for it.
+# =============================================================================
+
+_APP_SURFACES = [
+    ("Cleaning Wizard", "Automatically detects structural issues in a freshly imported file - multi-row "
+     "headers, subtotal rows/columns, blank rows/columns - and proposes fixes to review and accept before "
+     "anything is applied. Open it from the sidebar's 'Import & Clean...' button next to Datasets."),
+    ("SQL Editor", "Write and run SQL (DuckDB) queries against your loaded datasets, including joins across "
+     "multiple datasets. Has an 'Ask AI' button that generates SQL from a plain-language description, and "
+     "'Apply to Dataset' / 'Create New Dataset' buttons to turn a query's result into a real pipeline step "
+     "or a brand new dataset. Open it from the SQL navigation item."),
+    ("Visualizations", "Build charts (column, bar, line, scatter, histogram, pie, box, heatmap, area, "
+     "violin, pareto, control, stacked column, Q-Q plot) from a dataset. Open it from the Visualizations "
+     "navigation item, or right-click a column header and choose Visualize for a quick default chart."),
+    ("AI Chat panel", "Ask questions about your data in plain language, or ask for a change to be made; it "
+     "can run precise queries against the real data and propose reviewable changes you approve before "
+     "anything is applied. Toggle it from the sidebar."),
+    ("Applied Steps panel", "Every transformation (manual or AI-proposed) is recorded here as an ordered, "
+     "individually undoable step - it's the audit trail of everything done to a dataset. Shown next to the "
+     "Transform view."),
+    ("Right-click column menu", "Right-click any column header in the Transform view for a menu of "
+     "operations scoped to that column, organized by category (Text, Numbers, Date & Time, Table, Headers, "
+     "Column, Structure, etc.)."),
+    ("Right-click row / cell menu", "Right-click inside the data grid for row-level actions (remove, "
+     "filter, flag) without opening the Transform menu."),
+]
+
+
+def _build_app_reference_corpus() -> List[tuple]:
+    """(searchable_text, display_entry) pairs built once from the real
+    operation registry plus the curated app-surfaces list above - the
+    corpus search_app_reference() runs its keyword match against."""
+    from core.operation_registry import OPERATION_REGISTRY
+
+    corpus = []
+    for name, description in _APP_SURFACES:
+        entry = f"- {name}: {description}"
+        corpus.append((f"{name} {description}".lower(), entry))
+    for op_id, op in OPERATION_REGISTRY.items():
+        display_name = op.get("display_name", op_id)
+        description = op.get("description", "")
+        category = op.get("category", "")
+        entry = f"- {display_name} (found under the {category} category, e.g. the Transform menu or a column's right-click menu): {description}"
+        corpus.append((f"{op_id} {display_name} {description} {category}".lower(), entry))
+    return corpus
+
+
+_app_reference_corpus_cache: List[tuple] = []
+
+
+def search_app_reference(topic: str, max_results: int = 8) -> str:
+    """Keyword-search the app reference corpus for entries relevant to a
+    'how do I do X in CaatMaster' question - returns only the matching
+    entries rather than the whole ~100-entry index, so a plain data
+    question never pays for this. Cached after the first call since the
+    corpus (operation registry + curated surfaces) never changes at
+    runtime."""
+    global _app_reference_corpus_cache
+    if not _app_reference_corpus_cache:
+        _app_reference_corpus_cache = _build_app_reference_corpus()
+
+    words = [w for w in re.findall(r'\w+', topic.lower()) if len(w) > 2]
+    if not words:
+        return "(no matching features found)"
+
+    scored = []
+    for haystack, entry in _app_reference_corpus_cache:
+        score = sum(1 for w in words if w in haystack)
+        if score > 0:
+            scored.append((score, entry))
+    scored.sort(key=lambda t: t[0], reverse=True)
+
+    if not scored:
+        return "(no matching features found)"
+    return "\n".join(entry for _, entry in scored[:max_results])
+
+
+class AgentChat:
+    """Read-only agentic chat: for a question the pre-computed dataset
+    summary can't already answer precisely, decide whether to request a
+    single SQL query against the real data before answering, rather than
+    guessing. Never mutates anything - decide() only ever returns a
+    decision (answer directly, the SQL to run, or a proposed operation);
+    running a query or applying an operation is the caller's job
+    (main_window.py), since that's where the actual dataframes, DuckDB
+    connection, and Applied Steps pipeline live."""
+
+    def __init__(self, ai_manager: AIManager):
+        self.ai = ai_manager
+
+    async def decide(self, context: str, question: str, operations_menu: str = "",
+                      chart_menu: str = "") -> Dict[str, Any]:
+        """Ask the model which of answer/query/operation/chart/dataset/help
+        the message calls for. Returns one of:
+        {"type": "answer", "answer": ...}
+        {"type": "query", "sql": ..., "reason": ...}
+        {"type": "operation", "operation_id": ..., "params": {...}, "reason": ...}
+        {"type": "chart", "dataset": ..., "chart_type": ..., "params": {...}, "reason": ...}
+        {"type": "dataset", "sql": ..., "name": ..., "reason": ...}
+        {"type": "help", "topic": ...}"""
+        prompt = f"{context}\n\nUser Question: {question}"
+        if operations_menu:
+            prompt += f"\n\n{operations_menu}"
+        if chart_menu:
+            prompt += f"\n\n{chart_menu}"
+        return await self.ai.structured_complete(
+            prompt=prompt,
+            task_type="agent_qa",
+            response_format="json"
+        )
+
+    async def answer_with_query_result(self, context: str, question: str,
+                                        sql: str, result_summary: str) -> str:
+        """Second turn: give the model the REAL query result and ask for a
+        final natural-language answer grounded in it."""
+        prompt = f"""{context}
+
+User Question: {question}
+
+You requested this query to answer precisely:
+{sql}
+
+Real result (the complete, actual data - not a sample):
+{result_summary}
+
+Answer the user's question directly and concisely, using the numbers shown above exactly as given - don't
+round or estimate. Do not add a disclaimer restating that this came from a real query or the complete
+data (e.g. "this is based on the query executed against..."); just answer as if you already knew it."""
+
+        response = await self.ai.complete(prompt=prompt, task_type="general", temperature=0.3)
+        return response.content
+
+    async def answer_after_rejected_query(self, context: str, question: str,
+                                           rejected_sql: str, rejection_reason: str) -> str:
+        """The model's requested query failed the safety/execution check.
+        Rather than silently retrying forever or crashing the chat, ask it
+        to answer using only the summary stats already in context, being
+        explicit that it couldn't run the precise lookup it wanted."""
+        prompt = f"""{context}
+
+User Question: {question}
+
+You requested this query, but it could not be run: {rejection_reason}
+Query: {rejected_sql}
+
+Answer the user's question using only the summary statistics already given above. If they don't cover
+what's being asked, say plainly that you don't have a precise answer available rather than estimating."""
+
+        response = await self.ai.complete(prompt=prompt, task_type="general", temperature=0.3)
+        return response.content
+
+    async def answer_after_rejected_operation(self, context: str, question: str,
+                                               operation_id: str, rejection_reason: str) -> str:
+        """The model's proposed operation failed validation before ever
+        reaching a preview. Ask it to respond in plain text instead of
+        silently retrying or leaving the auditor without any reply."""
+        prompt = f"""{context}
+
+User Question: {question}
+
+You proposed the operation '{operation_id}', but it could not be used: {rejection_reason}
+
+Reply to the auditor explaining that this change couldn't be proposed as requested, in one or two
+sentences. Do not claim any change was made - nothing was applied.
+Operations can only ever be proposed against the dataset marked [CURRENTLY ACTIVE] above - if the
+rejection is because a column doesn't exist there, check whether a different listed dataset actually has
+that column, and if so, say so plainly (e.g. "that column is in the 'X' dataset, not the currently active
+one - switch to it first, or ask me to give you a new table/dataset instead, which can pull from any
+dataset")."""
+
+        response = await self.ai.complete(prompt=prompt, task_type="general", temperature=0.3)
+        return response.content
+
+    async def answer_after_rejected_chart(self, context: str, question: str,
+                                           chart_type: str, rejection_reason: str) -> str:
+        """The model's proposed chart failed validation before ever being
+        rendered. Ask it to respond in plain text rather than leaving the
+        auditor without any reply."""
+        prompt = f"""{context}
+
+User Question: {question}
+
+You proposed a '{chart_type}' chart, but it could not be created: {rejection_reason}
+
+Reply to the auditor explaining that this chart couldn't be created as requested, in one or two
+sentences. Suggest a different chart type or columns if an obvious alternative fits."""
+
+        response = await self.ai.complete(prompt=prompt, task_type="general", temperature=0.3)
+        return response.content
+
+    async def answer_after_rejected_dataset(self, context: str, question: str,
+                                             rejected_sql: str, rejection_reason: str) -> str:
+        """The model's proposed dataset-creation query failed the safety/
+        execution check."""
+        prompt = f"""{context}
+
+User Question: {question}
+
+You proposed this query to build a new dataset, but it could not be run: {rejection_reason}
+Query: {rejected_sql}
+
+Reply to the auditor explaining that the dataset couldn't be created as requested, in one or two
+sentences. Do not claim any dataset was created - nothing was."""
+
+        response = await self.ai.complete(prompt=prompt, task_type="general", temperature=0.3)
+        return response.content
+
+    async def answer_with_help_result(self, context: str, question: str,
+                                       topic: str, search_results: str) -> str:
+        """Second turn for a HELP decision: give the model the actual
+        matching feature entries and ask it to answer using only those,
+        rather than the general knowledge it might otherwise guess from."""
+        prompt = f"""{context}
+
+User Question: {question}
+
+You determined this is a question about how to use CaatMaster itself, not about the data. Here are the
+matching features found in the app's own reference:
+{search_results}
+
+Answer the user's question using ONLY the features listed above - describe what to click/do in plain,
+concrete terms. If nothing above actually answers the question, say plainly that you're not sure rather
+than guessing at a menu or feature that may not exist."""
+
+        response = await self.ai.complete(prompt=prompt, task_type="general", temperature=0.3)
+        return response.content
 
 
 # =============================================================================

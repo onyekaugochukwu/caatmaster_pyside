@@ -3,8 +3,102 @@ SQL Query Service for CAATmaster
 Allows executing SQL queries on Polars DataFrames
 """
 import polars as pl
+import re
 from typing import Optional, Dict, List, Any
 import json
+
+
+# Statements an AI-generated query must never contain. This is deliberately
+# a denylist over the *generated* query only, not a restriction on what an
+# auditor can type themselves in the same editor (they already have full,
+# trusted access to their own in-memory session) - it exists because an LLM
+# asked to "write SQL for this" has no reason to ever need DDL/DML, and
+# DuckDB can both mutate state and touch the real filesystem (read_csv,
+# COPY TO, glob, ATTACH) from inside an otherwise-ordinary-looking SELECT.
+_UNSAFE_SQL_PATTERN = re.compile(
+    r"\b(insert|update|delete|drop|alter|create|attach|detach|copy|export|import|"
+    r"install|load|pragma|call|set|vacuum|checkpoint|read_csv|read_parquet|read_json|"
+    r"glob|sniff_csv|COPY_FROM|COPY_TO)\b",
+    re.IGNORECASE,
+)
+
+
+def is_safe_readonly_select(query: str) -> tuple[bool, str]:
+    """Check that an AI-generated query is a single, plain read-only SELECT
+    (or WITH ... SELECT) against the already-registered tables - never
+    trusting the model's own cooperation with the instructions it was given.
+    Returns (is_safe, reason). reason is empty when is_safe is True."""
+    stripped = re.sub(r"--[^\n]*", "", query)  # strip line comments before checking
+    stripped = re.sub(r"/\*.*?\*/", "", stripped, flags=re.DOTALL)  # strip block comments
+    stripped = stripped.strip().rstrip(";").strip()
+
+    if not stripped:
+        return False, "Generated query is empty."
+    if ";" in stripped:
+        return False, "Generated query contains multiple statements; only one SELECT is allowed."
+    if not re.match(r"^(select|with)\b", stripped, re.IGNORECASE):
+        return False, "Generated query must start with SELECT (or WITH ... SELECT)."
+
+    match = _UNSAFE_SQL_PATTERN.search(stripped)
+    if match:
+        return False, f"Generated query contains disallowed keyword '{match.group(0)}' for an AI-generated query."
+
+    return True, ""
+
+
+def trim_column_names(df: pl.DataFrame) -> pl.DataFrame:
+    """Strip leading/trailing whitespace from column names before a
+    dataframe is registered as a SQL table - a column header typed with a
+    trailing space (invisible to the eye) otherwise doesn't match the
+    identifier a generated or hand-typed query references, producing a
+    confusing Binder Error instead of a real result. read_file() already
+    does this at import time; this is a defensive second layer at the SQL
+    boundary itself, for data that reaches here by some other path."""
+    existing = set(df.columns)
+    seen = set()
+    rename_map = {}
+    for c in df.columns:
+        if not isinstance(c, str) or c == c.strip():
+            seen.add(c)
+            continue
+        trimmed = c.strip()
+        if trimmed in existing or trimmed in seen:
+            seen.add(c)
+            continue
+        rename_map[c] = trimmed
+        seen.add(trimmed)
+    return df.rename(rename_map) if rename_map else df
+
+
+def sanitize_table_name(name: str) -> str:
+    """Sanitize a dataset name for use as a SQL table name - preserves case
+    and most characters. Shared so every caller that registers a dataset as
+    a queryable table (the SQL editor, the agent chat's read-only lookups)
+    produces the same table name for the same dataset name."""
+    sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+    if sanitized and not sanitized[0].isalpha() and sanitized[0] != '_':
+        sanitized = '_' + sanitized
+    return sanitized
+
+
+def format_result_for_ai(df: pl.DataFrame, max_rows: int = 20) -> str:
+    """Compact, plain-text rendering of a query result to hand back to the
+    model as ground truth - bounded so a large result doesn't blow up the
+    follow-up prompt. The model is told the true row count even when the
+    displayed rows are truncated, so it doesn't imply completeness that
+    isn't there."""
+    lines = [f"{df.height:,} row(s), {len(df.columns)} column(s)"]
+    if df.height == 0:
+        lines.append("(no rows returned)")
+        return "\n".join(lines)
+
+    display_df = df.head(max_rows)
+    lines.append(" | ".join(display_df.columns))
+    for row in display_df.iter_rows():
+        lines.append(" | ".join("" if v is None else str(v) for v in row))
+    if df.height > max_rows:
+        lines.append(f"... ({df.height - max_rows:,} more row(s) not shown)")
+    return "\n".join(lines)
 
 
 class SQLQueryService:
@@ -22,7 +116,7 @@ class SQLQueryService:
             name: Table name
             df: Polars DataFrame to register
         """
-        self.registered_tables[name] = df
+        self.registered_tables[name] = trim_column_names(df)
 
     def unregister_table(self, name: str) -> None:
         """

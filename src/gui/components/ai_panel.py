@@ -7,7 +7,36 @@ from PySide6.QtWidgets import (
     QProgressBar, QToolButton, QSpacerItem
 )
 from PySide6.QtCore import Qt, QSize, Signal, Slot, QTimer
-from PySide6.QtGui import QFont, QColor, QIcon, QTextCursor, QKeyEvent, QAction
+from PySide6.QtGui import QFont, QColor, QIcon, QTextCursor, QKeyEvent, QAction, QPixmap
+
+
+class _AutoHeightTextEdit(QTextEdit):
+    """A read-only QTextEdit that always sizes its height to fit its
+    content at whatever width it actually ends up with. The previous
+    approach measured height against a hardcoded assumed width (500px)
+    that was wider than the panel itself (440px) could ever give it -
+    text wrapped to more lines than were measured for, so the fixed
+    height came out too short and clipped the last line(s) of longer
+    messages. Recomputing on resizeEvent keeps it correct regardless of
+    the panel's actual width, including if the window is resized."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setReadOnly(True)
+        self.setFrameStyle(QFrame.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.document().setDocumentMargin(0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_height()
+
+    def _update_height(self):
+        self.document().setTextWidth(self.viewport().width())
+        doc_height = self.document().size().height()
+        self.setFixedHeight(int(doc_height) + 8)
 
 
 class AIMessageWidget(QFrame):
@@ -23,42 +52,42 @@ class AIMessageWidget(QFrame):
         if self.is_user:
             bg_color = "#3b82f6"  # Blue for user
             text_color = "white"
-            alignment = Qt.AlignRight
             bubble_style = """
                 QFrame {{
                     background-color: {0};
-                    border-radius: 12px;
-                    padding: 12px;
+                    border-radius: 14px;
+                    padding: 12px 14px;
                 }}
             """.format(bg_color)
         else:
             bg_color = "#f3f4f6"  # Light gray for AI
             text_color = "#1f2937"
-            alignment = Qt.AlignLeft
             bubble_style = """
                 QFrame {{
                     background-color: {0};
-                    border-radius: 12px;
+                    border-radius: 14px;
                     border: 1px solid #e5e7eb;
-                    padding: 12px;
+                    padding: 12px 14px;
                 }}
             """.format(bg_color)
 
         self.setStyleSheet(bubble_style)
-        self.setMaximumWidth(500)
+        # Comfortably inside the AI panel's fixed 440px width, leaving room
+        # for the scroll area's margins/scrollbar and (for AI messages)
+        # the avatar icon column - a bubble that assumes it can be wider
+        # than the panel ever gives it is exactly what caused the clipped-
+        # text bug above.
+        self.setMaximumWidth(340)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(6)
 
         # Avatar/Icon
-        if self.is_user:
-            icon_label = QLabel("👤")
-        else:
-            icon_label = QLabel("🤖")
-
-        icon_label.setStyleSheet("font-size: 16px;")
-        icon_label.setFixedSize(24, 24)
+        icon_label = QLabel("👤" if self.is_user else "🤖")
+        icon_label.setStyleSheet("font-size: 15px;")
+        icon_label.setFixedSize(22, 22)
+        icon_label.setAlignment(Qt.AlignCenter)
 
         # Message text — AI responses are markdown (headers, bold, bullet
         # lists — see e.g. _on_ai_analyze_dataset's "## Dataset Analysis"
@@ -67,31 +96,31 @@ class AIMessageWidget(QFrame):
         # no external dependency, not related to the web-only CodeMirror)
         # that renders it properly. User messages stay plain text so a
         # literally-typed "**word**" doesn't get reinterpreted as bold.
-        message_label = QTextEdit()
-        message_label.setReadOnly(True)
-        message_label.setFrameStyle(QFrame.NoFrame)
-        message_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        message_label.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        message_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        message_label = _AutoHeightTextEdit()
+        # theme.py's global stylesheet has a blanket "QTextEdit { color: ...;
+        # background-color: ...; border: ... }" rule that otherwise wins
+        # over a same-specificity bare-type selector here (the same class
+        # of bug fixed earlier for tooltips) - on a user bubble this made
+        # the text render in the global dark color against the blue
+        # background instead of white, effectively invisible. Scoping to
+        # this instance's objectName makes the override unambiguous, and
+        # every property the global rule sets is repeated here so nothing
+        # leaks through from it.
+        message_label.setObjectName("chatMessageText")
         message_label.setStyleSheet(f"""
-            QTextEdit {{
-                background: transparent;
+            QTextEdit#chatMessageText {{
+                background-color: transparent;
                 color: {text_color};
-                font-size: 13px;
+                font-size: 13.5px;
+                line-height: 1.4;
                 border: none;
+                padding: 0px;
             }}
         """)
         if self.is_user:
             message_label.setPlainText(message)
         else:
             message_label.setMarkdown(message)
-        # Auto-size to content height instead of showing its own scrollbar
-        # — messages are static once added, so a one-time measurement
-        # after layout is enough (no need to track content changes).
-        bubble_width = 500 - 24 - 8 - 24  # maxWidth minus icon/spacer/padding
-        message_label.document().setTextWidth(bubble_width)
-        doc_height = message_label.document().size().height()
-        message_label.setFixedHeight(int(doc_height) + 10)
 
         # Timestamp
         from datetime import datetime
@@ -102,22 +131,69 @@ class AIMessageWidget(QFrame):
                 font-size: 10px;
             }
         """)
-        time_label.setAlignment(Qt.AlignRight)
+        time_label.setAlignment(Qt.AlignRight if self.is_user else Qt.AlignLeft)
 
-        # Add to layout
+        # Add to layout - both branches now actually add their icon row,
+        # unlike before where the AI-message icon row was built and then
+        # silently never attached to the layout.
+        row = QHBoxLayout()
+        row.setSpacing(8)
         if self.is_user:
-            # User message - right aligned
-            row = QHBoxLayout()
-            row.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
-            row.addWidget(message_label)
-            row.addSpacerItem(QSpacerItem(8, 0))
-            layout.addLayout(row)
+            row.addWidget(message_label, 1)
         else:
-            # AI message - left aligned with icon
-            row = QHBoxLayout()
-            row.addWidget(icon_label)
-            row.addSpacerItem(QSpacerItem(8, 0))
-            layout.addWidget(message_label)
+            icon_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+            row.addWidget(icon_label, 0, Qt.AlignTop)
+            row.addWidget(message_label, 1)
+        layout.addLayout(row)
+        layout.addWidget(time_label)
+
+
+class AIChartMessageWidget(QFrame):
+    """Shows an AI-generated chart image inline in the chat, styled like a
+    normal AI message bubble. Charts are read-only (never mutate the
+    dataset), so unlike a proposed operation or dataset, there's no
+    approval gate - this is purely a display widget."""
+
+    def __init__(self, image_bytes: bytes, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("""
+            QFrame {
+                background-color: #f3f4f6;
+                border-radius: 14px;
+                border: 1px solid #e5e7eb;
+                padding: 12px 14px;
+            }
+        """)
+        self.setMaximumWidth(340)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        icon_label = QLabel("🤖")
+        icon_label.setStyleSheet("font-size: 15px;")
+        icon_label.setFixedSize(22, 22)
+        icon_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+        row.addWidget(icon_label, 0, Qt.AlignTop)
+
+        image_label = QLabel()
+        pixmap = QPixmap()
+        pixmap.loadFromData(image_bytes)
+        available_width = 340 - 22 - 8 - 28  # bubble max width minus icon/spacing/padding
+        if not pixmap.isNull():
+            scaled = pixmap.scaledToWidth(available_width, Qt.SmoothTransformation)
+            image_label.setPixmap(scaled)
+        else:
+            image_label.setText("(chart failed to render)")
+        row.addWidget(image_label, 1)
+        layout.addLayout(row)
+
+        from datetime import datetime
+        time_label = QLabel(datetime.now().strftime("%H:%M"))
+        time_label.setStyleSheet("QLabel { color: #9ca3af; font-size: 10px; }")
+        time_label.setAlignment(Qt.AlignLeft)
         layout.addWidget(time_label)
 
 
@@ -164,11 +240,16 @@ class AIPanel(QWidget):
     generateColumn = Signal()  # When user wants to generate a column
     complianceCheck = Signal()  # When user wants to run compliance check
     showSettings = Signal()  # When user wants to open AI settings
+    actionProposed = Signal(str, dict, str)  # operation_id, params, reason - AI proposed a dataset change to review
+    datasetProposed = Signal(str, str, str)  # sql, name, reason - AI proposed materializing a query as a new dataset
     # Thread-safe signals for UI updates
     _typingIndicatorNeeded = Signal()  # Internal signal for adding typing indicator
     _responseReady = Signal(str)  # Internal signal for showing response
     _errorReady = Signal(str)  # Internal signal for showing error
     _clearChatRequested = Signal()  # Internal signal for clearing chat
+    _actionProposedInternal = Signal(str, dict, str)  # Internal: emitted from the background AI thread
+    _datasetProposedInternal = Signal(str, str, str)  # Internal: emitted from the background AI thread
+    _chartReadyInternal = Signal(bytes)  # Internal: a rendered chart image, ready to show inline
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -184,6 +265,9 @@ class AIPanel(QWidget):
         self._responseReady.connect(self._on_response_received, Qt.QueuedConnection)
         self._errorReady.connect(self._on_error_received, Qt.QueuedConnection)
         self._clearChatRequested.connect(self._do_clear_chat, Qt.QueuedConnection)
+        self._actionProposedInternal.connect(self._on_action_proposed_internal, Qt.QueuedConnection)
+        self._datasetProposedInternal.connect(self._on_dataset_proposed_internal, Qt.QueuedConnection)
+        self._chartReadyInternal.connect(self._on_chart_ready_internal, Qt.QueuedConnection)
 
     def setup_ui(self):
         # Main layout
@@ -724,9 +808,21 @@ What would you like to do?"""
         self.messages.append({"text": message, "is_user": is_user})
 
         widget = AIMessageWidget(message, is_user)
-        self.messages_layout.insertWidget(self.messages_layout.count() - 1, widget)
+        # Without an explicit alignment, QVBoxLayout stretches/left-aligns
+        # every child by default - user messages never actually appeared on
+        # the right the way a chat UI needs to visually distinguish "you"
+        # from "the AI" at a glance.
+        alignment = Qt.AlignRight if is_user else Qt.AlignLeft
+        self.messages_layout.insertWidget(self.messages_layout.count() - 1, widget, 0, alignment)
 
         # Scroll to bottom
+        QTimer.singleShot(50, self.scroll_to_bottom)
+
+    def add_chart_message(self, image_bytes: bytes):
+        """Show an AI-generated chart inline in the chat, the same way a
+        text response appears."""
+        widget = AIChartMessageWidget(image_bytes)
+        self.messages_layout.insertWidget(self.messages_layout.count() - 1, widget, 0, Qt.AlignLeft)
         QTimer.singleShot(50, self.scroll_to_bottom)
 
     def add_typing_indicator(self):
@@ -782,6 +878,23 @@ What would you like to do?"""
         """Internal: clear chat (called from main thread via signal)"""
         self._clear_all_messages()
         self.add_welcome_message()
+
+    def _on_action_proposed_internal(self, operation_id: str, params: dict, reason: str):
+        """Internal: re-emit as the public actionProposed signal now that
+        we're safely on the main thread - main_window.py owns the actual
+        dataset/pipeline and is what should react to this, not this panel."""
+        self.actionProposed.emit(operation_id, params, reason)
+
+    def _on_dataset_proposed_internal(self, sql: str, name: str, reason: str):
+        """Internal: re-emit as the public datasetProposed signal now that
+        we're safely on the main thread."""
+        self.datasetProposed.emit(sql, name, reason)
+
+    def _on_chart_ready_internal(self, image_bytes: bytes):
+        """Internal: charts are read-only (never mutate the dataset), so
+        they render straight into the chat once on the main thread -
+        no approval gate needed, unlike a proposed operation or dataset."""
+        self.add_chart_message(image_bytes)
 
     def _clear_all_messages(self):
         """Clear all message widgets"""

@@ -6,7 +6,7 @@ import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -21,7 +21,7 @@ from PySide6.QtGui import QFont, QShortcut, QKeySequence
 from core.project_manager import Project, Dataset, ProjectExporter
 from core.data_processor import LegacyDataProcessor
 from services.export_service import ExportService
-from services.ai_service import AIManager, DatasetInterpreter, ColumnGenerator, ComplianceReportGenerator
+from services.ai_service import AIManager, DatasetInterpreter, ColumnGenerator, ComplianceReportGenerator, SQLGenerator, AgentChat
 from gui.dialogs.project_dialog import NewProjectDialog, OpenProjectDialog, SaveProjectDialog, DatasetManagerDialog
 from gui.dialogs.ai_settings_dialog import AISettingsDialog
 from gui.dialogs.column_generator_dialog import ColumnGeneratorDialog
@@ -94,6 +94,15 @@ class MainWindow(QMainWindow):
         self.ai_interpreter = DatasetInterpreter(self.ai_manager)
         self.ai_column_generator = ColumnGenerator(self.ai_manager)
         self.ai_compliance = ComplianceReportGenerator(self.ai_manager)
+        self.ai_sql_generator = SQLGenerator(self.ai_manager)
+        self.ai_agent_chat = AgentChat(self.ai_manager)
+        self._pending_ai_dataset_result = None  # last dataset-proposal query result, set just before the preview dialog opens
+        # Rolling window of recent chat turns (plain "User: .../Assistant: ..."
+        # lines), fed back into future turns' context - without this, a
+        # follow-up like "now sort that" has no memory of what "that" was,
+        # and an applied operation's outcome would otherwise vanish the
+        # moment the confirmation message was shown.
+        self.ai_conversation_history: List[str] = []
 
         # Load any saved API keys from secure storage
         self._load_ai_credentials()
@@ -236,6 +245,8 @@ class MainWindow(QMainWindow):
         self.ai_panel.generateColumn.connect(self._on_ai_generate_column)
         self.ai_panel.complianceCheck.connect(self._on_ai_compliance_check)
         self.ai_panel.showSettings.connect(self._on_ai_show_settings)
+        self.ai_panel.actionProposed.connect(self._on_ai_action_proposed)
+        self.ai_panel.datasetProposed.connect(self._on_ai_dataset_proposed)
         middle_layout.addWidget(self.ai_panel)
 
         # Set the middle_area as the scroll area's widget
@@ -376,33 +387,203 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _on_ai_message(self, message: str):
-        """Handle AI chat message"""
+        """Handle AI chat message. The model first decides which of
+        answer/query/operation/chart/dataset/help the message calls for.
+        Query, chart, help, and dataset-preview are all read-only and
+        either answer directly or render/preview immediately; operation
+        and dataset-creation always stop at a preview the auditor must
+        explicitly approve, never applied here directly. See AgentChat in
+        ai_service.py."""
         if not self._check_ai_available():
             return
 
-        # Get current dataset info for context
         context = self._get_ai_context()
+        queryable_tables = self._get_queryable_tables()
+
+        active_df = self.current_dataset.get_current_dataframe() if self.current_dataset else None
+        operations_menu = ""
+        if active_df is not None:
+            from services.ai_service import build_operations_menu
+            operations_menu = build_operations_menu(active_df)
+
+        # Charts are read-only, so unlike operations, they aren't scoped to
+        # just the currently active dataset - the menu offers every dataset
+        # in the project, and the model picks which one to chart.
+        all_chart_datasets = self._get_all_datasets_by_name()
+        chart_menu = ""
+        if all_chart_datasets:
+            from services.ai_service import build_chart_menu
+            chart_menu = build_chart_menu(all_chart_datasets)
 
         def run_async():
             """Run async code in a new event loop"""
             import asyncio
+            from services.sql_query_service import is_safe_readonly_select, format_result_for_ai, SQLQueryService
+            from services.ai_service import validate_operation_params, validate_chart_params, search_app_reference
+
+            def respond(text: str):
+                self.ai_panel._responseReady.emit(text)
+                self._append_ai_history(f"Assistant: {text}")
 
             async def send_to_ai():
+                self._append_ai_history(f"User: {message}")
                 try:
-                    # Show typing indicator (via signal for thread safety)
                     self.ai_panel._typingIndicatorNeeded.emit()
 
-                    # Build context-enhanced prompt
-                    full_prompt = f"{context}\n\nUser Question: {message}"
+                    try:
+                        decision = await self.ai_agent_chat.decide(context, message, operations_menu, chart_menu)
+                    except Exception:
+                        # Model didn't return valid JSON (not every provider
+                        # follows a structured-output instruction reliably) -
+                        # fall back to a plain answer rather than failing
+                        # the whole chat turn over a formatting slip.
+                        response = await self.ai_manager.complete(
+                            prompt=f"{context}\n\nUser Question: {message}",
+                            task_type="general",
+                            temperature=0.3
+                        )
+                        respond(response.content)
+                        return
 
-                    response = await self.ai_manager.complete(
-                        prompt=full_prompt,
-                        task_type="general",
-                        temperature=0.3
-                    )
+                    decision_type = decision.get("type")
 
-                    # Remove typing indicator and show response (via signal for thread safety)
-                    self.ai_panel._responseReady.emit(response.content)
+                    if decision_type == "operation":
+                        operation_id = decision.get("operation_id", "")
+                        params = decision.get("params", {}) or {}
+                        reason = decision.get("reason", "")
+
+                        if active_df is None:
+                            respond(await self.ai_agent_chat.answer_after_rejected_operation(
+                                context, message, operation_id, "No dataset is currently active."
+                            ))
+                            return
+
+                        is_valid, val_reason = validate_operation_params(operation_id, params, active_df)
+                        if not is_valid:
+                            respond(await self.ai_agent_chat.answer_after_rejected_operation(
+                                context, message, operation_id, val_reason
+                            ))
+                            return
+
+                        respond(reason or f"I'd like to run '{operation_id}' — review the proposed change.")
+                        self.ai_panel._actionProposedInternal.emit(operation_id, params, reason)
+                        return
+
+                    if decision_type == "chart":
+                        chart_type = decision.get("chart_type", "")
+                        params = decision.get("params", {}) or {}
+                        reason = decision.get("reason", "")
+                        dataset_name = decision.get("dataset", "")
+
+                        # A chart can come from any project dataset, not just
+                        # the active one - resolve by name first, falling
+                        # back to whatever's active if the model omitted it
+                        # (e.g. only one dataset exists, so it's unambiguous).
+                        chart_df = all_chart_datasets.get(dataset_name) if dataset_name else None
+                        if chart_df is None:
+                            chart_df = active_df
+                        if chart_df is None:
+                            respond(await self.ai_agent_chat.answer_after_rejected_chart(
+                                context, message, chart_type,
+                                f"Dataset '{dataset_name}' was not found in this project." if dataset_name
+                                else "No dataset is available to chart."
+                            ))
+                            return
+
+                        is_valid, val_reason = validate_chart_params(chart_type, params, chart_df)
+                        if not is_valid:
+                            respond(await self.ai_agent_chat.answer_after_rejected_chart(
+                                context, message, chart_type, val_reason
+                            ))
+                            return
+
+                        from services.ai_service import AGENT_CHART_TYPES
+                        from services.visualization_service import VisualizationService
+                        method_name = AGENT_CHART_TYPES[chart_type]["method"]
+                        try:
+                            viz_service = VisualizationService()
+                            method = getattr(viz_service, method_name)
+                            call_params = dict(params)
+                            call_params.setdefault("figsize", (5.5, 3.4))
+                            fig = method(chart_df, **call_params)
+                            image_bytes = viz_service.get_figure_as_image(fig)
+                        except Exception as e:
+                            respond(await self.ai_agent_chat.answer_after_rejected_chart(
+                                context, message, chart_type, f"Chart failed to render: {e}"
+                            ))
+                            return
+
+                        respond(reason or f"Here's a {chart_type} chart.")
+                        self.ai_panel._chartReadyInternal.emit(image_bytes)
+                        return
+
+                    if decision_type == "dataset":
+                        sql = decision.get("sql", "")
+                        name = decision.get("name", "AI Dataset")
+                        reason = decision.get("reason", "")
+
+                        is_safe, reason_bad = is_safe_readonly_select(sql)
+                        if not is_safe:
+                            respond(await self.ai_agent_chat.answer_after_rejected_dataset(
+                                context, message, sql, reason_bad
+                            ))
+                            return
+
+                        sql_service = SQLQueryService()
+                        for table_name, df in queryable_tables.items():
+                            sql_service.register_dataframe(table_name, df)
+                        try:
+                            result_df = sql_service.execute_query(sql)
+                        except Exception as e:
+                            respond(await self.ai_agent_chat.answer_after_rejected_dataset(
+                                context, message, sql, f"Query failed to run: {e}"
+                            ))
+                            return
+
+                        # Stash the already-computed result before emitting,
+                        # so it's unambiguously there by the time the queued
+                        # signal reaches the main-thread slot that reads it.
+                        self._pending_ai_dataset_result = result_df
+                        respond(reason or f"I'd like to create a dataset '{name}' from this query — review it first.")
+                        self.ai_panel._datasetProposedInternal.emit(sql, name, reason)
+                        return
+
+                    if decision_type == "help":
+                        topic = decision.get("topic", message)
+                        search_results = search_app_reference(topic)
+                        respond(await self.ai_agent_chat.answer_with_help_result(
+                            context, message, topic, search_results
+                        ))
+                        return
+
+                    if decision_type != "query":
+                        respond(decision.get("answer", ""))
+                        return
+
+                    sql = decision.get("sql", "")
+                    is_safe, reason = is_safe_readonly_select(sql)
+                    if not is_safe:
+                        respond(await self.ai_agent_chat.answer_after_rejected_query(
+                            context, message, sql, reason
+                        ))
+                        return
+
+                    sql_service = SQLQueryService()
+                    for table_name, df in queryable_tables.items():
+                        sql_service.register_dataframe(table_name, df)
+
+                    try:
+                        result_df = sql_service.execute_query(sql)
+                        result_summary = format_result_for_ai(result_df)
+                    except Exception as e:
+                        respond(await self.ai_agent_chat.answer_after_rejected_query(
+                            context, message, sql, f"Query failed to run: {e}"
+                        ))
+                        return
+
+                    respond(await self.ai_agent_chat.answer_with_query_result(
+                        context, message, sql, result_summary
+                    ))
 
                 except Exception as e:
                     self.ai_panel._errorReady.emit(str(e))
@@ -569,6 +750,81 @@ class MainWindow(QMainWindow):
         dialog.settingsChanged.connect(self._on_ai_settings_changed)
         dialog.exec()
 
+    @Slot(str, dict, str)
+    def _on_ai_action_proposed(self, operation_id: str, params: dict, reason: str):
+        """Show the required preview before an AI-proposed operation can
+        ever touch the working dataset. Apply here calls the exact same
+        TransformView.apply_transformation() a manual transform uses, so
+        the result lands in Applied Steps like anything else — nothing
+        about this path bypasses the normal pipeline/undo mechanism."""
+        if not self.current_dataset:
+            return
+        df = self.current_dataset.get_current_dataframe()
+        if df is None:
+            return
+
+        from gui.dialogs.agent_action_preview_dialog import AgentActionPreviewDialog
+        from core.data_processor import DataProcessor
+        from core.operation_registry import OPERATION_REGISTRY
+
+        dialog = AgentActionPreviewDialog(df, operation_id, params, reason, DataProcessor(), self)
+        if dialog.exec() and dialog.approved:
+            transform_view = self.views.get("transform")
+            if transform_view:
+                self.content_stack.setCurrentWidget(transform_view)
+                transform_view.apply_transformation(operation_id, params)
+
+            # Close the loop: confirm in the chat what actually happened,
+            # and fold it into the conversation history so a follow-up
+            # ("now also sort that") has something real to refer to -
+            # before this, the conversation went quiet at exactly the
+            # moment it should confirm success.
+            display_name = OPERATION_REGISTRY.get(operation_id, {}).get("display_name", operation_id)
+            confirmation = (
+                f"✅ Applied **{display_name}** — {df.height:,} → {dialog.result_df.height:,} rows, "
+                f"{len(df.columns)} → {len(dialog.result_df.columns)} columns."
+            )
+            self.ai_panel.add_message(confirmation, is_user=False)
+            self._append_ai_history(f"Assistant: {confirmation}")
+
+    @Slot(str, str, str)
+    def _on_ai_dataset_proposed(self, sql: str, name: str, reason: str):
+        """Preview an AI-proposed query result before either materializing
+        it as a new project dataset directly, or handing the query off to
+        the SQL editor so the auditor can review/tweak/run it themselves —
+        the query was already run once (read-only) to build this preview,
+        stashed on self so this dialog doesn't have to run it again."""
+        result_df = self._pending_ai_dataset_result
+        self._pending_ai_dataset_result = None
+        if result_df is None:
+            return
+
+        from gui.dialogs.agent_dataset_preview_dialog import AgentDatasetPreviewDialog
+
+        dialog = AgentDatasetPreviewDialog(sql, name, reason, result_df, self)
+        if not dialog.exec() or dialog.choice is None:
+            return
+
+        if dialog.choice == AgentDatasetPreviewDialog.CREATE_DATASET:
+            new_dataset = self._create_dataset_from_dataframe(
+                dialog.get_dataset_name(), result_df, source_operation="ai_agent"
+            )
+            if new_dataset is None:
+                return
+            confirmation = (
+                f"✅ Created dataset **{new_dataset.name}** — {result_df.height:,} rows, "
+                f"{len(result_df.columns)} columns."
+            )
+        else:  # OPEN_IN_SQL_EDITOR
+            sql_view = self.views.get("sql")
+            if sql_view:
+                self.content_stack.setCurrentWidget(sql_view)
+                sql_view.query_editor.setPlainText(sql)
+            confirmation = "Pasted the query into the SQL Editor — review it, then click Execute or Create New Dataset there."
+
+        self.ai_panel.add_message(confirmation, is_user=False)
+        self._append_ai_history(f"Assistant: {confirmation}")
+
     def _on_ai_settings_changed(self):
         """Handle AI settings changes"""
         self._save_ai_credentials()
@@ -717,9 +973,21 @@ class MainWindow(QMainWindow):
             return False
         return True
 
+    def _append_ai_history(self, entry: str, max_entries: int = 16):
+        """Append one line to the rolling conversation history, bounded so
+        the context sent with every message doesn't grow without limit."""
+        self.ai_conversation_history.append(entry)
+        if len(self.ai_conversation_history) > max_entries:
+            self.ai_conversation_history = self.ai_conversation_history[-max_entries:]
+
     def _get_ai_context(self) -> str:
         """Get context information for AI queries"""
         context_parts = []
+
+        if self.ai_conversation_history:
+            context_parts.append("Recent conversation (most recent last):")
+            context_parts.extend(self.ai_conversation_history)
+            context_parts.append("")
 
         if self.current_project:
             context_parts.append(f"Project: {self.current_project.name}")
@@ -738,11 +1006,14 @@ class MainWindow(QMainWindow):
             for ds in self.current_project.datasets.values():
                 is_active = bool(self.current_dataset and ds.id == self.current_dataset.id)
                 context_parts.append(self._summarize_dataset_for_ai(ds, is_active))
+            queryable = self._get_queryable_tables()
             context_parts.append(
                 "\nThe figures above (rows, nulls, min/max/mean/sum) are real, computed from the "
                 "complete data for each dataset. If asked something these stats don't cover (e.g. an "
-                "exact row lookup, or a computation not shown above), say so rather than guessing — "
-                "don't invent a number that isn't backed by what's given here."
+                "exact filtered count, a join across datasets, a computation not shown above), you may "
+                "request a single read-only SQL SELECT query instead of guessing — it will be run for "
+                "you against the complete real data. Query these exact table names: "
+                + (", ".join(f'"{t}"' for t in queryable) if queryable else "(none registered)")
             )
 
         attachment_context = self.ai_panel.get_attachment_context() if hasattr(self, 'ai_panel') and self.ai_panel else ""
@@ -750,6 +1021,44 @@ class MainWindow(QMainWindow):
             context_parts.append(attachment_context)
 
         return "\n".join(context_parts) if context_parts else "No project or dataset loaded."
+
+    def _get_queryable_tables(self) -> dict:
+        """{sanitized_table_name: dataframe} for every dataset the agent
+        chat's read-only SQL lookups (Phase 2) are allowed to query —
+        mirrors what the SQL editor registers, using the same name
+        sanitization, so the names given to the AI in context are exactly
+        the names a query against them will actually work with."""
+        from services.sql_query_service import sanitize_table_name
+
+        tables = {}
+        if self.current_project and self.current_project.datasets:
+            for ds in self.current_project.datasets.values():
+                df = ds.get_current_dataframe()
+                if df is not None:
+                    tables[sanitize_table_name(ds.name)] = df
+        elif self.current_dataset:
+            df = self.current_dataset.get_current_dataframe()
+            if df is not None:
+                tables[sanitize_table_name(self.current_dataset.name)] = df
+        return tables
+
+    def _get_all_datasets_by_name(self) -> dict:
+        """{real_dataset_name: dataframe} for every dataset in the project -
+        used for read-only agent actions (charts) that don't need SQL-safe
+        identifiers and, unlike an operation, have no reason to be scoped
+        to just the currently active dataset: a chart never writes
+        anywhere, so it can render from any dataset the auditor has."""
+        datasets = {}
+        if self.current_project and self.current_project.datasets:
+            for ds in self.current_project.datasets.values():
+                df = ds.get_current_dataframe()
+                if df is not None:
+                    datasets[ds.name] = df
+        elif self.current_dataset:
+            df = self.current_dataset.get_current_dataframe()
+            if df is not None:
+                datasets[self.current_dataset.name] = df
+        return datasets
 
     def _summarize_dataset_for_ai(self, dataset, is_active: bool, max_columns: int = 15) -> str:
         """Real, computed one-line-per-column summary of a dataset for AI
@@ -806,7 +1115,7 @@ class MainWindow(QMainWindow):
             "dashboard": DashboardView(),
             "data": DataView(),
             "transform": TransformView(applied_steps_panel=self.applied_steps_panel),
-            "sql": SQLTransformView(),
+            "sql": SQLTransformView(ai_sql_generator=self.ai_sql_generator),
             "analyze": AnalyzeView(),
             "visualizations": VisualizationsView(),
             "query": QueryView(),
@@ -1461,11 +1770,23 @@ class MainWindow(QMainWindow):
         """Create a brand new dataset from a SQL query's results — the
         right choice for a cross-dataset Model Query (join/union) whose
         result doesn't belong to any single source dataset's pipeline."""
+        # Best-effort lineage: map registered table names back to dataset ids
+        source_dataset_ids = [
+            ds.id for ds in self.current_project.list_datasets()
+            if ds.name in source_table_names
+        ] if self.current_project else []
+        self._create_dataset_from_dataframe(name, df, source_dataset_ids, source_operation="sql_query")
+
+    def _create_dataset_from_dataframe(self, name: str, df, source_dataset_ids: list = None,
+                                        source_operation: str = "sql_query") -> "Optional[Dataset]":
+        """Shared logic for materializing any dataframe as a brand new
+        project dataset — used by the SQL editor's 'Create New Dataset'
+        button and by the AI agent's dataset-creation flow, so both go
+        through the exact same uniqueness/registration/refresh behavior."""
         if not self.current_project:
             QMessageBox.warning(self, "No Project", "Please create or open a project first.")
-            return
+            return None
 
-        # Ensure a unique name within the project
         base_name = name.strip() or "Query Result"
         unique_name = base_name
         counter = 1
@@ -1474,18 +1795,12 @@ class MainWindow(QMainWindow):
             unique_name = f"{base_name} ({counter})"
             counter += 1
 
-        # Best-effort lineage: map registered table names back to dataset ids
-        source_dataset_ids = [
-            ds.id for ds in self.current_project.list_datasets()
-            if ds.name in source_table_names
-        ]
-
         new_dataset = Dataset(
             id=str(uuid.uuid4()),
             name=unique_name,
             dataframe=df,
-            source_dataset_ids=source_dataset_ids,
-            source_operation="sql_query"
+            source_dataset_ids=source_dataset_ids or [],
+            source_operation=source_operation
         )
         self.current_project.add_dataset(new_dataset)
         self.current_dataset = new_dataset
@@ -1496,7 +1811,8 @@ class MainWindow(QMainWindow):
             sql_view.refresh_dataset(new_dataset.name, df, dataset_id=new_dataset.id)
 
         self.sidebar.set_project(self.current_project)
-        self.statusBar().showMessage(f"Created dataset '{unique_name}' from query results ({df.height:,} rows)")
+        self.statusBar().showMessage(f"Created dataset '{unique_name}' ({df.height:,} rows)")
+        return new_dataset
 
     @Slot()
     def on_upload_requested(self):

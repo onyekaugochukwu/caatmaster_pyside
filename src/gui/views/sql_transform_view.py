@@ -21,6 +21,62 @@ import re
 from core.project_manager import Project, Dataset
 
 
+_SQL_MAJOR_CLAUSES = [
+    'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'HAVING', 'ORDER BY', 'LIMIT',
+    'LEFT JOIN', 'RIGHT JOIN', 'FULL OUTER JOIN', 'FULL JOIN', 'INNER JOIN',
+    'CROSS JOIN', 'JOIN', 'UNION ALL', 'UNION', 'WITH',
+]
+_SQL_UPPERCASE_KEYWORDS = _SQL_MAJOR_CLAUSES + [
+    'AND', 'OR', 'ON', 'AS', 'DISTINCT', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+    'IN', 'NOT', 'NULL', 'IS', 'LIKE', 'BETWEEN', 'ASC', 'DESC', 'OVER',
+    'PARTITION BY', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX',
+]
+# Longest-first so a multi-word clause (e.g. "GROUP BY") is matched whole,
+# not shadowed by a shorter keyword that happens to be a prefix of it.
+_SQL_UPPERCASE_KEYWORDS.sort(key=len, reverse=True)
+
+
+def format_sql_text(query: str) -> str:
+    """Pretty-print a SQL query: uppercase keywords, one major clause per
+    line, one condition per line under WHERE/ON. String literals are
+    protected from keyword replacement so a value like 'Smith and Co' is
+    never touched. Falls back to returning the input unchanged if anything
+    goes wrong - a formatter should never corrupt a query that already
+    runs, even if it can't improve its layout."""
+    if not query.strip():
+        return query
+
+    # Protect single-quoted string literals (including doubled '' escapes)
+    # behind placeholders so clause/keyword detection never touches them.
+    literals = []
+
+    def _stash(m):
+        literals.append(m.group(0))
+        return f"\0LIT{len(literals) - 1}\0"
+
+    protected = re.sub(r"'(?:[^']|'')*'", _stash, query)
+
+    try:
+        for kw in _SQL_UPPERCASE_KEYWORDS:
+            protected = re.sub(r'(?<!\w)' + re.escape(kw) + r'(?!\w)', kw, protected, flags=re.IGNORECASE)
+
+        for kw in _SQL_MAJOR_CLAUSES:
+            protected = re.sub(r'\s*(?<!\w)' + re.escape(kw) + r'(?!\w)', f'\n{kw}', protected)
+
+        protected = re.sub(r'\s+(AND|OR)(?!\w)', r'\n    \1', protected)
+
+        lines = [line.rstrip() for line in protected.split('\n')]
+        lines = [line for line in lines if line.strip()]
+        result = '\n'.join(lines).strip()
+    except Exception:
+        return query
+
+    for i, lit in enumerate(literals):
+        result = result.replace(f"\0LIT{i}\0", lit)
+
+    return result
+
+
 class SQLSyntaxHighlighter(QSyntaxHighlighter):
     """SQL syntax highlighter for the query editor - Light mode colors."""
 
@@ -183,7 +239,7 @@ class SQLTransformView(QWidget):
     applyToPipelineRequested = Signal(str, str)  # query, table_name
     createDatasetRequested = Signal(str, object, list)  # name, df, source_table_names
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, ai_sql_generator=None):
         super().__init__(parent)
         self.current_dataframe = None
         self.duckdb_conn = None
@@ -194,6 +250,7 @@ class SQLTransformView(QWidget):
         self.current_table_name = None
         self.last_query_result = None  # full (non-truncated) result of the last executed query
         self.last_query_text = ""
+        self.ai_sql_generator = ai_sql_generator
         self.setup_ui()
 
     def setup_ui(self):
@@ -303,6 +360,27 @@ class SQLTransformView(QWidget):
         """)
         self.format_btn.clicked.connect(self.format_sql)
         toolbar_layout.addWidget(self.format_btn)
+
+        self.ask_ai_btn = QPushButton("✨ Ask AI")
+        self.ask_ai_btn.setToolTip(
+            "Describe the query you want in plain language — AI writes the SQL,\n"
+            "you review it, and you still click Execute yourself."
+        )
+        self.ask_ai_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #f5f0ff;
+                color: #6d28d9;
+                border: 1px solid #ddd6fe;
+                border-radius: 6px;
+                padding: 8px 16px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #ede9fe;
+            }
+        """)
+        self.ask_ai_btn.clicked.connect(self.open_ai_sql_generator)
+        toolbar_layout.addWidget(self.ask_ai_btn)
 
         toolbar_layout.addStretch()
 
@@ -535,8 +613,10 @@ class SQLTransformView(QWidget):
         return item
 
     def _update_schema_summary(self):
-        """Show how many tables are registered so it's obvious a cross-dataset
-        (Model) query is possible, not just single-table filtering."""
+        """Show which tables are registered. Cross-dataset joins are
+        already explained once, on the Model Query checklist's own
+        tooltip - repeating "join across them" here on every table-count
+        change was redundant."""
         n = len(self.registered_tables)
         if n == 0:
             self.schema_label.setText("No data loaded")
@@ -545,7 +625,7 @@ class SQLTransformView(QWidget):
             self.schema_label.setText(f"Table: {table_name}")
         else:
             names = ", ".join(self.registered_tables.keys())
-            self.schema_label.setText(f"{n} tables registered — join across them: {names}")
+            self.schema_label.setText(f"Tables: {names}")
 
     @Slot(QListWidgetItem)
     def on_dataset_selection_changed(self, item):
@@ -581,6 +661,8 @@ class SQLTransformView(QWidget):
 
     def _register_dataset_table(self, table_name: str, df: pl.DataFrame):
         """Register a dataset as a table in DuckDB."""
+        from services.sql_query_service import trim_column_names
+        df = trim_column_names(df)
         if self.duckdb_conn is None:
             self.duckdb_conn = duckdb.connect(database=':memory:')
         self.duckdb_conn.register(table_name, df)
@@ -716,6 +798,9 @@ class SQLTransformView(QWidget):
         if df is None or len(df.columns) == 0:
             return
 
+        from services.sql_query_service import trim_column_names
+        df = trim_column_names(df)
+
         # Register the Polars DataFrame directly with DuckDB using the provided table name
         self.duckdb_conn.register(table_name, df)
         self.registered_tables[table_name] = df
@@ -834,19 +919,60 @@ class SQLTransformView(QWidget):
 
     @Slot()
     def format_sql(self):
-        """Format the SQL query (basic formatting)."""
+        """Pretty-print the query: uppercase keywords, one major clause per
+        line, one condition per line under WHERE. The previous version only
+        uppercased keywords with no layout changes at all - on SQL an LLM
+        had already written in uppercase (the common case), it looked and
+        behaved like a dead button."""
         query = self.query_editor.toPlainText()
+        self.query_editor.setPlainText(format_sql_text(query))
 
-        # Basic formatting: uppercase keywords
-        keywords = ['SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'JOIN', 'LEFT', 'RIGHT',
-                   'INNER', 'OUTER', 'ON', 'GROUP BY', 'HAVING', 'ORDER BY', 'LIMIT',
-                   'UNION', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER']
+    @Slot()
+    def open_ai_sql_generator(self):
+        """Open the natural-language-to-SQL dialog. The dialog only ever
+        returns text via sql_accepted — nothing is executed until the
+        auditor reviews what lands in the editor and clicks Execute
+        themselves, same as a query they typed by hand."""
+        if not self.ai_sql_generator:
+            QMessageBox.warning(
+                self, "AI Not Available",
+                "AI SQL generation isn't configured for this session."
+            )
+            return
+        if not self.registered_tables:
+            QMessageBox.warning(self, "No Data", "Please select at least one dataset first.")
+            return
 
-        for keyword in keywords:
-            pattern = re.compile(r'\b' + keyword + r'\b', re.IGNORECASE)
-            query = pattern.sub(keyword.upper(), query)
+        from gui.dialogs.ai_sql_generator_dialog import AISQLGeneratorDialog
+        dialog = AISQLGeneratorDialog(self.registered_tables, self.ai_sql_generator, self)
+        dialog.sql_accepted.connect(self._on_ai_sql_accepted)
+        dialog.exec()
 
-        self.query_editor.setPlainText(query)
+    def _on_ai_sql_accepted(self, sql: str):
+        """Insert AI-generated SQL into the editor and run a quick EXPLAIN-
+        based syntax check — the same kind of check the query gets before
+        Execute, just surfaced immediately rather than waiting for the
+        auditor to click Execute to find out it doesn't parse. The AI SQL
+        dialog already runs this same check before Insert is even
+        clickable, so reaching a failure here should be rare — but a
+        quiet status-bar line is easy to miss, and this is the one point
+        where a bad query could otherwise go straight to Execute
+        unnoticed, so it's a blocking dialog instead."""
+        self.query_editor.setPlainText(sql)
+
+        if self.duckdb_conn is not None:
+            try:
+                self.duckdb_conn.execute(f"EXPLAIN {sql}")
+                self.update_info("AI-generated query inserted — looks syntactically valid. Review it, then click Execute.")
+            except Exception as e:
+                self.update_info(f"AI-generated query inserted, but failed a syntax check: {e}")
+                QMessageBox.warning(
+                    self, "Query May Not Run",
+                    f"The inserted query failed a syntax/reference check and will likely fail if you "
+                    f"click Execute:\n\n{e}\n\nReview and correct it before running."
+                )
+        else:
+            self.update_info("AI-generated query inserted. Review it, then click Execute.")
 
     @Slot(int)
     def load_saved_query(self, index):

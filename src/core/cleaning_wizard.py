@@ -397,21 +397,37 @@ def _combine_header_hint(df: pl.DataFrame, header_row_count: int) -> Dict[str, s
     ]
 
     hints = {}
+    name_seen: Dict[str, int] = {}
+
+    def _dedupe(name: str) -> str:
+        # Stripping whitespace can reveal that two columns' header text is
+        # actually identical (e.g. one had a trailing space that made it
+        # look different before) - suffix rather than collide, the same
+        # duplicate-handling promote_row_as_header already does, so this
+        # never raises on a plain df.rename() collision downstream.
+        if name in name_seen:
+            name_seen[name] += 1
+            return f"{name}_{name_seen[name]}"
+        name_seen[name] = 0
+        return name
+
     for col_idx, col in enumerate(df.columns):
         if col_idx < boundary:
             for r in range(header_row_count - 1, -1, -1):
                 val = df.row(r)[col_idx]
-                if val is not None and str(val).strip() != "":
-                    hints[col] = str(val)
+                stripped = str(val).strip() if val is not None else ""
+                if stripped:
+                    hints[col] = _dedupe(stripped)
                     break
         else:
             parts = []
             for r in range(header_row_count):
                 val = filled_rows[r][col_idx]
-                if val is not None and str(val).strip() != "" and (not parts or str(val) != parts[-1]):
-                    parts.append(str(val))
+                stripped = str(val).strip() if val is not None else ""
+                if stripped and (not parts or stripped != parts[-1]):
+                    parts.append(stripped)
             if parts:
-                hints[col] = " | ".join(parts)
+                hints[col] = _dedupe(" | ".join(parts))
     return hints
 
 
