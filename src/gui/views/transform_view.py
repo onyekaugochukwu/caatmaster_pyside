@@ -30,11 +30,13 @@ class TransformView(QWidget):
 
     dataChanged = Signal(pl.DataFrame)
     pipelineChanged = Signal(object)  # Signal when pipeline is updated (emits the pipeline)
+    visualizeColumnRequested = Signal(str)  # column name — "Visualize This Column" from the header context menu
 
     def __init__(self, applied_steps_panel=None, parent=None):
         super().__init__(parent)
         self.pipeline: TransformationPipeline = None
         self.original_dataframe: pl.DataFrame = None
+        self._ai_manager = None
 
         # Applied Steps rendering lives in a shared, persistent panel (see
         # gui.components.applied_steps_panel) so it stays visible across
@@ -130,6 +132,16 @@ class TransformView(QWidget):
         main_layout.addWidget(preview_widget, 1)
 
     @Slot(pl.DataFrame)
+    def set_ai_manager(self, ai_manager):
+        """Store the app's shared AIManager and apply it to whatever
+        pipeline is currently active, so the real AI transformation steps
+        (ai_sentiment, ai_classify, etc.) can reach the configured
+        provider. Called once from main_window.py during view wiring;
+        set_dataframe() re-applies it to every new/restored pipeline."""
+        self._ai_manager = ai_manager
+        if self.pipeline is not None:
+            self.pipeline.set_ai_manager(ai_manager)
+
     def set_dataframe(self, df: pl.DataFrame, pipeline: TransformationPipeline = None):
         """Initializes the view with a new DataFrame.
 
@@ -144,6 +156,9 @@ class TransformView(QWidget):
             self.pipeline = pipeline
         else:
             self.pipeline = TransformationPipeline(initial_df=self.original_dataframe)
+
+        if self._ai_manager is not None:
+            self.pipeline.set_ai_manager(self._ai_manager)
 
         # Bind the shared Applied Steps panel to this pipeline and render it
         self.steps_panel.set_pipeline(self.pipeline)
@@ -208,6 +223,12 @@ class TransformView(QWidget):
             lambda checked=False, col=column_name: self.apply_transformation(
                 'choose_columns', {'action': 'remove', 'columns_to_remove': [col]}
             )
+        )
+        menu.addSeparator()
+
+        visualize_action = menu.addAction(f'📊 Visualize "{column_name}"')
+        visualize_action.triggered.connect(
+            lambda checked=False, col=column_name: self.visualizeColumnRequested.emit(col)
         )
         menu.addSeparator()
 
@@ -475,20 +496,22 @@ class TransformView(QWidget):
         split_ops = []  # split_sheet
         combine_ops = []  # combine_sheets, append_datasets
         join_ops = []  # join_datasets
-        transform_ops = []  # transpose, select_n_rows, query_sheet, promote_row_header
-        filter_ops = []  # remove_rows, filter_rows
+        transform_ops = []  # transpose, select_n_rows, query_sheet
+        header_ops = []  # promote_row_header, demote_header_to_row
         other_ops = []
 
         for op_id, op_data in operations:
-            if 'split' in op_id.lower() and 'sheet' in op_data['display_name'].lower():
+            if 'split' in op_id.lower():
                 split_ops.append((op_id, op_data))
             elif 'combine' in op_id.lower() or 'union' in op_id.lower() or 'append' in op_id.lower():
                 combine_ops.append((op_id, op_data))
             elif 'join' in op_id.lower():
                 join_ops.append((op_id, op_data))
+            elif 'header' in op_id.lower():
+                header_ops.append((op_id, op_data))
             elif 'transpose' in op_id.lower() or 'select' in op_id.lower() or 'query' in op_id.lower():
                 transform_ops.append((op_id, op_data))
-            elif 'promote' in op_id.lower() or 'remove_rows' in op_id or 'filter_rows' in op_id:
+            elif 'remove_rows' in op_id or 'filter_rows' in op_id:
                 transform_ops.append((op_id, op_data))
             else:
                 other_ops.append((op_id, op_data))
@@ -525,6 +548,15 @@ class TransformView(QWidget):
             transform_menu = parent_menu.addMenu("Transform")
             for op_id, op_data in sorted(transform_ops, key=lambda x: x[1]['display_name']):
                 action = transform_menu.addAction(op_data['display_name'])
+                action.triggered.connect(
+                    lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
+                )
+
+        # Headers submenu
+        if header_ops:
+            header_menu = parent_menu.addMenu("Headers")
+            for op_id, op_data in sorted(header_ops, key=lambda x: x[1]['display_name']):
+                action = header_menu.addAction(op_data['display_name'])
                 action.triggered.connect(
                     lambda checked=False, op=op_id, col=column_name: self.on_transformation_selected(op, col)
                 )

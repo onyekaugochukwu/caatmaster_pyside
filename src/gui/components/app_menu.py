@@ -40,6 +40,9 @@ TRANSFORM_MENU = [
         ("Remove Columns...", "fa5s.eraser", "remove_cols"),
         ("Keep Top Rows...", "fa5s.angle-double-up", "keep_top"),
         ("Keep Bottom Rows...", "fa5s.angle-double-down", "keep_bottom"),
+        None,
+        ("Use First Row as Headers...", "fa5s.heading", "promote_header"),
+        ("Use Headers as First Row", "fa5s.heading", "demote_header"),
     ]),
     ("Text", [
         ("Change Case", [
@@ -101,6 +104,8 @@ AUDIT_MENU = [
 ]
 
 STATISTICS_MENU = [
+    ("Visualize Dataset...", "fa5s.chart-bar", "visualize_dataset"),
+    None,
     ("Descriptive", [
         ("Summary Statistics", "fa5s.chart-pie", "stat_summary"),
         ("Mean / Median", "fa5s.ruler-combined", "stat_central"),
@@ -152,6 +157,8 @@ AI_MENU = [
         ("Summarize", "fa5s.align-left", "ai_summarize"),
         ("Enrich", "fa5s.magic", "ai_enrich"),
     ]),
+    None,
+    ("AI Activity Log...", "fa5s.history", "ai_activity_log"),
 ]
 
 ML_MENU = [

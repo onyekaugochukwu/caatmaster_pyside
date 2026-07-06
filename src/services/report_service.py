@@ -372,7 +372,7 @@ class ReportService:
             chart_type = config.get('type', 'bar')
 
             if chart_type == 'bar':
-                fig = self.viz_service.create_bar_chart(
+                fig = self.viz_service.create_column_chart(
                     df, config.get('x_column'), config.get('y_column'),
                     config.get('title', 'Bar Chart'),
                     config.get('group_column'),

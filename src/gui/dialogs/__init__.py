@@ -15,7 +15,6 @@ from .financial_ratios_dialog import FinancialRatiosDialog
 from .ifrs9_dialog import IFRS9Dialog
 from .sox_dialog import SoxSodDialog
 from .coso_dialog import CosoDialog
-from .ai_chat_dialog import AIChatDialog, create_ai_chat_dialog
 
 __all__ = [
     'PivotTableDialog',
@@ -33,6 +32,4 @@ __all__ = [
     'IFRS9Dialog',
     'SoxSodDialog',
     'CosoDialog',
-    'AIChatDialog',
-    'create_ai_chat_dialog',
 ]

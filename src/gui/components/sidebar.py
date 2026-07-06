@@ -121,14 +121,15 @@ class Sidebar(QFrame):
     dataset_delete_requested = Signal(str)  # dataset_id
     dataset_split_sheet_requested = Signal(str)  # dataset_id
     dataset_refresh_requested = Signal(str)  # dataset_id
+    dataset_visualize_requested = Signal(str)  # dataset_id
     join_datasets_requested = Signal(str)  # source_dataset_id
     append_datasets_requested = Signal(str)  # source_dataset_id
     upload_requested = Signal()  # Request to upload dataset
+    cleaning_wizard_requested = Signal()  # Request to open the Data Cleaning Wizard
     paste_requested = Signal()  # Request to create a dataset from clipboard
     project_edit_requested = Signal()  # Request to edit current project
     project_delete_requested = Signal()  # Request to delete current project
     toggle_ai_panel = Signal()  # Request to toggle AI panel visibility
-    ai_chat_requested = Signal()  # Request to open AI chat dialog
     audit_programs_requested = Signal()  # Request to open the Audit Programs gallery
 
     def __init__(self, parent=None):
@@ -245,6 +246,10 @@ class Sidebar(QFrame):
         refresh_action.triggered.connect(lambda: self.dataset_refresh_requested.emit(dataset_id))
         menu.addAction(refresh_action)
 
+        visualize_action = QAction(_icon("fa5s.chart-bar"), "Visualize This Dataset...", self)
+        visualize_action.triggered.connect(lambda: self.dataset_visualize_requested.emit(dataset_id))
+        menu.addAction(visualize_action)
+
         menu.addSeparator()
 
         delete_action = QAction(_icon("fa5s.trash-alt", color=Colors.DANGER), "Delete", self)
@@ -289,6 +294,12 @@ class Sidebar(QFrame):
             QScrollArea {{
                 background-color: transparent;
                 border: none;
+            }}
+            QToolTip {{
+                background-color: {Colors.TEXT_PRIMARY};
+                color: {Colors.BG_PRIMARY};
+                border: none;
+                padding: 4px 8px;
             }}
         """)
 
@@ -426,6 +437,12 @@ class Sidebar(QFrame):
             QToolButton:hover {{
                 background-color: {Colors.ACCENT_HOVER};
             }}
+            QToolTip {{
+                background-color: {Colors.BG_PRIMARY};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.BORDER};
+                padding: 4px 8px;
+            }}
         """)
         add_dataset_btn.setCursor(Qt.PointingHandCursor)
         add_dataset_btn.clicked.connect(self.upload_requested.emit)
@@ -445,11 +462,42 @@ class Sidebar(QFrame):
             QToolButton:hover {{
                 background-color: {Colors.BG_TERTIARY};
             }}
+            QToolTip {{
+                background-color: {Colors.BG_PRIMARY};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.BORDER};
+                padding: 4px 8px;
+            }}
         """)
         paste_dataset_btn.setCursor(Qt.PointingHandCursor)
         paste_dataset_btn.clicked.connect(self.paste_requested.emit)
         paste_dataset_btn.setToolTip("Paste a dataset from clipboard (Ctrl+Shift+V)")
         datasets_header.addWidget(paste_dataset_btn)
+
+        cleaning_wizard_btn = QToolButton()
+        cleaning_wizard_btn.setFixedSize(22, 22)
+        cleaning_wizard_btn.setIcon(_icon("fa5s.magic", color=Colors.TEXT_TERTIARY))
+        cleaning_wizard_btn.setIconSize(QSize(11, 11))
+        cleaning_wizard_btn.setStyleSheet(f"""
+            QToolButton {{
+                background-color: transparent;
+                border: none;
+                border-radius: 4px;
+            }}
+            QToolButton:hover {{
+                background-color: {Colors.BG_TERTIARY};
+            }}
+            QToolTip {{
+                background-color: {Colors.BG_PRIMARY};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.BORDER};
+                padding: 4px 8px;
+            }}
+        """)
+        cleaning_wizard_btn.setCursor(Qt.PointingHandCursor)
+        cleaning_wizard_btn.clicked.connect(self.cleaning_wizard_requested.emit)
+        cleaning_wizard_btn.setToolTip("Import & Clean... (Data Cleaning Wizard for messy files)")
+        datasets_header.addWidget(cleaning_wizard_btn)
 
         datasets_header_widget = QWidget()
         datasets_header_widget.setLayout(datasets_header)
@@ -497,10 +545,6 @@ class Sidebar(QFrame):
         self.append_datasets_btn = SidebarButton("Append Datasets", "fa5s.layer-group")
         self.append_datasets_btn.clicked.connect(self._on_append_datasets_clicked)
         scroll_layout.addWidget(self.append_datasets_btn)
-
-        self.ai_chat_btn = SidebarButton("AI Chat", "fa5s.comment-dots")
-        self.ai_chat_btn.clicked.connect(self.ai_chat_requested.emit)
-        scroll_layout.addWidget(self.ai_chat_btn)
 
         self.audit_programs_btn = SidebarButton("Audit Programs", "fa5s.clipboard-list")
         self.audit_programs_btn.clicked.connect(self.audit_programs_requested.emit)

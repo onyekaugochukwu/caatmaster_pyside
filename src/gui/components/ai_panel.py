@@ -60,17 +60,38 @@ class AIMessageWidget(QFrame):
         icon_label.setStyleSheet("font-size: 16px;")
         icon_label.setFixedSize(24, 24)
 
-        # Message text
-        message_label = QLabel(message)
-        message_label.setWordWrap(True)
+        # Message text — AI responses are markdown (headers, bold, bullet
+        # lists — see e.g. _on_ai_analyze_dataset's "## Dataset Analysis"
+        # response), which a plain QLabel just showed as literal ##/**
+        # characters. QTextEdit.setMarkdown() is a native Qt feature (5.14+,
+        # no external dependency, not related to the web-only CodeMirror)
+        # that renders it properly. User messages stay plain text so a
+        # literally-typed "**word**" doesn't get reinterpreted as bold.
+        message_label = QTextEdit()
+        message_label.setReadOnly(True)
+        message_label.setFrameStyle(QFrame.NoFrame)
+        message_label.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        message_label.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        message_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         message_label.setStyleSheet(f"""
-            QLabel {{
+            QTextEdit {{
+                background: transparent;
                 color: {text_color};
                 font-size: 13px;
-                line-height: 1.5;
+                border: none;
             }}
         """)
-        message_label.setAlignment(Qt.AlignLeft)
+        if self.is_user:
+            message_label.setPlainText(message)
+        else:
+            message_label.setMarkdown(message)
+        # Auto-size to content height instead of showing its own scrollbar
+        # — messages are static once added, so a one-time measurement
+        # after layout is enough (no need to track content changes).
+        bubble_width = 500 - 24 - 8 - 24  # maxWidth minus icon/spacer/padding
+        message_label.document().setTextWidth(bubble_width)
+        doc_height = message_label.document().size().height()
+        message_label.setFixedHeight(int(doc_height) + 10)
 
         # Timestamp
         from datetime import datetime
@@ -153,6 +174,7 @@ class AIPanel(QWidget):
         super().__init__(parent)
         self.current_provider = "openai"
         self.messages: List[Dict] = []
+        self.uploaded_files: List[Dict] = []  # {"name", "type", "path", "data"}
         self.is_processing = False
         self.typing_indicator = None  # Track typing indicator widget
         self.setup_ui()
@@ -199,6 +221,13 @@ class AIPanel(QWidget):
 
         # Welcome message
         self.add_welcome_message()
+
+        # Attached files (PDF/CSV/Excel become part of the chat context) —
+        # ported from the standalone AI Chat dialog, which duplicated this
+        # panel's general chat capability while being the only place file
+        # upload existed. One chat surface now instead of two.
+        attachments = self.create_attachments_area()
+        layout.addWidget(attachments)
 
         # Input area
         input_frame = self.create_input_area()
@@ -418,6 +447,171 @@ class AIPanel(QWidget):
 
         return frame
 
+    def create_attachments_area(self) -> QWidget:
+        """PDF/CSV/Excel upload — content becomes part of the chat context
+        via get_attachment_context(), which main_window._get_ai_context()
+        folds into every message sent from this panel."""
+        frame = QFrame()
+        frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-top: 1px solid #e5e7eb;
+            }
+        """)
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(16, 8, 16, 8)
+        layout.setSpacing(6)
+
+        header_row = QHBoxLayout()
+        label = QLabel("Attached Files")
+        label.setStyleSheet("""
+            QLabel {
+                font-size: 11px;
+                font-weight: 600;
+                color: #6b7280;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+        """)
+        header_row.addWidget(label)
+        header_row.addStretch()
+
+        small_btn_style = """
+            QPushButton {
+                padding: 4px 10px;
+                font-size: 11px;
+                border: 1px solid #d1d5db;
+                border-radius: 4px;
+                background-color: white;
+                color: #374151;
+            }
+            QPushButton:hover {
+                background-color: #f3f4f6;
+            }
+        """
+
+        pdf_btn = QPushButton("+ PDF")
+        pdf_btn.setCursor(Qt.PointingHandCursor)
+        pdf_btn.setStyleSheet(small_btn_style)
+        pdf_btn.clicked.connect(lambda: self._upload_file("pdf"))
+        header_row.addWidget(pdf_btn)
+
+        data_btn = QPushButton("+ CSV/Excel")
+        data_btn.setCursor(Qt.PointingHandCursor)
+        data_btn.setStyleSheet(small_btn_style)
+        data_btn.clicked.connect(lambda: self._upload_file("data"))
+        header_row.addWidget(data_btn)
+
+        layout.addLayout(header_row)
+
+        self.file_list = QListWidget()
+        self.file_list.setMaximumHeight(70)
+        self.file_list.setStyleSheet("""
+            QListWidget {
+                border: 1px solid #e5e7eb;
+                border-radius: 6px;
+                font-size: 11px;
+            }
+        """)
+        self.file_list.setVisible(False)
+        layout.addWidget(self.file_list)
+
+        self.clear_files_btn = QPushButton("Clear Files")
+        self.clear_files_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_files_btn.setStyleSheet("""
+            QPushButton {
+                padding: 4px 10px;
+                font-size: 11px;
+                color: #991b1b;
+                border: none;
+                text-align: left;
+            }
+            QPushButton:hover {
+                text-decoration: underline;
+            }
+        """)
+        self.clear_files_btn.setVisible(False)
+        self.clear_files_btn.clicked.connect(self._clear_files)
+        layout.addWidget(self.clear_files_btn)
+
+        return frame
+
+    def _upload_file(self, file_type: str):
+        """Upload a PDF/CSV/Excel file so its content becomes part of the
+        chat context for subsequent messages."""
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        from pathlib import Path
+
+        filters = "PDF Files (*.pdf)" if file_type == "pdf" else "Data Files (*.csv *.xlsx *.xls)"
+        filename, _ = QFileDialog.getOpenFileName(self, "Upload File", "", filters)
+        if not filename:
+            return
+
+        try:
+            if file_type == "pdf":
+                data = self._read_pdf(filename)
+                file_ext = "pdf"
+            else:
+                data = self._read_data_file(filename)
+                file_ext = Path(filename).suffix.lower()
+
+            self.uploaded_files.append({
+                "name": Path(filename).name, "type": file_ext, "path": filename, "data": data
+            })
+            self.file_list.addItem(QListWidgetItem(f"📄 {Path(filename).name}"))
+            self.file_list.setVisible(True)
+            self.clear_files_btn.setVisible(True)
+            self.add_message(f"Attached: {Path(filename).name} — ask me anything about it.", is_user=False)
+        except Exception as e:
+            QMessageBox.warning(self, "Upload Error", f"Could not read file:\n{str(e)}")
+
+    def _read_pdf(self, filepath: str) -> str:
+        """Read a PDF and extract its text (first 50 pages, capped length)."""
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(filepath)
+            text = ""
+            for page in reader.pages[:50]:
+                text += page.extract_text() + "\n"
+            return text[:100000]
+        except ImportError:
+            return f"[PDF file: {filepath}]\nInstall pypdf to enable PDF text extraction."
+
+    def _read_data_file(self, filepath: str):
+        """Read a CSV/Excel file into a Polars DataFrame."""
+        import polars as pl
+        from pathlib import Path
+        path = Path(filepath)
+        if path.suffix.lower() == '.csv':
+            return pl.read_csv(filepath)
+        elif path.suffix.lower() in ('.xlsx', '.xls'):
+            return pl.read_excel(filepath)
+        raise ValueError(f"Unsupported file format: {path.suffix}")
+
+    def _clear_files(self):
+        self.uploaded_files = []
+        self.file_list.clear()
+        self.file_list.setVisible(False)
+        self.clear_files_btn.setVisible(False)
+        self.add_message("Attached files cleared.", is_user=False)
+
+    def get_attachment_context(self) -> str:
+        """Build a context string describing uploaded files, for the
+        caller (main_window._get_ai_context) to fold into the prompt sent
+        with the next chat message."""
+        import polars as pl
+        if not self.uploaded_files:
+            return ""
+        parts = []
+        for f in self.uploaded_files:
+            parts.append(f"Attached file: {f['name']} ({f['type']})")
+            data = f.get('data')
+            if isinstance(data, str):
+                parts.append(f"Content:\n{data[:2000]}")
+            elif isinstance(data, pl.DataFrame):
+                parts.append(f"Rows: {data.height}, Columns: {list(data.columns)}")
+        return "\n\n".join(parts)
+
     def create_quick_actions(self) -> QWidget:
         """Create quick action buttons"""
         frame = QWidget()
@@ -520,6 +714,7 @@ I can help you with:
 • **Column Generation** - Create derived columns from natural language
 • **Compliance Checking** - Test data against policies
 • **Report Writing** - Draft audit findings and memos
+• **Document Analysis** - Attach a PDF, CSV, or Excel file below and ask me about it
 
 What would you like to do?"""
         self.add_message(welcome, is_user=False)

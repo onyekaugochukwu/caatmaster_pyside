@@ -1,0 +1,29 @@
+EXPENSE & VENDOR PAYMENT COMPLIANCE POLICY
+Effective: 2026-01-01
+
+1. APPROVAL THRESHOLD
+   All vendor payments and expense transactions exceeding $1,000 must be
+   reviewed and approved by an authorized manager before processing.
+   Transactions above this threshold with no approver on file are a
+   policy exception.
+
+2. CATEGORY CLASSIFICATION
+   Every transaction must be assigned to one of the approved expense
+   categories (Office Supplies, Travel, Software, Consulting, Utilities,
+   Marketing). Transactions with no category assigned cannot be properly
+   allocated to a budget line and should be flagged for correction.
+
+3. DUPLICATE PAYMENT PREVENTION
+   No transaction should be recorded more than once. Any exact-duplicate
+   transaction record indicates a possible double payment and must be
+   investigated before the vendor is paid a second time.
+
+4. LARGE PAYMENT REVIEW
+   Any single transaction exceeding $10,000 is considered a large payment
+   and requires senior management review regardless of category, in
+   addition to standard approval.
+
+5. VENDOR COMMUNICATION QUALITY
+   Recurring issues with vendor responsiveness or invoice accuracy (e.g.
+   late invoices, unresolved billing errors) should be tracked and
+   considered during annual vendor review.

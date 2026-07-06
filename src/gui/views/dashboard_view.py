@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QSize, Signal, Slot
 from PySide6.QtGui import QFont, QColor, QPainter, QLinearGradient
 
+from gui.views.visualizations_view import ChartCanvas
+
 
 class MetricCard(QFrame):
     """Card widget for displaying metrics"""
@@ -383,6 +385,9 @@ class DashboardView(QWidget):
         # Refresh datasets section
         self._refresh_datasets()
 
+        # Refresh the live chart
+        self._refresh_insights_chart()
+
     def _refresh_activities(self):
         """Refresh activities from project activity log"""
         self.activities = []
@@ -720,6 +725,10 @@ class DashboardView(QWidget):
 
         scroll_layout.addLayout(content_row)
 
+        # Insights section - a real, live chart, not just number tiles
+        insights_section = self.create_insights_section()
+        scroll_layout.addWidget(insights_section)
+
         scroll.setWidget(scroll_content)
         main_layout.addWidget(scroll, 1)
 
@@ -933,6 +942,71 @@ class DashboardView(QWidget):
         self.datasets_layout.addWidget(empty_label)
 
         return container
+
+    def create_insights_section(self):
+        """A real, live chart on the dashboard — row count per dataset, so
+        visualizations are something you see by default rather than a
+        separate page you have to remember to visit."""
+        container = QFrame()
+        container.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 12px;
+                border: none;
+            }
+        """)
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(20)
+        shadow.setXOffset(0)
+        shadow.setYOffset(4)
+        shadow.setColor(QColor(0, 0, 0, 15))
+        container.setGraphicsEffect(shadow)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        title = QLabel("Datasets at a Glance")
+        title.setStyleSheet("""
+            QLabel {
+                font-size: 18px;
+                font-weight: 700;
+                color: #201f1e;
+            }
+        """)
+        layout.addWidget(title)
+
+        self.insights_canvas = ChartCanvas()
+        self.insights_canvas.setMinimumHeight(320)
+        layout.addWidget(self.insights_canvas)
+
+        return container
+
+    def _refresh_insights_chart(self):
+        """Rebuild the dashboard's row-count-per-dataset chart from the
+        current project's datasets."""
+        if not hasattr(self, 'insights_canvas'):
+            return
+        if not self.datasets:
+            self.insights_canvas.clear()
+            return
+
+        try:
+            from services.visualization_service import VisualizationService
+            summary_df = pl.DataFrame({
+                "Dataset": [d["name"] for d in self.datasets],
+                "Rows": [d.get("rows", 0) for d in self.datasets],
+            })
+            viz_service = VisualizationService()
+            fig = viz_service.create_column_chart(
+                summary_df, "Dataset", "Rows",
+                title="Row Count by Dataset", figsize=(8, 3.5)
+            )
+            self.insights_canvas.set_figure(fig)
+        except Exception:
+            # A broken chart should never take down the whole dashboard —
+            # just leave the canvas showing its placeholder.
+            self.insights_canvas.clear()
 
     def create_activity_section(self):
         """Create the recent activity section"""

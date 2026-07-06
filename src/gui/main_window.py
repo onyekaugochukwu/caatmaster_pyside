@@ -188,14 +188,15 @@ class MainWindow(QMainWindow):
         self.sidebar.dataset_delete_requested.connect(self.on_dataset_delete_requested)
         self.sidebar.dataset_split_sheet_requested.connect(self.on_dataset_split_sheet_requested)
         self.sidebar.dataset_refresh_requested.connect(self.on_dataset_refresh_requested)
+        self.sidebar.dataset_visualize_requested.connect(self.on_dataset_visualize_requested)
         self.sidebar.join_datasets_requested.connect(self.on_join_datasets_requested)
         self.sidebar.append_datasets_requested.connect(self.on_append_datasets_requested)
         self.sidebar.upload_requested.connect(self.on_upload_requested)
+        self.sidebar.cleaning_wizard_requested.connect(self.on_cleaning_wizard_requested)
         self.sidebar.paste_requested.connect(self.on_paste_requested)
         self.sidebar.project_edit_requested.connect(self.edit_current_project)
         self.sidebar.project_delete_requested.connect(self.delete_current_project)
         self.sidebar.toggle_ai_panel.connect(self.toggle_ai_panel)
-        self.sidebar.ai_chat_requested.connect(self._on_ai_chat_requested)
         self.sidebar.audit_programs_requested.connect(self._on_audit_programs_requested)
         middle_layout.addWidget(self.sidebar)
 
@@ -227,7 +228,7 @@ class MainWindow(QMainWindow):
 
         # AI Panel (right sidebar) - initially hidden
         self.ai_panel = AIPanel()
-        self.ai_panel.setFixedWidth(320)
+        self.ai_panel.setFixedWidth(440)
         self.ai_panel.setVisible(False)
         self.ai_panel.sendMessage.connect(self._on_ai_message)
         self.ai_panel.cancelRequest.connect(self._on_ai_cancel_request)
@@ -448,10 +449,24 @@ class MainWindow(QMainWindow):
                         context = f"Project: {self.current_project.name}\nClient: {self.current_project.client_name or 'N/A'}"
 
                     summary = await self.ai_interpreter.analyze_dataset(df, context)
+                    stats = summary.data_quality.get('computed_stats', {})
 
                     # Show results in AI panel (via signal for thread safety)
-                    response = f"## Dataset Analysis\n\n**Executive Summary:**\n{summary.executive_summary}\n\n"
+                    response = (
+                        f"## Dataset Analysis\n\n"
+                        f"*⚠ Data quality score, null%, and any outlier/duplicate figures below are computed "
+                        f"over all {len(df):,} rows of the complete dataset. The summary and insight "
+                        f"descriptions are AI-drafted prose interpreting those numbers — verify before "
+                        f"relying on this for audit conclusions.*\n\n"
+                    )
+                    response += f"**Executive Summary:**\n{summary.executive_summary}\n\n"
                     response += f"**Data Quality Score:** {summary.data_quality.get('overall_score', 'N/A')}/100\n\n"
+                    if stats:
+                        response += (
+                            f"**Computed facts:** {stats.get('duplicate_row_count', 0)} duplicate rows "
+                            f"({stats.get('duplicate_row_pct', 0)}%), "
+                            f"{stats.get('total_null_cells', 0)} null cells overall ({stats.get('overall_null_pct', 0)}%)\n\n"
+                        )
                     response += f"**Key Fields:** {', '.join(summary.key_fields)}\n\n"
                     response += "**Audit Insights:**\n"
                     for insight in summary.audit_insights[:5]:
@@ -474,6 +489,14 @@ class MainWindow(QMainWindow):
 
         # Run async using thread pool
         self.thread_pool.start(run_async)
+
+    @Slot()
+    def _on_ai_activity_log_requested(self):
+        """Open the AI Activity Log — every real LLM call's prompt,
+        response, model, and cost, reviewable after the fact."""
+        from gui.dialogs.ai_activity_log_dialog import AIActivityLogDialog
+        dialog = AIActivityLogDialog(self.ai_manager, self)
+        dialog.exec()
 
     @Slot()
     def _on_ai_generate_column(self):
@@ -579,18 +602,6 @@ class MainWindow(QMainWindow):
         if settings_view and hasattr(settings_view, 'refresh_ai_info'):
             settings_view.refresh_ai_info()
 
-    @Slot()
-    def _on_ai_chat_requested(self):
-        """Open AI Chat dialog"""
-        from gui.dialogs.ai_chat_dialog import AIChatDialog
-
-        # Get current dataframe if available
-        current_df = None
-        if self.current_dataset:
-            current_df = self.current_dataset.get_current_dataframe()
-
-        dialog = AIChatDialog(current_df, self)
-        dialog.exec()
 
     @Slot()
     def _on_audit_programs_requested(self):
@@ -715,17 +726,62 @@ class MainWindow(QMainWindow):
             if self.current_project.client_name:
                 context_parts.append(f"Client: {self.current_project.client_name}")
 
-        if self.current_dataset:
-            df = self.current_dataset.get_current_dataframe()
-            if df is not None:
-                context_parts.append(f"Dataset: {self.current_dataset.name}")
-                context_parts.append(f"Rows: {len(df):,}")
-                context_parts.append(f"Columns: {len(df.columns)}")
-                context_parts.append(f"Columns: {', '.join(df.columns[:10])}")
-                if len(df.columns) > 10:
-                    context_parts.append(f"And {len(df.columns) - 10} more columns...")
+        # Every dataset in the project gets real, computed stats here (not
+        # just the active one) — previously the AI only knew about
+        # whichever dataset happened to be open, so it couldn't answer
+        # "how many rows does Vendors have" while Transactions was active.
+        # Stats are genuinely computed per dataset (not fabricated), but
+        # kept lightweight (no outlier/IQR work) since this rebuilds on
+        # every single chat message across potentially several datasets.
+        if self.current_project and self.current_project.datasets:
+            context_parts.append(f"\nAll datasets in this project ({len(self.current_project.datasets)}):")
+            for ds in self.current_project.datasets.values():
+                is_active = bool(self.current_dataset and ds.id == self.current_dataset.id)
+                context_parts.append(self._summarize_dataset_for_ai(ds, is_active))
+            context_parts.append(
+                "\nThe figures above (rows, nulls, min/max/mean/sum) are real, computed from the "
+                "complete data for each dataset. If asked something these stats don't cover (e.g. an "
+                "exact row lookup, or a computation not shown above), say so rather than guessing — "
+                "don't invent a number that isn't backed by what's given here."
+            )
+
+        attachment_context = self.ai_panel.get_attachment_context() if hasattr(self, 'ai_panel') and self.ai_panel else ""
+        if attachment_context:
+            context_parts.append(attachment_context)
 
         return "\n".join(context_parts) if context_parts else "No project or dataset loaded."
+
+    def _summarize_dataset_for_ai(self, dataset, is_active: bool, max_columns: int = 15) -> str:
+        """Real, computed one-line-per-column summary of a dataset for AI
+        chat context — row/column counts plus null/unique counts, and
+        min/max/mean/sum for numeric columns. Capped to the first
+        max_columns columns so a very wide dataset doesn't blow up the
+        prompt; the AI is told above not to guess beyond what's given."""
+        df = dataset.get_current_dataframe()
+        marker = " [CURRENTLY ACTIVE]" if is_active else ""
+        if df is None:
+            return f"- {dataset.name}{marker}: (no data loaded)"
+
+        lines = [f"- {dataset.name}{marker}: {len(df):,} rows, {len(df.columns)} columns"]
+        columns = df.columns[:max_columns]
+        for col in columns:
+            series = df[col]
+            null_count = series.null_count()
+            if series.dtype.is_numeric():
+                non_null = series.drop_nulls()
+                if len(non_null) > 0:
+                    lines.append(
+                        f"    {col} ({series.dtype}): nulls={null_count}, "
+                        f"min={non_null.min()}, max={non_null.max()}, "
+                        f"mean={round(float(non_null.mean()), 2)}, sum={round(float(non_null.sum()), 2)}"
+                    )
+                else:
+                    lines.append(f"    {col} ({series.dtype}): all null")
+            else:
+                lines.append(f"    {col} ({series.dtype}): nulls={null_count}, unique={series.n_unique()}")
+        if len(df.columns) > max_columns:
+            lines.append(f"    ... and {len(df.columns) - max_columns} more columns (not shown)")
+        return "\n".join(lines)
 
     def create_views(self):
         """Create all main views and add them to the stacked widget"""
@@ -778,6 +834,7 @@ class MainWindow(QMainWindow):
         viz_view = self.views["visualizations"]
         query_view = self.views["query"]
         reports_view = self.views["reports"]
+        transform_view.set_ai_manager(self.ai_manager)
         data_view.data_loaded.connect(transform_view.set_dataframe)
         # sql_view is NOT wired to data_loaded — unlike the other views, it
         # keeps a multi-table catalog (Model Query), and set_dataframe()
@@ -792,6 +849,7 @@ class MainWindow(QMainWindow):
         data_view.show_transform_requested.connect(self._on_show_transform_after_upload)
         transform_view.pipelineChanged.connect(self._on_pipeline_changed)
         transform_view.dataChanged.connect(self._on_transform_data_changed)
+        transform_view.visualizeColumnRequested.connect(self._on_visualize_column_requested)
         sql_view.applyToPipelineRequested.connect(self._on_sql_apply_to_pipeline)
         sql_view.createDatasetRequested.connect(self._on_sql_create_dataset)
 
@@ -890,6 +948,33 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"Selected dataset: {dataset.name}")
 
     @Slot(str)
+    def on_dataset_visualize_requested(self, dataset_id):
+        """"Visualize This Dataset..." from the sidebar's right-click menu —
+        opens the full chart builder as a modal, for exploring a dataset
+        without navigating to the Visualizations page."""
+        if not self.current_project:
+            return
+        dataset = self.current_project.datasets.get(dataset_id)
+        if not dataset:
+            return
+        self._show_visualize_dataset_dialog(dataset.get_current_dataframe(), dataset.name)
+
+    def _on_visualize_current_dataset(self):
+        """Statistics > Visualize Dataset... — same dialog, applied to
+        whichever dataset is currently active."""
+        if not self.current_dataset:
+            QMessageBox.warning(self, "No Dataset", "Please select a dataset first.")
+            return
+        self._show_visualize_dataset_dialog(self.current_dataset.get_current_dataframe(), self.current_dataset.name)
+
+    def _show_visualize_dataset_dialog(self, df, dataset_name: str):
+        if df is None:
+            QMessageBox.warning(self, "No Data", "This dataset has no data to visualize.")
+            return
+        from gui.dialogs.visualize_dataset_dialog import VisualizeDatasetDialog
+        dialog = VisualizeDatasetDialog(df, dataset_name=dataset_name, parent=self)
+        dialog.exec()
+
     def on_dataset_rename_requested(self, dataset_id):
         """Handle dataset rename request"""
         from PySide6.QtWidgets import QInputDialog, QMessageBox
@@ -1343,6 +1428,18 @@ class MainWindow(QMainWindow):
             # datasets checked for a cross-dataset Model Query.
             sql_view.refresh_dataset(self.current_dataset.name, df)
 
+    def _on_visualize_column_requested(self, column_name: str):
+        """"Visualize This Column" from the Transform header context menu —
+        jump straight to a sensible default chart instead of making the
+        user navigate to Visualizations and configure it from scratch."""
+        transform_view = self.views.get("transform")
+        viz_view = self.views.get("visualizations")
+        if not transform_view or not transform_view.pipeline or not viz_view:
+            return
+        df = transform_view.pipeline.apply()
+        self.on_navigation_requested("visualizations")
+        viz_view.quick_visualize(df, column_name)
+
     @Slot(str, str)
     def _on_sql_apply_to_pipeline(self, query: str, table_name: str):
         """Record a SQL query from the SQL view as a step on the active
@@ -1409,6 +1506,95 @@ class MainWindow(QMainWindow):
         data_view = self.views.get("data")
         if data_view and hasattr(data_view, "show_import_dialog"):
             data_view.show_import_dialog()
+
+    @Slot()
+    def on_cleaning_wizard_requested(self):
+        """Import a file with no header assumed, run the Data Cleaning
+        Wizard over it, and — if the user accepts any proposed steps —
+        create a new dataset with those steps already applied as real,
+        visible, undoable Applied Steps rather than a black-box
+        transformation. See core.cleaning_wizard for the detection logic."""
+        from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox, QDialog
+        from pathlib import Path
+        from core.data_processor import LegacyDataProcessor, TransformationPipeline
+        from core.project_manager import Dataset
+        from gui.dialogs.cleaning_wizard_dialog import CleaningWizardDialog
+
+        if not self.current_project:
+            QMessageBox.warning(
+                self, "No Project Selected",
+                "Please create or open a project before importing a dataset."
+            )
+            return
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Import & Clean Data", "",
+            "Supported Files (*.csv *.xlsx *.xls);;CSV Files (*.csv);;Excel Files (*.xlsx *.xls)"
+        )
+        if not file_path:
+            return
+
+        dp = LegacyDataProcessor()
+        sheet_name = None
+        if file_path.endswith(('.xlsx', '.xls')):
+            try:
+                sheets = dp.get_excel_sheets(file_path)
+                if len(sheets) > 1:
+                    sheet_name, ok = QInputDialog.getItem(
+                        self, "Select Worksheet", "Select a worksheet:", sheets, 0, False
+                    )
+                    if not ok:
+                        return
+            except Exception as e:
+                QMessageBox.warning(self, "Warning", f"Could not read Excel sheets: {e}\nLoading first sheet.")
+
+        try:
+            raw_df = dp.read_file_raw(file_path, sheet_name)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to read file:\n{e}")
+            return
+
+        if raw_df is None or raw_df.height == 0:
+            QMessageBox.warning(self, "Empty Data", "The selected file/sheet contains no data.")
+            return
+
+        dialog = CleaningWizardDialog(raw_df, self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        accepted_steps = dialog.get_accepted_steps()
+
+        file_name = Path(file_path).stem
+        dataset_name, ok = QInputDialog.getText(
+            self, "Dataset Name", "Enter a name for this dataset:", text=file_name
+        )
+        if not ok or not dataset_name.strip():
+            dataset_name = f"Dataset_{len(self.current_project.datasets) + 1}"
+
+        pipeline = TransformationPipeline(initial_df=raw_df)
+        try:
+            for operation_id, params in accepted_steps:
+                pipeline.add_step(operation_id, dict(params))
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to apply an accepted step:\n{e}")
+            return
+
+        dataset = Dataset(
+            name=dataset_name.strip(), dataframe=raw_df,
+            source_file_path=file_path, source_sheet_name=sheet_name
+        )
+        dataset.set_pipeline(pipeline)
+
+        data_view = self.views.get("data")
+        transform_view = self.views.get("transform")
+        if data_view:
+            data_view._finalize_new_dataset(dataset, pipeline.apply())
+        if transform_view:
+            transform_view.set_dataframe(raw_df, pipeline)
+
+        self.statusBar().showMessage(
+            f"Created dataset '{dataset.name}' with {len(accepted_steps)} cleaning step(s) applied"
+        )
 
     @Slot()
     def on_paste_requested(self):
@@ -1597,6 +1783,10 @@ class MainWindow(QMainWindow):
             "keep_top": self._on_keep_top,
             "keep_bottom": self._on_keep_bottom,
 
+            # Header promote/demote
+            "promote_header": lambda: self._on_transform("promote_row_header"),
+            "demote_header": lambda: self._on_transform("demote_header_to_row"),
+
             # Text transformations
             "text_upper": lambda: self._on_transform("text_uppercase"),
             "text_lower": lambda: self._on_transform("text_lowercase"),
@@ -1647,6 +1837,7 @@ class MainWindow(QMainWindow):
             "ai_classify": lambda: self._on_transform("ai_classify"),
             "ai_summarize": lambda: self._on_transform("ai_summarize"),
             "ai_enrich": lambda: self._on_transform("ai_enrich"),
+            "ai_activity_log": self._on_ai_activity_log_requested,
 
             # ML operations
             "ml_anomaly_iforest": lambda: self._on_transform("ml_anomaly_iforest"),
@@ -1675,6 +1866,8 @@ class MainWindow(QMainWindow):
             "ml_gmm": lambda: self._on_transform("ml_gmm"),
             "ml_arima": lambda: self._on_transform("ml_arima"),
             "ml_ets": lambda: self._on_transform("ml_ets"),
+
+            "visualize_dataset": self._on_visualize_current_dataset,
 
             # Audit operations
             "stat_zscore": lambda: self._on_transform("stat_zscore"),

@@ -742,7 +742,32 @@ class AISettingsDialog(QDialog):
 
     def save_settings(self):
         """Save all provider configurations"""
-        from src.services.ai_service import save_ai_credentials, AIProviderFactory
+        from src.services.ai_service import save_ai_credentials, AIProviderFactory, FERNET_AVAILABLE
+
+        # Any real (non-local) API key about to be saved while the
+        # cryptography package is missing would previously be written to
+        # disk in PLAINTEXT with only a console-only warning — easy to miss
+        # entirely. Ask explicitly instead of silently downgrading security.
+        if not FERNET_AVAILABLE:
+            has_real_key = any(
+                widget.get_config()["api_key"] and not AIProviderFactory.is_local_provider(provider)
+                for provider, widget in self.provider_widgets.items()
+            )
+            if self.custom_provider_widget:
+                custom_config = self.custom_provider_widget.get_config()
+                has_real_key = has_real_key or bool(custom_config.get("api_key"))
+            if has_real_key:
+                proceed = QMessageBox.warning(
+                    self, "Encryption Unavailable",
+                    "The 'cryptography' package isn't installed, so API keys "
+                    "will be saved in PLAIN TEXT on disk instead of encrypted.\n\n"
+                    "Install it first for encrypted storage:\n"
+                    "    pip install cryptography\n\n"
+                    "Save the key(s) in plain text anyway?",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+                )
+                if proceed != QMessageBox.Yes:
+                    return
 
         configs = {}
         saved_providers = []

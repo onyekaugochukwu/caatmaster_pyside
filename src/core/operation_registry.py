@@ -830,10 +830,12 @@ OPERATION_REGISTRY = {
         "display_name": "Pattern Learning (Flash Fill)",
         "type": TransformationStepType.AI_PATTERN_LEARN,
         "category": "ai",
-        "description": "Learns patterns from examples and applies to all rows",
+        "description": "Applies a described transformation pattern to every row using AI",
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Source Column"},
-            "output_column": {"type": "string", "required": True, "label": "Output Column"}
+            "output_column": {"type": "string", "required": True, "label": "Output Column"},
+            "pattern": {"type": "string", "required": False,
+                       "label": "Pattern / Instruction (e.g. \"extract the last name\")"}
         },
         "creates_columns": ["{output_column}"]
     },
@@ -1329,11 +1331,27 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"},
             "find_value": {"type": "string", "required": True, "label": "Find"},
-            "replace_value": {"type": "string", "required": True, "label": "Replace With"},
+            "replace_value": {"type": "string", "required": False, "label": "Replace With",
+                              "description": "Ignored if Replace With Null is checked"},
+            "replace_with_null": {"type": "bool", "required": False, "default": False, "label": "Replace With Null",
+                                  "description": "Treat Find as an exact whole-value match and replace it with a true null, instead of a text substitution"},
             "case_sensitive": {"type": "bool", "required": False, "default": True, "label": "Case Sensitive"}
         },
         "creates_columns": True,
         "column_naming_pattern": "{column}_replaced"
+    },
+    "standardize_missing_values": {
+        "display_name": "Standardize Missing Values",
+        "type": TransformationStepType.CALCULATE,
+        "category": "text",
+        "description": "Replaces ad-hoc missing-value markers (e.g. \"???\", \"-\", \"N/A\") with a true null, in place",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column"},
+            "markers": {"type": "list[str]", "required": True, "label": "Markers to Treat as Missing",
+                       "placeholder": "e.g. ???, -, N/A"},
+            "case_sensitive": {"type": "bool", "required": False, "default": False, "label": "Case Sensitive"}
+        },
+        "creates_columns": False
     },
 
     # =========================================================================
@@ -1366,11 +1384,25 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column to Split"},
             "delimiter": {"type": "string", "required": False, "default": " ", "label": "Delimiter",
-                         "options": ["space", "comma", "tab", "period", "asterisk", "custom"]},
+                         "options": ["space", "comma", "tab", "period", "asterisk", "pipe", "semicolon", "custom"]},
             "custom_delimiter": {"type": "string", "required": False, "label": "Custom Delimiter"},
             "max_splits": {"type": "int", "required": False, "default": -1, "label": "Max Splits (-1 for all)"}
         },
         "creates_columns": ["{column}_1", "{column}_2", "{column}_3"]
+    },
+    "split_into_rows": {
+        "display_name": "Split Into Rows",
+        "type": TransformationStepType.CALCULATE,
+        "category": "table",
+        "description": "Splits delimiter-separated values in one or more aligned columns into separate rows, e.g. turning one order row with pipe-separated line items into one row per item",
+        "parameter_schema": {
+            "columns": {"type": "list[column]", "required": True,
+                       "label": "Columns to Split (must have matching delimiter counts per row)"},
+            "delimiter": {"type": "string", "required": False, "default": "pipe", "label": "Delimiter",
+                         "options": ["pipe", "semicolon", "comma", "space", "tab", "period", "asterisk", "custom"]},
+            "custom_delimiter": {"type": "string", "required": False, "label": "Custom Delimiter"},
+        },
+        "creates_columns": False
     },
 
     # -------------------------------------------------------------------------
@@ -1455,7 +1487,10 @@ OPERATION_REGISTRY = {
             "new_dtype": {"type": "string", "required": True, "label": "New Type",
                          "options": ["Int8", "Int16", "Int32", "Int64", "Float32", "Float64",
                                     "Utf8", "Boolean", "Date", "Datetime", "Categorical"]},
-            "format_string": {"type": "string", "required": False, "label": "Format (for dates)"}
+            "format_string": {"type": "string", "required": False, "label": "Format (for dates)"},
+            "on_error": {"type": "string", "required": False, "default": "coerce", "label": "On Invalid Values",
+                        "options": ["coerce", "raise"],
+                        "description": "coerce: turn values that don't fit the new type into null; raise: fail the step if any value doesn't fit"}
         },
         "creates_columns": []
     },
@@ -1555,6 +1590,14 @@ OPERATION_REGISTRY = {
         "parameter_schema": {
             "row_index": {"type": "int", "required": False, "default": 0, "label": "Row Number to Use as Header", "min": 0}
         },
+        "creates_columns": False  # Renames columns
+    },
+    "demote_header_to_row": {
+        "display_name": "Use Headers as First Row",
+        "type": TransformationStepType.CALCULATE,
+        "category": "table",
+        "description": "Turns the current column headers into the first row of data and resets columns to generic names (column_1, column_2, ...); all columns are cast to text",
+        "parameter_schema": {},
         "creates_columns": False  # Renames columns
     },
 

@@ -7,16 +7,16 @@ import sys
 import os
 import faulthandler
 from pathlib import Path
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QToolTip
 from PySide6.QtCore import Qt, QSettings
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QPalette, QColor
 
 # Add src directory to path
 src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
 from gui.main_window import MainWindow
-from gui.theme import get_stylesheet
+from gui.theme import get_stylesheet, Colors
 from core.database import init_db
 
 
@@ -53,6 +53,28 @@ def main():
     # Apply the CaatMaster light theme — single source of truth for the
     # whole app's styling, see src/gui/theme.py
     app.setStyleSheet(get_stylesheet())
+
+    # theme.py's QSS has a "QToolTip { background: dark; color: light }"
+    # rule, but QToolTip keeps its OWN static palette completely separate
+    # from QApplication's — confirmed directly: QToolTip.palette() stays
+    # at Qt's default (#ffffdc background, black text) even after
+    # app.setPalette() changes QApplication's palette. The QSS rule's
+    # "color" property still reaches individual tooltips (white text),
+    # but its "background-color" doesn't reliably repaint the tooltip
+    # window under Fusion, which keeps drawing QToolTip's own palette
+    # background underneath — white text on top of a near-white
+    # background. Setting BOTH palettes explicitly, to the same colors,
+    # is what actually fixes every tooltip regardless of which of the
+    # two rendering paths a given widget's tooltip takes.
+    palette = app.palette()
+    palette.setColor(QPalette.ToolTipBase, QColor(Colors.TEXT_PRIMARY))
+    palette.setColor(QPalette.ToolTipText, QColor(Colors.BG_PRIMARY))
+    app.setPalette(palette)
+
+    tooltip_palette = QToolTip.palette()
+    tooltip_palette.setColor(QPalette.ToolTipBase, QColor(Colors.TEXT_PRIMARY))
+    tooltip_palette.setColor(QPalette.ToolTipText, QColor(Colors.BG_PRIMARY))
+    QToolTip.setPalette(tooltip_palette)
 
     # Initialize database
     try:

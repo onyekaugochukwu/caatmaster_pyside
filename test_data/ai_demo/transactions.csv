@@ -1,0 +1,31 @@
+txn_id,vendor,amount,category,date,approver,notes
+TXN-1001,Acme Office Supplies,245.5,Office Supplies,2026-06-01,J. Rivera,"Routine monthly stationery order, arrived on time."
+TXN-1002,Globex Consulting,3200.0,Consulting,2026-06-02,,Consulting engagement for Q2 strategy review. No approval on file yet.
+TXN-1003,Initech Software,899.99,Software,2026-06-02,J. Rivera,"Annual license renewal, processed without issue."
+TXN-1004,Umbrella Logistics,150.0,Travel,2026-06-03,J. Rivera,Taxi reimbursement for client visit.
+TXN-1005,Acme Office Supplies,245.5,Office Supplies,2026-06-01,J. Rivera,"Routine monthly stationery order, arrived on time."
+TXN-1006,Stark Utilities,410.75,Utilities,2026-06-04,J. Rivera,Monthly electricity bill for main office.
+TXN-1007,Wayne Marketing Co,1875.0,Marketing,2026-06-05,,Social media campaign spend for product launch. Approval pending.
+TXN-1002,Globex Consulting,3200.0,Consulting,2026-06-02,,Consulting engagement for Q2 strategy review. No approval on file yet.
+TXN-1009,Initrode Vendor,45250.0,,2026-06-06,,"Extremely large one-off payment, category not assigned. Reason for payment unclear from description."
+TXN-1010,Acme Office Supplies,89.2,Office Supplies,2026-06-07,J. Rivera,Small supplies top-up.
+TXN-1011,Hooli Cloud Services,1200.0,Software,2026-06-08,M. Chen,"Cloud hosting invoice, approved same day."
+TXN-1012,Massive Dynamic,2650.0,Consulting,2026-06-09,,"Vendor was fantastic, delivered ahead of schedule and the quality was excellent. Approval still outstanding."
+TXN-1013,Stark Utilities,395.1,Utilities,2026-06-10,J. Rivera,Monthly gas bill.
+TXN-1014,Wayne Marketing Co,220.0,Marketing,2026-06-11,J. Rivera,Print flyers for local event.
+TXN-1015,Soylent Vendor Group,1999.0,,2026-06-12,M. Chen,Category left blank by accident during entry; approved regardless.
+TXN-1016,Umbrella Logistics,95.0,Travel,2026-06-13,J. Rivera,Parking reimbursement.
+TXN-1017,Initech Software,1450.0,Software,2026-06-14,,"Unplanned emergency license purchase, no approver assigned yet, very frustrating process with the vendor's support team."
+TXN-1018,Acme Office Supplies,310.4,Office Supplies,2026-06-15,J. Rivera,Quarterly bulk order of paper and toner.
+TXN-1019,Globex Consulting,2750.0,Consulting,2026-06-16,,"Second phase of consulting engagement, awaiting sign-off."
+TXN-1020,Hooli Cloud Services,1100.0,Software,2026-06-17,M. Chen,Standard monthly hosting renewal.
+TXN-1021,Massive Dynamic,410.0,Consulting,2026-06-18,J. Rivera,"Short advisory session, no issues."
+TXN-1022,Wayne Marketing Co,3100.0,Marketing,2026-06-19,,"Rebrand campaign spend, this was a huge hassle to coordinate and the vendor missed two deadlines."
+TXN-1023,Stark Utilities,402.85,Utilities,2026-06-20,J. Rivera,Monthly water bill.
+TXN-1024,Soylent Vendor Group,78.5,Travel,2026-06-21,J. Rivera,Mileage reimbursement.
+TXN-1025,Initrode Vendor,1650.0,,2026-06-22,,"Payment category unclear, no approver, vendor unresponsive to invoice queries."
+TXN-1026,Acme Office Supplies,199.99,Office Supplies,2026-06-23,J. Rivera,"Standard order, nothing unusual."
+TXN-1027,Hooli Cloud Services,1050.0,Software,2026-06-24,,Renewal invoice awaiting manager approval.
+TXN-1028,Massive Dynamic,2200.0,Consulting,2026-06-25,,"Excellent engagement overall, the team was responsive and delivered real value. Approval still pending administratively."
+TXN-1029,Umbrella Logistics,132.0,Travel,2026-06-26,J. Rivera,Client dinner reimbursement.
+TXN-1030,Wayne Marketing Co,1425.0,Marketing,2026-06-27,,"Campaign extension spend, approver not yet assigned."

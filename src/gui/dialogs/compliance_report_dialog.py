@@ -586,10 +586,27 @@ class ComplianceReportDialog(QDialog):
         self.report_progress.setVisible(False)
         layout.addWidget(self.report_progress)
 
-        # Report output
+        # AI-generated content disclaimer — persistent and visible above
+        # the output, not just a one-time warning dialog, since the risk
+        # (an unreviewed AI draft ending up in a real audit workpaper)
+        # applies every time this dialog is used, not just the first.
+        disclaimer = QLabel(
+            "⚠ AI-generated draft. Affected counts/amounts/evidence above are computed from your "
+            "complete dataset, but finding descriptions and recommendations are AI-drafted prose — "
+            "review and edit before relying on this for audit conclusions. Full prompts/responses "
+            "are in AI → AI Activity Log."
+        )
+        disclaimer.setWordWrap(True)
+        disclaimer.setStyleSheet("color: #8a6d3b; background-color: #fcf8e3; border: 1px solid #faebcc; "
+                                  "border-radius: 4px; padding: 6px 10px; font-size: 11px;")
+        layout.addWidget(disclaimer)
+
+        # Report output — editable (not read-only) so a reviewer can
+        # correct or redact AI-drafted text before exporting it; a
+        # read-only box meant whatever the AI produced went straight to
+        # the export button with no way to fix it inline.
         self.report_output = QTextEdit()
-        self.report_output.setPlaceholderText("Generated report will appear here...")
-        self.report_output.setReadOnly(True)
+        self.report_output.setPlaceholderText("Generated report will appear here — you can edit it before exporting.")
         self.report_output.setStyleSheet("""
             QTextEdit {
                 border: 1px solid #d2d0ce;
@@ -712,17 +729,9 @@ Payment Policy Requirements:
 
         async def do_check():
             try:
-                # Get data summary
-                data_summary = {
-                    "rows": len(self.df),
-                    "columns": len(self.df.columns),
-                    "column_names": list(self.df.columns)
-                }
-
                 report = await self.generator.generate_report(
                     policy_text=policy,
-                    data_summary=data_summary,
-                    findings=[]
+                    df=self.df,
                 )
 
                 self.report = report
@@ -730,6 +739,9 @@ Payment Policy Requirements:
                 # Show results
                 results = f"""
 COMPLIANCE ASSESSMENT RESULTS
+(Every count and dollar figure below was computed over all {len(self.df):,} rows of the
+complete dataset, not a sample — see AI Activity Log for the full prompts/responses behind
+the drafted text.)
 
 Overall Compliance Score: {report.overall_compliance_score:.1f}%
 
@@ -744,11 +756,21 @@ Risk Summary:
 Key Findings:
 """
                 for i, finding in enumerate(report.findings[:10], 1):
+                    if not finding.computable:
+                        results += f"""
+{i}. {finding.title} — NOT COMPUTABLE
+   Requirement: {finding.policy_requirement}
+   Reason: {finding.finding}
+   Recommendation: {finding.recommendation}
+"""
+                        continue
                     results += f"""
 {i}. {finding.title} (Severity: {finding.severity.upper()})
    Requirement: {finding.policy_requirement}
    Finding: {finding.finding}
-   Affected: {finding.affected_count} records
+   Affected: {finding.affected_count} of {finding.total_count} records ({finding.affected_pct}%)
+   Dollar Impact: ${finding.affected_amount:,.2f}
+   Evidence (actual matching rows): {', '.join(finding.evidence[:5]) or 'none'}
    Recommendation: {finding.recommendation}
 """
 
@@ -817,15 +839,25 @@ Key Findings:
                 )
 
                 results = f"VIOLATION DETECTION RESULTS\n\n"
-                results += f"Rules Analyzed: {len(policy_rules)}\n"
-                results += f"Violations Found: {len(violations)}\n\n"
+                results += (
+                    f"Rules Analyzed: {len(policy_rules)}  |  "
+                    f"Rows in dataset: {len(self.df):,} (every count below is computed over all of them, not a sample)\n\n"
+                )
 
                 for i, v in enumerate(violations, 1):
+                    if not v.computable:
+                        results += f"""
+{i}. {v.title} — NOT COMPUTABLE
+   Reason: {v.finding}
+   Recommendation: {v.recommendation}
+"""
+                        continue
                     results += f"""
 {i}. {v.title} (Severity: {v.severity.upper()})
    Finding: {v.finding}
-   Evidence: {', '.join(v.evidence[:5])}
-   Affected Count: {v.affected_count}
+   Evidence (actual matching rows): {', '.join(v.evidence[:5]) or 'none'}
+   Affected Count: {v.affected_count} of {v.total_count} ({v.affected_pct}%)
+   Dollar Impact: ${v.affected_amount:,.2f}
    Recommendation: {v.recommendation}
 """
 

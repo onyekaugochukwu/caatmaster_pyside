@@ -23,11 +23,20 @@ class GenericTransformationDialog(QDialog):
         self.initial_params = initial_params or {}
         self.input_widgets = {}
 
-        self.setWindowTitle(f"Parameters for {operation_id}")
+        from core.operation_registry import OPERATION_REGISTRY
+        op_data = OPERATION_REGISTRY.get(operation_id, {})
+
+        self.setWindowTitle(op_data.get('display_name', f"Parameters for {operation_id}"))
         self.setMinimumWidth(400)
 
         self.layout = QVBoxLayout(self)
         self.form_layout = QFormLayout()
+
+        if not param_schema and op_data.get('description'):
+            # No parameters to configure — show what confirming will do
+            desc_label = QLabel(op_data['description'])
+            desc_label.setWordWrap(True)
+            self.layout.addWidget(desc_label)
 
         self.build_form()
 
@@ -105,6 +114,11 @@ class GenericTransformationDialog(QDialog):
                 widget.setPlaceholderText("e.g., item1, item2, item3")
                 if initial_value:
                      widget.setText(", ".join(initial_value))
+            elif param_type == 'list[int]':
+                widget = QLineEdit()  # Comma-separated integers
+                widget.setPlaceholderText(schema.get('placeholder', 'e.g., 0, 1, 5'))
+                if initial_value:
+                    widget.setText(", ".join(str(v) for v in initial_value))
             elif param_type == 'column':
                 if self.dataframe is not None:
                     widget = QComboBox()
@@ -147,7 +161,11 @@ class GenericTransformationDialog(QDialog):
                     widget.setText(str(initial_value))
 
             if widget:
-                self.input_widgets[param_name] = widget
+                # list[column]'s branch above already stored the inner
+                # QListWidget (not this QGroupBox) as the real input widget -
+                # don't clobber that here.
+                if param_name not in self.input_widgets:
+                    self.input_widgets[param_name] = widget
                 self.form_layout.addRow(QLabel(label_text), widget)
 
         # Add output_col field if this operation creates columns and it's in initial_params
@@ -195,6 +213,16 @@ class GenericTransformationDialog(QDialog):
             elif isinstance(widget, QLineEdit):
                 if param_type == 'list[str]' or param_type == 'list[column]':
                     value = [item.strip() for item in widget.text().split(',') if item.strip()]
+                elif param_type == 'list[int]':
+                    value = []
+                    for item in widget.text().split(','):
+                        item = item.strip()
+                        if not item:
+                            continue
+                        try:
+                            value.append(int(item))
+                        except ValueError:
+                            continue  # skip non-numeric tokens rather than crash on bad input
                 else:
                     value = widget.text()
             elif isinstance(widget, QGroupBox):

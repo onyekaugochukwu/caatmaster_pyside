@@ -26,6 +26,12 @@ class RenameColumnsDialog(BaseModal):
         super().__init__("Rename Columns", dataframe, parent)
         self.setMinimumSize(600, 500)
 
+    def _setup_ui(self):
+        # BaseModal.__init__ calls this once to build the dialog's one and
+        # only layout — building it here (rather than after super().__init__()
+        # returns) avoids installing a second QVBoxLayout(self) on top of
+        # one BaseModal already set, which Qt silently ignores and leaves
+        # the dialog showing nothing but the base placeholder label.
         # Create scroll area
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -527,6 +533,12 @@ class ChangeDataTypeDialog(BaseModal):
         super().__init__("Change Data Type", dataframe, parent, selected_column=selected_column)
         self.setMinimumSize(600, 400)
 
+    def _setup_ui(self):
+        # BaseModal.__init__ calls this once to build the dialog's one and
+        # only layout — building it here (rather than after super().__init__()
+        # returns) avoids installing a second QVBoxLayout(self) on top of
+        # one BaseModal already set, which Qt silently ignores and leaves
+        # the dialog showing nothing but the base placeholder label.
         # Create scroll area
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -544,8 +556,8 @@ class ChangeDataTypeDialog(BaseModal):
         # Add buttons at bottom
         self._setup_buttons()
 
-        if selected_column and hasattr(self, 'column_selector'):
-            self.column_selector.set_current_column(selected_column)
+        if self.selected_column and hasattr(self, 'column_selector'):
+            self.column_selector.set_current_column(self.selected_column)
 
     def _setup_ui_content(self):
         layout = QVBoxLayout(self.content_widget)
@@ -702,40 +714,28 @@ class ChangeDataTypeDialog(BaseModal):
 
         type_text = self.type_combo.currentText()
 
-        # Map display text to polars types
-        type_map = {
-            "Int8": pl.Int8,
-            "Int16": pl.Int16,
-            "Int32": pl.Int32,
-            "Int64": pl.Int64,
-            "Float32": pl.Float32,
-            "Float64": pl.Float64,
-            "Utf8": pl.Utf8,
-            "Boolean": pl.Boolean,
+        # Combo items are always "<TypeName>" or "<TypeName> (description)" -
+        # the leading token is exactly the key DataProcessor.change_data_type_extended
+        # expects (e.g. "Float64"). Passing the full display text (including
+        # the "(64-bit float)" part) through as new_dtype fails every single
+        # conversion, since it never matches that method's dtype_map keys.
+        new_dtype = type_text.split()[0]
+        valid_dtypes = {
+            "Int8", "Int16", "Int32", "Int64", "Float32", "Float64",
+            "Utf8", "Boolean", "Date", "Datetime", "Categorical"
         }
-
-        new_dtype = None
-        for key, dtype in type_map.items():
-            if key in type_text:
-                new_dtype = dtype
-                break
-
-        if "Date" in type_text:
-            new_dtype = pl.Date
-        elif "Datetime" in type_text:
-            new_dtype = pl.Datetime
-        elif "Categorical" in type_text:
-            new_dtype = pl.Categorical
-
-        if not new_dtype:
+        if new_dtype not in valid_dtypes:
             QMessageBox.warning(self, "Warning", "Please select a valid data type.")
             return
 
         params = {
             "column": column,
-            "new_dtype": type_text,
+            "new_dtype": new_dtype,
             "format_string": self.format_edit.text() if self.format_widget.isVisible() else "",
-            "coerce_errors": self.coerce_radio.isChecked()
+            # change_data_type_extended takes on_error as "coerce"/"raise",
+            # not a boolean - translate the radio choice here rather than
+            # relying on _map_parameters_to_method to coerce types.
+            "on_error": "coerce" if self.coerce_radio.isChecked() else "raise"
         }
 
         self.current_params = params
@@ -755,25 +755,15 @@ class ChangeDataTypeDialog(BaseModal):
         column = params["column"]
         dtype_str = params["new_dtype"]
 
-        # Map to polars dtype
+        # Exact-match lookup, not substring matching - "Date" is a substring
+        # of "Datetime" so a substring check would misclassify Datetime.
         type_map = {
             "Int8": pl.Int8, "Int16": pl.Int16, "Int32": pl.Int32, "Int64": pl.Int64,
             "Float32": pl.Float32, "Float64": pl.Float64,
             "Utf8": pl.Utf8, "Boolean": pl.Boolean,
+            "Date": pl.Date, "Datetime": pl.Datetime, "Categorical": pl.Categorical,
         }
-
-        new_dtype = None
-        for key, dtype in type_map.items():
-            if key in dtype_str:
-                new_dtype = dtype
-                break
-
-        if "Date" in dtype_str:
-            new_dtype = pl.Date
-        elif "Datetime" in dtype_str:
-            new_dtype = pl.Datetime
-        elif "Categorical" in dtype_str:
-            new_dtype = pl.Categorical
+        new_dtype = type_map.get(dtype_str)
 
         if new_dtype == pl.Date and params.get("format_string"):
             return df.with_columns(

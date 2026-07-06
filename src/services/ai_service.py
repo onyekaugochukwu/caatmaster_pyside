@@ -22,8 +22,85 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import json
 import re
+import ast
 from pathlib import Path
 import os
+
+
+# =============================================================================
+# Sandboxed execution for AI-generated code
+# =============================================================================
+# LLM-generated Polars code (from the Column Generator, etc.) has to run
+# somewhere. A naive exec(code, {"pl": pl}) looks sandboxed but isn't:
+# Python auto-injects the REAL __builtins__ into any globals dict that
+# doesn't define its own "__builtins__" key, so generated code would have
+# had full access to __import__, open, eval, network calls, everything —
+# regardless of how empty the globals dict looked. This restricts builtins
+# to a minimal safe set and rejects imports/dunder-attribute access/dangerous
+# names via an AST walk before anything is executed.
+
+SAFE_BUILTINS = {
+    'len': len, 'range': range, 'str': str, 'int': int, 'float': float,
+    'bool': bool, 'abs': abs, 'min': min, 'max': max, 'sum': sum,
+    'round': round, 'list': list, 'dict': dict, 'tuple': tuple, 'set': set,
+    'True': True, 'False': False, 'None': None, 'enumerate': enumerate,
+    'zip': zip, 'sorted': sorted, 'isinstance': isinstance,
+}
+
+_FORBIDDEN_AST_NODES = (ast.Import, ast.ImportFrom, ast.Global, ast.Nonlocal)
+_FORBIDDEN_NAMES = {
+    'exec', 'eval', 'compile', 'open', '__import__', 'globals', 'locals',
+    'vars', 'getattr', 'setattr', 'delattr', 'input', 'breakpoint',
+    '__builtins__', 'help', 'exit', 'quit',
+}
+
+
+def validate_generated_code(code: str) -> ast.AST:
+    """Parse AI-generated code and reject anything containing imports,
+    global/nonlocal statements, dangerous builtin names, or dunder-attribute
+    access, before it's ever exec()'d. Raises ValueError on anything
+    disallowed."""
+    try:
+        tree = ast.parse(code, mode='exec')
+    except SyntaxError as e:
+        raise ValueError(f"Generated code has a syntax error: {e}")
+
+    for node in ast.walk(tree):
+        if isinstance(node, _FORBIDDEN_AST_NODES):
+            raise ValueError("Generated code may not use imports or global/nonlocal statements.")
+        if isinstance(node, ast.Name) and node.id in _FORBIDDEN_NAMES:
+            raise ValueError(f"Generated code may not reference '{node.id}'.")
+        if isinstance(node, ast.Attribute) and node.attr.startswith('__') and node.attr.endswith('__'):
+            raise ValueError(f"Generated code may not access dunder attribute '{node.attr}'.")
+    return tree
+
+
+def safe_exec_polars_code(code: str, df: pl.DataFrame) -> pl.DataFrame:
+    """Execute AI-generated Polars code against `df` with a restricted
+    builtins set and a pre-execution AST safety check. Shared by both the
+    Column Generator (ai_service.py) and the ai_generate_column
+    transformation operation (data_processor.py) — there is exactly one
+    place this logic lives now, not two copies that can drift apart."""
+    validate_generated_code(code)
+
+    exec_globals = {"pl": pl, "__builtins__": SAFE_BUILTINS}
+    exec_locals = {"df": df}
+
+    lines = code.strip().split("\n")
+    first_line = lines[0] if lines else ""
+    reassigns_df = "=" in first_line and first_line.split("=")[0].strip() in ("df", "_df")
+
+    code_to_exec = code.strip() if reassigns_df else f"_result = ({code.strip()})\n_result"
+
+    exec(code_to_exec, exec_globals, exec_locals)
+
+    result = exec_locals.get("_result")
+    if isinstance(result, pl.DataFrame):
+        return result
+    result_df = exec_locals.get("df")
+    if isinstance(result_df, pl.DataFrame):
+        return result_df
+    return df
 
 
 # =============================================================================
@@ -63,15 +140,22 @@ class ColumnSuggestion:
 
 @dataclass
 class ComplianceFinding:
-    """AI-generated compliance finding"""
+    """AI-drafted description wrapped around a real, deterministically
+    computed result — affected_count/affected_amount/affected_pct/evidence
+    all come from applying the rule's condition to the complete dataset
+    (see ComplianceReportGenerator.compute_rule_violation), never from the
+    AI itself."""
     title: str
-    severity: str  # high, medium, low
+    severity: str  # high, medium, low, or 'info' for zero-match/uncomputable rules
     policy_requirement: str
     finding: str
     evidence: List[str]
     recommendation: str
     affected_count: int = 0
     affected_amount: float = 0.0
+    total_count: int = 0
+    affected_pct: float = 0.0
+    computable: bool = True
 
 
 @dataclass
@@ -894,6 +978,12 @@ class AIManager:
         self.default_provider = "openai"
         self.system_prompt = self._get_default_system_prompt()
         self.usage_tracker: List[Dict] = []
+        # Every real LLM call (prompt, model, response, timestamp) is
+        # appended here AND persisted to disk — for a tool whose whole
+        # purpose is auditability, "what did the AI actually see and say"
+        # needs to be reviewable after the fact, not just trusted.
+        self.audit_log_path = Path.home() / ".config" / "caatmaster" / "ai_audit_log.jsonl"
+        self.audit_log_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _get_default_system_prompt(self) -> str:
         return """You are CaatMaster AI, an intelligent assistant for audit professionals.
@@ -966,8 +1056,51 @@ Never make up data or statistical values - calculate them from provided informat
             "tokens": response.usage,
             "latency_ms": response.latency_ms
         })
+        self._log_audit_entry(task_type, prov, messages, response)
 
         return response
+
+    def _log_audit_entry(self, task_type: str, provider: 'BaseAIProvider', messages: List[Dict[str, str]],
+                          response: Optional['AIResponse'] = None, error: str = None):
+        """Append one real LLM call to the on-disk audit log — every field
+        needed to answer "what did the AI actually see and say" later,
+        whether the call succeeded or failed."""
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "task_type": task_type,
+            "provider": provider.provider_name if provider else None,
+            "model": provider.model if provider else None,
+            "prompt": messages,
+            "response": response.content if response else None,
+            "tokens": response.usage if response else None,
+            "latency_ms": response.latency_ms if response else None,
+            "error": error,
+        }
+        try:
+            with open(self.audit_log_path, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(entry) + "\n")
+            os.chmod(self.audit_log_path, 0o600)
+        except Exception as e:
+            print(f"Warning: could not write AI audit log entry: {e}")
+
+    def get_audit_log(self, limit: int = 200) -> List[Dict]:
+        """Read back the most recent audit log entries (newest last)."""
+        if not self.audit_log_path.exists():
+            return []
+        entries = []
+        try:
+            with open(self.audit_log_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            entries.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+        except Exception as e:
+            print(f"Warning: could not read AI audit log: {e}")
+            return []
+        return entries[-limit:]
 
     async def structured_complete(self, prompt: str,
                                    provider: str = None,
@@ -997,6 +1130,18 @@ Never make up data or statistical values - calculate them from provided informat
 
         response = await prov.complete(messages, temperature=0.1)
 
+        # Track usage — complete() already does this; structured_complete()
+        # calls the provider directly and was missing it, silently under-
+        # counting usage/cost for every feature that uses it (Column
+        # Generator, Dataset Interpreter, Compliance Report Generator).
+        self.usage_tracker.append({
+            "provider": prov.provider_name,
+            "model": prov.model,
+            "timestamp": datetime.now().isoformat(),
+            "tokens": response.usage,
+            "latency_ms": response.latency_ms
+        })
+
         # Parse response
         content = response.content.strip()
 
@@ -1016,22 +1161,117 @@ Never make up data or statistical values - calculate them from provided informat
         return {"content": content}
 
     def get_usage_stats(self) -> Dict:
-        """Get usage statistics"""
+        """Get usage statistics, overall and broken down per provider.
+
+        Reads from the persisted audit log rather than the in-memory
+        usage_tracker list — usage_tracker only reflects calls made by
+        *this* AIManager instance since it was constructed, so a freshly
+        opened dialog (or a new process, e.g. main_window vs. a one-off
+        script) would otherwise show "0 requests" despite a long history
+        of real calls sitting on disk. The audit log is the durable
+        source of truth; this keeps stats consistent with what the
+        Activity Log's table displays."""
+        entries = self.get_audit_log(limit=1_000_000)
+
         total_tokens = sum(
-            t.get("tokens", {}).get("total_tokens", 0)
-            for t in self.usage_tracker
+            (t.get("tokens") or {}).get("total_tokens", 0)
+            for t in entries
         )
-        total_cost = sum(
-            t.get("tokens", {}).get("total_tokens", 0) * 0.00001  # Rough estimate
-            for t in self.usage_tracker
-        )
+        total_cost = total_tokens * 0.00001  # Rough estimate
+
+        by_provider: Dict[str, Dict] = {}
+        for t in entries:
+            prov_name = t.get("provider") or "unknown"
+            bucket = by_provider.setdefault(prov_name, {"requests": 0, "tokens": 0, "estimated_cost": 0.0})
+            bucket["requests"] += 1
+            tokens = (t.get("tokens") or {}).get("total_tokens", 0)
+            bucket["tokens"] += tokens
+            bucket["estimated_cost"] = round(bucket["estimated_cost"] + tokens * 0.00001, 4)
 
         return {
-            "total_requests": len(self.usage_tracker),
+            "total_requests": len(entries),
             "total_tokens": total_tokens,
             "estimated_cost": round(total_cost, 4),
-            "by_provider": {}
+            "by_provider": by_provider
         }
+
+
+# =============================================================================
+# Batched row-level AI transforms
+# =============================================================================
+# The AI menu operations (sentiment, classify, summarize, etc.) run over a
+# whole column of rows. Calling the LLM once per row would be both slow
+# (network round-trip per row) and expensive (redundant system-prompt
+# tokens every call), so instead we batch N rows into one prompt asking for
+# a JSON array of N results, run several batches, and stitch results back
+# together in order. If a batch fails (bad JSON, API error, no provider
+# configured), only that batch's rows fall back to `fallback` — one bad
+# batch doesn't take down the whole column.
+
+def _run_sync(coro):
+    """Run an async coroutine to completion from synchronous code. The
+    transformation pipeline calls these operations synchronously (there's
+    no asyncio event loop already running), so each call gets its own
+    fresh loop — the same pattern main_window.py already uses for
+    thread-pool-driven AI calls."""
+    import asyncio
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+def _extract_json_array(content: str, key: str = "results") -> list:
+    """Pull a JSON array out of an LLM response. Prefers {"results": [...]}
+    (more reliable across providers' JSON modes than asking for a bare
+    top-level array) but falls back to a bare array or single object."""
+    content = content.strip()
+    content = re.sub(r'^```(?:json)?\s*', '', content, flags=re.MULTILINE)
+    content = re.sub(r'\s*```$', '', content)
+    parsed = json.loads(content)
+    if isinstance(parsed, dict) and key in parsed:
+        return parsed[key]
+    if isinstance(parsed, list):
+        return parsed
+    return [parsed]
+
+
+def batched_ai_map(ai_manager: Optional['AIManager'], values: List[Any], build_prompt: Callable[[List[Any]], str],
+                    parse_response: Callable[[list, List[Any]], List[Any]], batch_size: int = 25,
+                    task_type: str = "general", fallback: Any = None) -> List[Any]:
+    """Map `values` through an LLM in batches, returning exactly one result
+    per input value in the same order.
+
+    build_prompt(batch_values) -> a prompt string asking for a JSON array
+        (or {"results": [...]}) of len(batch_values) results, one per input.
+    parse_response(raw_list, batch_values) -> a list of per-row results,
+        same length as batch_values (may raise if the shape is wrong).
+
+    Returns `[fallback] * len(values)` outright if no AI provider is
+    configured — callers are expected to check for this and degrade
+    gracefully (e.g. relabel the operation as unavailable) rather than
+    silently pretending the fallback is a real result.
+    """
+    if not values:
+        return []
+    if ai_manager is None or ai_manager.get_provider() is None:
+        return [fallback] * len(values)
+
+    results = [fallback] * len(values)
+    for start in range(0, len(values), batch_size):
+        batch = values[start:start + batch_size]
+        try:
+            prompt = build_prompt(batch)
+            response = _run_sync(ai_manager.complete(prompt, task_type=task_type, temperature=0.2, force_json=True))
+            raw = _extract_json_array(response.content)
+            parsed = parse_response(raw, batch)
+            for i, val in enumerate(parsed[:len(batch)]):
+                results[start + i] = val
+        except Exception as e:
+            print(f"AI batch failed (rows {start}-{start + len(batch)}): {e}")
+            continue
+    return results
 
 
 # =============================================================================
@@ -1063,40 +1303,125 @@ class DatasetInterpreter:
             "shape": list(df.shape)
         }
 
+    def compute_data_quality_stats(self, df: pl.DataFrame) -> Dict:
+        """Compute real, deterministic data-quality statistics over the
+        FULL dataframe — duplicate row count, per-column null rates, and
+        IQR-based outlier counts for numeric columns — computed here in
+        Python rather than left for the LLM to guess. analyze_dataset()
+        only ever sends the LLM numbers that came out of this function,
+        so "audit_insights" and the quality score are grounded in the
+        complete dataset instead of 5 sample values per column."""
+        total_rows = len(df)
+        total_cells = total_rows * len(df.columns) if total_rows else 0
+
+        duplicate_count = (total_rows - df.unique().height) if total_rows else 0
+
+        column_stats = []
+        total_nulls = 0
+        for col in df.columns:
+            series = df[col]
+            null_count = int(series.null_count())
+            total_nulls += null_count
+            stat = {
+                "name": col,
+                "dtype": str(series.dtype),
+                "null_count": null_count,
+                "null_pct": round(null_count / total_rows * 100, 2) if total_rows else 0,
+                "unique_count": int(series.n_unique()),
+            }
+            if series.dtype.is_numeric() and total_rows > 4:
+                non_null = series.drop_nulls()
+                if len(non_null) > 4:
+                    q1 = non_null.quantile(0.25)
+                    q3 = non_null.quantile(0.75)
+                    if q1 is not None and q3 is not None:
+                        iqr = q3 - q1
+                        lower, upper = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+                        outlier_count = int(non_null.filter((non_null < lower) | (non_null > upper)).len())
+                        std = non_null.std()
+                        stat.update({
+                            "outlier_count": outlier_count,
+                            "outlier_pct": round(outlier_count / len(non_null) * 100, 2),
+                            "min": float(non_null.min()),
+                            "max": float(non_null.max()),
+                            "mean": round(float(non_null.mean()), 4),
+                            "median": round(float(non_null.median()), 4),
+                            "std": round(float(std), 4) if std is not None else None,
+                        })
+            column_stats.append(stat)
+
+        null_rate = (total_nulls / total_cells) if total_cells else 0
+        duplicate_rate = (duplicate_count / total_rows) if total_rows else 0
+        # Deterministic formula, not an LLM guess: penalize null rate more
+        # heavily than duplicate rate, floor at 0.
+        quality_score = max(0, round(100 - (null_rate * 100 * 0.6) - (duplicate_rate * 100 * 0.4), 1))
+
+        return {
+            "row_count": total_rows,
+            "column_count": len(df.columns),
+            "duplicate_row_count": duplicate_count,
+            "duplicate_row_pct": round(duplicate_rate * 100, 2),
+            "total_null_cells": total_nulls,
+            "overall_null_pct": round(null_rate * 100, 2),
+            "quality_score": quality_score,
+            "columns": column_stats,
+        }
+
+    def _format_quality_stats(self, stats: Dict) -> str:
+        lines = [
+            f"Rows: {stats['row_count']}, Columns: {stats['column_count']}",
+            f"Duplicate rows (full-row duplicates): {stats['duplicate_row_count']} ({stats['duplicate_row_pct']}%)",
+            f"Overall null rate: {stats['overall_null_pct']}% ({stats['total_null_cells']} null cells)",
+            f"Computed data quality score: {stats['quality_score']}/100",
+            "",
+            "Per-column statistics:",
+        ]
+        for col in stats["columns"]:
+            line = f"- {col['name']} ({col['dtype']}): nulls={col['null_pct']}%, unique={col['unique_count']}"
+            if "outlier_count" in col:
+                line += (
+                    f", outliers(IQR)={col['outlier_count']} ({col['outlier_pct']}%), "
+                    f"range=[{col['min']}, {col['max']}], mean={col['mean']}, median={col['median']}, std={col['std']}"
+                )
+            lines.append(line)
+        return "\n".join(lines)
+
     async def analyze_dataset(self, df: pl.DataFrame,
                                audit_context: str = "") -> DatasetSummary:
-        """Generate comprehensive dataset analysis"""
+        """Generate a dataset analysis grounded entirely in statistics
+        computed over the full dataset — the LLM is only asked to
+        interpret and prioritize numbers it's given, not to detect
+        outliers/trends/anomalies itself from a handful of samples."""
 
-        schema_info = self.get_schema_info(df)
+        quality_stats = self.compute_data_quality_stats(df)
 
         prompt = f"""
-Analyze this dataset for an audit engagement.
+Interpret these REAL, precomputed statistics from a dataset for an audit engagement.
+Every number below was computed over the COMPLETE dataset (not a sample) — do not invent
+additional statistics, outliers, or findings beyond what is given here. If you reference an
+outlier or data quality issue, it must correspond to a column/number listed below.
 
 Audit Context: {audit_context or "General audit review"}
 
-Dataset Information:
-- Rows: {schema_info['row_count']}
-- Columns: {schema_info['column_count']}
-
-Column Details:
-{self._format_columns(schema_info['columns'])}
+Computed Statistics:
+{self._format_quality_stats(quality_stats)}
 
 Provide your analysis as JSON:
 {{
-    "executive_summary": "2-3 paragraph summary of what this dataset contains",
+    "executive_summary": "2-3 paragraph summary of what this dataset contains and its overall data quality, based only on the statistics given",
     "data_quality": {{
-        "overall_score": 0-100,
-        "null_percentage": overall null rate,
+        "overall_score": {quality_stats['quality_score']},
+        "null_percentage": {quality_stats['overall_null_pct']},
         "issues": [
-            {{"column": "name", "issue": "description", "severity": "high/medium/low"}}
+            {{"column": "name (must be one of the columns listed above)", "issue": "description grounded in that column's actual computed numbers", "severity": "high/medium/low"}}
         ]
     }},
     "key_fields": ["field1", "field2"],
     "audit_insights": [
         {{
-            "type": "outlier/trend/anomaly/pattern",
+            "type": "outlier/duplicate/null_rate/pattern",
             "title": "Brief title",
-            "description": "Detailed description",
+            "description": "Description that cites the specific computed number(s) it is based on",
             "severity": "high/medium/low",
             "recommendation": "Suggested audit action"
         }}
@@ -1104,6 +1429,8 @@ Provide your analysis as JSON:
     "suggested_procedures": ["procedure1", "procedure2"]
 }}
 
+Only include audit_insights that are directly supported by the computed statistics above —
+if there is nothing notable for a given column, don't list an issue for it.
 Only respond with valid JSON.
 """
 
@@ -1113,9 +1440,18 @@ Only respond with valid JSON.
             response_format="json"
         )
 
+        # Force-override the numeric fields with the real computed values
+        # rather than trusting the LLM to have echoed them back correctly —
+        # the prompt asks it to, but nothing guarantees it will, and these
+        # two numbers exist specifically so they don't have to be trusted.
+        data_quality = dict(result.get("data_quality", {}))
+        data_quality["overall_score"] = quality_stats["quality_score"]
+        data_quality["null_percentage"] = quality_stats["overall_null_pct"]
+        data_quality["computed_stats"] = quality_stats
+
         return DatasetSummary(
             executive_summary=result.get("executive_summary", ""),
-            data_quality=result.get("data_quality", {}),
+            data_quality=data_quality,
             key_fields=result.get("key_fields", []),
             audit_insights=result.get("audit_insights", []),
             suggested_procedures=result.get("suggested_procedures", [])
@@ -1197,41 +1533,11 @@ Requirements:
         )
 
     def apply_column(self, df: pl.DataFrame, code: str) -> pl.DataFrame:
-        """Apply generated column code to dataframe"""
+        """Apply generated column code to dataframe — sandboxed via
+        safe_exec_polars_code (see module-level docstring for why the old
+        exec_globals={"pl": pl} approach wasn't actually a sandbox)."""
         try:
-            exec_globals = {"pl": pl}
-
-            # Check if code reassigns df (e.g., "df = df.with_columns(...)")
-            lines = code.strip().split("\n")
-            first_line = lines[0] if lines else ""
-            reassigns_df = "=" in first_line and first_line.split("=")[0].strip() in ("df", "_df")
-
-            if not reassigns_df:
-                # Code doesn't reassign df - wrap it to capture result
-                # The code likely uses df.with_columns(...) pattern
-                # We need to wrap it so the result is captured
-                wrapped = "_result = (" + code.strip() + ")\n_result"
-                code = wrapped
-
-            exec_locals = {"df": df}
-
-            # Execute the code
-            exec(code, exec_globals, exec_locals)
-
-            # Check if we have a captured result
-            if "_result" in exec_locals:
-                result = exec_locals["_result"]
-                if isinstance(result, pl.DataFrame):
-                    return result
-
-            # Check if df was reassigned
-            if "df" in exec_locals:
-                result_df = exec_locals["df"]
-                if isinstance(result_df, pl.DataFrame):
-                    return result_df
-
-            return df
-
+            return safe_exec_polars_code(code, df)
         except Exception as e:
             print(f"Error applying column code: {e}")
             raise
@@ -1251,142 +1557,372 @@ Requirements:
 # =============================================================================
 
 class ComplianceReportGenerator:
-    """AI-powered compliance report generation"""
+    """AI-powered compliance report generation.
+
+    Compliance findings — violation counts, dollar amounts, evidence
+    transaction references — are never something an LLM should be asked
+    to estimate: it has no way to actually know them, and would have to
+    fabricate plausible-looking numbers to answer at all. This class
+    splits that work in two: translate_rules_to_conditions() asks the AI
+    only to express each rule as an executable filter condition (a task
+    it's well-suited for), and compute_rule_violation() then applies that
+    condition to the COMPLETE dataframe in Python to get exact counts,
+    amounts, and real evidence values. Only after those real numbers exist
+    does the AI get asked to draft prose around them.
+    """
 
     def __init__(self, ai_manager: AIManager):
         self.ai = ai_manager
 
-    async def generate_report(self, policy_text: str,
-                              data_summary: Dict,
-                              findings: List[Dict]) -> ComplianceReport:
-        """Generate compliance report from policy and findings"""
+    async def translate_rules_to_conditions(self, df: pl.DataFrame, rules: List[Dict]) -> List[Dict]:
+        """Translate natural-language rules into structured, executable
+        conditions against df's actual columns. The AI's job is limited to
+        picking column/operator/value per rule — it is explicitly not
+        asked to count violations or characterize the data itself.
+
+        Two failure modes surfaced in testing against a real LLM, both
+        fixed here: (1) compound rules ("over $1,000 AND missing an
+        approver") got truncated to just the first criterion because
+        nothing prompted the model to look for more than one; (2) rules
+        that structurally can't be a per-row filter at all — duplicate
+        detection requires comparing a row to every OTHER row, not
+        evaluating one row in isolation — got a fabricated, arbitrary
+        condition instead of being marked not-computable. Duplicate
+        detection now gets its own rule_type, computed for real via
+        Polars' is_duplicated() in compute_rule_violation(), and the
+        prompt now explicitly walks through both failure modes with
+        examples so the model doesn't repeat them."""
+        columns_info = "\n".join(
+            f"- {col}: {df[col].dtype} (sample values: {df[col].drop_nulls().head(3).to_list()})"
+            for col in df.columns
+        )
+        rules_text = "\n".join(
+            f"{i}. {r.get('name', 'Unknown')}: {r.get('description', '')}"
+            for i, r in enumerate(rules)
+        )
+        valid_operators = ("==, !=, >, >=, <, <=, contains, not_contains, starts_with, "
+                            "ends_with, is_null, is_not_null, in_list, between")
 
         prompt = f"""
-You are a senior auditor preparing a compliance assessment report.
+You are translating compliance rules into structured, executable checks against a dataset's
+actual columns. You are NOT being asked to detect violations, count anything, or characterize
+the data — only to express each rule as either (a) a per-row filter condition, or (b) a
+duplicate-record check. The actual count of matching rows will be computed separately in code
+from whatever you specify here, so precision matters more than optimism.
 
-POLICY DOCUMENT:
-{policy_text[:3000]}  # Truncate if too long
+Dataset columns:
+{columns_info}
 
-DATA ANALYZED:
-{json.dumps(data_summary, indent=2)}
+Rules to translate:
+{rules_text}
 
-IDENTIFIED FINDINGS:
-{self._format_findings(findings)}
+RULE TYPE 1 — "condition": a filter that can be evaluated on EACH ROW INDEPENDENTLY, using
+ONLY these operators: {valid_operators}. "between" takes "10,20" (low,high). "in_list" takes
+"A,B,C". Use exact column names as given above.
 
-Provide your analysis as JSON:
+  IMPORTANT — capture EVERY testable criterion in the rule, not just the first one. A rule
+  like "payments over $1,000 must have an approver on file" has TWO criteria: amount > 1000
+  AND approver is_null (the exception condition — what makes it a VIOLATION). Both must appear
+  as separate entries in "conditions", combined with the correct combine_operator. Do not stop
+  after the first criterion just because it was easy to express.
+
+RULE TYPE 2 — "duplicate_check": use this when the rule is fundamentally about a row being
+identical to (or matching key fields of) ANOTHER row — e.g. "no transaction should be recorded
+twice" — which is NOT expressible as rule type 1 (a single row's own values can't tell you
+whether it's a duplicate; that requires comparing it to every other row). Set
+"duplicate_check_columns" to the list of columns that define "duplicate" (e.g. all columns for
+an exact duplicate, or specific columns like ["vendor", "amount", "date"] if the rule implies a
+narrower match), or an empty list to mean "every column".
+
+If a rule genuinely cannot be expressed as EITHER type against these columns (e.g. it needs
+information not present in this dataset, or requires cross-row logic that isn't simple
+duplicate detection — like ranking or aggregation), mark it not computable and explain why.
+Do NOT invent a condition (e.g. picking arbitrary ID values) just to have something to return —
+an honest "not computable" is always better than a fabricated condition.
+
+Return JSON:
 {{
-    "overall_compliance_score": 0-100,
-    "executive_summary": "2-3 paragraph summary",
-    "risk_summary": {{
-        "high_risk_count": 0,
-        "medium_risk_count": 0,
-        "low_risk_count": 0
-    }},
-    "findings": [
+    "rules": [
         {{
-            "title": "Finding title",
-            "severity": "high/medium/low",
-            "policy_requirement": "The relevant policy rule",
-            "finding": "What was identified",
-            "evidence": ["TXN-123", "TXN-456"],
-            "recommendation": "Suggested remediation",
-            "affected_count": 10,
-            "affected_amount": 50000
-        }}
-    ],
-    "compliance_by_rule": [
-        {{
-            "rule_name": "Rule name",
-            "compliant_pct": 95,
-            "exception_pct": 5
+            "rule_index": 0,
+            "rule_type": "condition",
+            "computable": true,
+            "reason_if_not_computable": "",
+            "conditions": [{{"column": "exact_column_name", "operator": "one of the operators above", "value": "..."}}],
+            "combine_operator": "AND",
+            "duplicate_check_columns": null,
+            "amount_column": "a numeric column to sum for a dollar-impact total, or null if none applies",
+            "evidence_column": "an ID/reference-like column to show as evidence, or null to use row position"
         }}
     ]
 }}
-
 Only respond with valid JSON.
 """
+        result = await self.ai.structured_complete(prompt=prompt, task_type="compliance", response_format="json")
+        return result.get("rules", [])
 
-        result = await self.ai.structured_complete(
-            prompt=prompt,
-            task_type="compliance",
-            response_format="json"
+    @staticmethod
+    def _summarize_matched_rows(df: pl.DataFrame, matched: pl.DataFrame, rule_translation: Dict) -> Dict:
+        """Shared tail end of both compute paths: given the full dataframe
+        and the subset of rows that matched (by whatever means), compute
+        the real count/pct/dollar-impact/evidence — identical logic
+        whether the match came from a filter condition or a duplicate
+        check."""
+        affected_count = matched.height
+        total_count = len(df)
+
+        affected_amount = 0.0
+        amount_col = rule_translation.get("amount_column")
+        if amount_col and amount_col in df.columns and df[amount_col].dtype.is_numeric() and affected_count:
+            summed = matched[amount_col].sum()
+            affected_amount = float(summed) if summed is not None else 0.0
+
+        evidence_col = rule_translation.get("evidence_column")
+        if evidence_col and evidence_col in df.columns and affected_count:
+            evidence = [str(v) for v in matched[evidence_col].head(10).to_list()]
+        elif affected_count:
+            idx_col = "_caat_idx" if "_caat_idx" in matched.columns else None
+            if idx_col is None:
+                matched = matched.with_row_index("_caat_idx")
+                idx_col = "_caat_idx"
+            evidence = [f"row {i}" for i in matched[idx_col].head(10).to_list()]
+        else:
+            evidence = []
+
+        return {
+            "computable": True,
+            "affected_count": affected_count,
+            "total_count": total_count,
+            "affected_pct": round(affected_count / total_count * 100, 2) if total_count else 0.0,
+            "affected_amount": affected_amount,
+            "evidence": evidence,
+        }
+
+    def compute_rule_violation(self, df: pl.DataFrame, rule_translation: Dict) -> Dict:
+        """Apply a translated rule to the COMPLETE dataframe and return
+        exact, real numbers — nothing here is estimated, sampled, or asked
+        of an LLM. Dispatches to a filter condition or a real duplicate
+        check depending on rule_type."""
+        empty = {
+            "computable": False, "reason": "Not computable from available columns.",
+            "affected_count": 0, "total_count": len(df), "affected_pct": 0.0,
+            "affected_amount": 0.0, "evidence": [],
+        }
+        if not rule_translation.get("computable", False):
+            empty["reason"] = rule_translation.get("reason_if_not_computable") or empty["reason"]
+            return empty
+
+        if rule_translation.get("rule_type") == "duplicate_check":
+            cols = rule_translation.get("duplicate_check_columns") or list(df.columns)
+            cols = [c for c in cols if c in df.columns]
+            if not cols or len(df) == 0:
+                empty["reason"] = "No valid columns available for duplicate check."
+                return empty
+            dup_flag = df.select(cols).is_duplicated()
+            matched = df.filter(dup_flag)
+            return self._summarize_matched_rows(df, matched, rule_translation)
+
+        from core.data_processor import DataProcessor
+        dp = DataProcessor()
+
+        conditions = rule_translation.get("conditions", [])
+        combine_operator = rule_translation.get("combine_operator", "AND")
+        expr = dp._build_condition_expr(df, conditions, combine_operator) if conditions else None
+        if expr is None:
+            empty["reason"] = "No valid conditions could be built from the translated rule."
+            return empty
+
+        matched = df.filter(expr)
+        return self._summarize_matched_rows(df, matched, rule_translation)
+
+    async def extract_rules_from_policy(self, policy_text: str) -> List[Dict]:
+        """Extract discrete, checkable rules from a free-text policy
+        document. This only identifies WHAT the policy requires — whether
+        each rule is actually violated is determined separately, over the
+        complete dataset, by translate_rules_to_conditions() +
+        compute_rule_violation(). Keeping "what does the policy say" apart
+        from "how many rows violate it" means the second question is never
+        left to the LLM to guess."""
+        prompt = f"""
+Extract a list of discrete, checkable compliance rules from this policy document. Each rule
+should be something that could, in principle, be checked against transaction/record data
+(e.g. a threshold, a required field, an approval condition) — skip requirements that are purely
+procedural/narrative and can't be checked against data rows.
+
+POLICY DOCUMENT:
+{policy_text[:5000]}
+
+Return JSON:
+{{
+    "rules": [
+        {{"name": "Short rule name", "description": "What the policy requires, in one sentence"}}
+    ]
+}}
+Only respond with valid JSON.
+"""
+        result = await self.ai.structured_complete(prompt=prompt, task_type="compliance", response_format="json")
+        return result.get("rules", [])
+
+    async def generate_report(self, policy_text: str, df: pl.DataFrame) -> ComplianceReport:
+        """Generate a compliance report entirely grounded in the complete
+        dataset. Rules are extracted from the policy text, then checked via
+        the same real-computation path as detect_violations() — every
+        finding's affected_count/affected_amount/evidence is computed by
+        applying the rule's condition to the full dataframe, never
+        estimated. overall_compliance_score, risk_summary, and
+        compliance_by_rule are all derived arithmetically from those real
+        findings; only the executive summary prose is drafted by the AI,
+        and only after the real numbers already exist."""
+        rules = await self.extract_rules_from_policy(policy_text)
+        if not rules:
+            return ComplianceReport(
+                overall_compliance_score=100.0,
+                executive_summary=(
+                    "No checkable rules could be extracted from the provided policy document. "
+                    "Try providing more specific, quantifiable requirements (e.g. dollar thresholds, "
+                    "required fields, approval conditions)."
+                ),
+                risk_summary={"high_risk_count": 0, "medium_risk_count": 0, "low_risk_count": 0},
+                findings=[],
+                compliance_by_rule=[],
+            )
+
+        findings = await self.detect_violations(df, rules)
+
+        computable = [f for f in findings if f.computable]
+        overall_compliance_score = (
+            round(100 - sum(f.affected_pct for f in computable) / len(computable), 1)
+            if computable else 100.0
         )
+        risk_summary = {
+            "high_risk_count": sum(1 for f in findings if f.severity == "high"),
+            "medium_risk_count": sum(1 for f in findings if f.severity == "medium"),
+            "low_risk_count": sum(1 for f in findings if f.severity == "low"),
+        }
+        compliance_by_rule = [
+            {
+                "rule_name": f.title,
+                "compliant_pct": round(100 - f.affected_pct, 2) if f.computable else None,
+                "exception_pct": round(f.affected_pct, 2) if f.computable else None,
+            }
+            for f in findings
+        ]
 
-        findings = []
-        for f in result.get("findings", []):
-            findings.append(ComplianceFinding(
-                title=f.get("title", ""),
-                severity=f.get("severity", "medium"),
-                policy_requirement=f.get("policy_requirement", ""),
-                finding=f.get("finding", ""),
-                evidence=f.get("evidence", []),
-                recommendation=f.get("recommendation", ""),
-                affected_count=f.get("affected_count", 0),
-                affected_amount=f.get("affected_amount", 0.0)
-            ))
+        summary_facts = "\n".join(
+            f"- {f.title}: not computable ({f.finding})" if not f.computable
+            else f"- {f.title}: {f.affected_count} of {f.total_count} rows affected "
+                 f"({f.affected_pct}%), ${f.affected_amount:,.2f} dollar impact"
+            for f in findings
+        )
+        summary_prompt = f"""
+Write a 2-3 paragraph executive summary of this compliance assessment for an auditor's report,
+based only on these REAL, precomputed findings. Do not invent additional statistics or findings.
+
+Policy assessed (excerpt): {policy_text[:1000]}
+
+Findings:
+{summary_facts}
+
+Overall compliance score (already computed — state it, do not change it): {overall_compliance_score}/100
+
+Write only the executive summary text (no JSON, no headers).
+"""
+        response = await self.ai.complete(prompt=summary_prompt, task_type="compliance", temperature=0.3)
 
         return ComplianceReport(
-            overall_compliance_score=result.get("overall_compliance_score", 0),
-            executive_summary=result.get("executive_summary", ""),
-            risk_summary=result.get("risk_summary", {}),
+            overall_compliance_score=overall_compliance_score,
+            executive_summary=response.content.strip(),
+            risk_summary=risk_summary,
             findings=findings,
-            compliance_by_rule=result.get("compliance_by_rule", [])
+            compliance_by_rule=compliance_by_rule,
         )
 
     async def detect_violations(self, df: pl.DataFrame,
                                  policy_rules: List[Dict]) -> List[ComplianceFinding]:
-        """Detect potential compliance violations from data"""
+        """Detect compliance violations against policy_rules. Every count,
+        dollar amount, and evidence value comes from applying the rule's
+        translated condition to the COMPLETE dataframe via
+        compute_rule_violation() — never a sample, never an LLM estimate.
+        The AI's only remaining job is drafting a human-readable
+        description/recommendation from those real, already-computed
+        numbers. Rules that turn out not to be computable from this
+        dataset, or that simply have zero matches, are still returned
+        (marked accordingly) rather than silently dropped — so the user
+        can see every rule was actually considered."""
+        translations = await self.translate_rules_to_conditions(df, policy_rules)
+        # translate_rules_to_conditions can return fewer/reordered entries
+        # than requested if the LLM drops one — index by rule_index rather
+        # than assuming positional alignment with policy_rules.
+        by_index = {t.get("rule_index", i): t for i, t in enumerate(translations)}
 
-        # Sample data for analysis
-        sample_size = min(100, len(df))
-        sample_data = df.sample(sample_size).to_dicts()
+        computed = []
+        for i, rule in enumerate(policy_rules):
+            translation = by_index.get(i, {"computable": False, "reason_if_not_computable": "AI did not return a translation for this rule."})
+            result = self.compute_rule_violation(df, translation)
+            computed.append({"rule": rule, "result": result})
 
-        rules_context = "\n".join([
-            f"- {rule.get('name', 'Unknown')}: {rule.get('description', '')}\n  Condition: {rule.get('condition', '')}"
-            for rule in policy_rules
-        ])
+        facts_lines = []
+        for i, c in enumerate(computed):
+            r = c["result"]
+            if r["computable"]:
+                facts_lines.append(
+                    f"Rule {i}: {c['rule'].get('name', 'Unknown')} — {c['rule'].get('description', '')}\n"
+                    f"  Computable: Yes. {r['affected_count']} of {r['total_count']} rows "
+                    f"({r['affected_pct']}%) match. Dollar impact: {r['affected_amount']}. "
+                    f"Example evidence: {', '.join(r['evidence'][:5]) or 'none'}."
+                )
+            else:
+                facts_lines.append(
+                    f"Rule {i}: {c['rule'].get('name', 'Unknown')} — {c['rule'].get('description', '')}\n"
+                    f"  Computable: No. Reason: {r['reason']}"
+                )
 
         prompt = f"""
-You are analyzing transaction data for compliance with these rules:
+You are drafting compliance finding descriptions for an auditor. Below are REAL, precomputed
+results for each rule — every count and dollar figure was already computed from the complete
+dataset. Do not invent additional statistics, evidence, or counts beyond what is stated here.
+If a rule was not computable, or had zero matches, say so plainly rather than guessing at a
+violation.
 
-{rules_context}
+{chr(10).join(facts_lines)}
 
-Sample Data ({sample_size} records):
-{json.dumps(sample_data[:10], indent=2)}  # First 10 records for context
-
-Identify potential compliance violations. Respond as JSON:
+Return JSON:
 {{
-    "violations": [
+    "findings": [
         {{
-            "rule_name": "Rule name",
-            "finding": "Description of violation",
-            "severity": "high/medium/low",
-            "evidence": ["example transaction IDs"],
-            "affected_count": estimated_count,
-            "recommendation": "Suggested action"
+            "rule_index": 0,
+            "title": "Short finding title",
+            "finding": "1-2 sentence description using only the numbers given above",
+            "severity": "high/medium/low based on affected_pct and dollar impact magnitude, or 'info' if zero matches or not computable",
+            "recommendation": "Suggested remediation action, or how to make the rule computable if it wasn't"
         }}
     ]
 }}
-
 Only respond with valid JSON.
 """
-
-        result = await self.ai.structured_complete(
-            prompt=prompt,
-            task_type="compliance",
-            response_format="json"
-        )
+        result = await self.ai.structured_complete(prompt=prompt, task_type="compliance", response_format="json")
+        drafted = {f.get("rule_index"): f for f in result.get("findings", [])}
 
         violations = []
-        for v in result.get("violations", []):
+        for i, c in enumerate(computed):
+            r = c["result"]
+            draft = drafted.get(i, {})
+            default_severity = "info" if (not r["computable"] or r["affected_count"] == 0) else "medium"
             violations.append(ComplianceFinding(
-                title=v.get("rule_name", ""),
-                severity=v.get("severity", "medium"),
-                policy_requirement="",  # Will be filled from rules
-                finding=v.get("finding", ""),
-                evidence=v.get("evidence", []),
-                recommendation=v.get("recommendation", ""),
-                affected_count=v.get("affected_count", 0)
+                title=draft.get("title", c["rule"].get("name", "Unknown")),
+                severity=draft.get("severity", default_severity),
+                policy_requirement=c["rule"].get("description", ""),
+                finding=draft.get("finding") or (
+                    r["reason"] if not r["computable"]
+                    else f"{r['affected_count']} of {r['total_count']} rows ({r['affected_pct']}%) match this rule."
+                ),
+                evidence=r["evidence"],
+                recommendation=draft.get("recommendation", ""),
+                affected_count=r["affected_count"],
+                affected_amount=r["affected_amount"],
+                total_count=r.get("total_count", 0),
+                affected_pct=r.get("affected_pct", 0.0),
+                computable=r["computable"],
             ))
 
         return violations

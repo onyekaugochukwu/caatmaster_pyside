@@ -71,9 +71,15 @@ class FilterConditionWidget(QWidget):
 
     removed = Signal()
 
-    def __init__(self, columns: List[str], parent=None):
+    def __init__(self, columns: List[str], parent=None, dataframe: pl.DataFrame = None):
         super().__init__(parent)
         self.columns = columns
+        # Stored directly rather than looked up via self.parent(): once this
+        # widget is added to a layout, Qt reparents it to that layout's own
+        # widget (e.g. a scroll area's content widget) — self.parent() then
+        # silently stops being the owning dialog, which used to make every
+        # column-switch after the first fall back to text-only operators.
+        self._dataframe = dataframe
         self._setup_ui()
 
     def _setup_ui(self):
@@ -119,12 +125,16 @@ class FilterConditionWidget(QWidget):
 
     def _on_column_changed(self, column_name: str):
         """Update operators based on column type"""
-        # Get column type from parent dataframe
-        df = getattr(self.parent(), 'dataframe', None)
+        df = self._dataframe
         col_type = "text"
         if df is not None and column_name in df.columns:
             dtype = df[column_name].dtype
-            if dtype in [pl.Float64, pl.Float32, pl.Int64, pl.Int32, pl.Int16, pl.Int8]:
+            # is_numeric() covers every numeric dtype polars has (signed AND
+            # unsigned ints of every width, floats, decimal) — an explicit
+            # list here previously missed UInt8/16/32/64, so any column of
+            # that type (e.g. this app's own add_index_column, or a
+            # row/group count) silently lost the >/</>=/<= operators.
+            if dtype.is_numeric():
                 col_type = "number"
             elif dtype in [pl.Date, pl.Datetime]:
                 col_type = "date"
@@ -285,7 +295,7 @@ class FilterDialog(BaseModal):
 
     def _add_condition(self):
         """Add a new filter condition"""
-        widget = FilterConditionWidget(self.original_df.columns, self)
+        widget = FilterConditionWidget(self.original_df.columns, self, dataframe=self.original_df)
         widget.removed.connect(lambda: self._remove_condition(widget))
         self.conditions_layout.addWidget(widget)
         self.conditions.append(widget)
@@ -327,7 +337,14 @@ class FilterDialog(BaseModal):
         return True
 
     def preview(self):
-        """Generate preview of filtered data"""
+        """Generate preview of filtered data — delegates to the same
+        DataProcessor._build_condition_expr the real filter_advanced/
+        audit_flag_rows operations use, instead of maintaining a second,
+        separately-buggy copy of the same condition-to-expression logic
+        (this one used to fall back to comparing a raw, uncoerced string
+        against numeric columns whenever float(val) failed, e.g. while a
+        value field was still empty — "cannot compare string with numeric
+        type")."""
         try:
             params = self.get_parameters()
             conditions = params["conditions"]
@@ -338,61 +355,9 @@ class FilterDialog(BaseModal):
                 self.row_info.setText(f"Showing all {len(self.original_df):,} rows")
                 return
 
-            # Build filter
-            filtered_df = self.original_df.clone()
-
-            for cond in conditions:
-                col = cond["column"]
-                op = cond["operator"]
-                val = cond["value"]
-
-                if op == "is_null":
-                    filtered_df = filtered_df.filter(pl.col(col).is_null())
-                elif op == "is_not_null":
-                    filtered_df = filtered_df.filter(pl.col(col).is_not_null())
-                elif op == "contains":
-                    filtered_df = filtered_df.filter(pl.col(col).str.contains(val))
-                elif op == "not_contains":
-                    filtered_df = filtered_df.filter(~pl.col(col).str.contains(val))
-                elif op == "starts_with":
-                    filtered_df = filtered_df.filter(pl.col(col).str.starts_with(val))
-                elif op == "ends_with":
-                    filtered_df = filtered_df.filter(pl.col(col).str.ends_with(val))
-                elif op == "in_list":
-                    values = [v.strip() for v in val.split(",")]
-                    filtered_df = filtered_df.filter(pl.col(col).is_in(values))
-                elif op == "between":
-                    parts = val.split(",")
-                    if len(parts) == 2:
-                        try:
-                            low, high = float(parts[0].strip()), float(parts[1].strip())
-                            filtered_df = filtered_df.filter(
-                                (pl.col(col) >= low) & (pl.col(col) <= high)
-                            )
-                        except ValueError:
-                            pass
-                else:
-                    # Try numeric comparison
-                    try:
-                        num_val = float(val)
-                        if op == "==":
-                            filtered_df = filtered_df.filter(pl.col(col) == num_val)
-                        elif op == "!=":
-                            filtered_df = filtered_df.filter(pl.col(col) != num_val)
-                        elif op == ">":
-                            filtered_df = filtered_df.filter(pl.col(col) > num_val)
-                        elif op == ">=":
-                            filtered_df = filtered_df.filter(pl.col(col) >= num_val)
-                        elif op == "<":
-                            filtered_df = filtered_df.filter(pl.col(col) < num_val)
-                        elif op == "<=":
-                            filtered_df = filtered_df.filter(pl.col(col) <= num_val)
-                    except ValueError:
-                        # Text comparison
-                        if op == "==":
-                            filtered_df = filtered_df.filter(pl.col(col) == val)
-                        elif op == "!=":
-                            filtered_df = filtered_df.filter(pl.col(col) != val)
+            from core.data_processor import DataProcessor
+            combined = DataProcessor()._build_condition_expr(self.original_df, conditions, combine_op)
+            filtered_df = self.original_df.filter(combined) if combined is not None else self.original_df
 
             self.preview_table.load_dataframe(filtered_df)
 
@@ -407,81 +372,6 @@ class FilterDialog(BaseModal):
         except Exception as e:
             QMessageBox.warning(self, "Preview Error",
                               f"Could not generate preview:\n{str(e)}")
-
-    def get_filter_result(self) -> pl.DataFrame:
-        """Get the filtered result after dialog is accepted"""
-        try:
-            params = self.get_parameters()
-            conditions = params["conditions"]
-            combine_op = params["combine_operator"]
-
-            if not conditions:
-                return self.original_df.clone()
-
-            # Build filter expressions
-            filters = []
-            for cond in conditions:
-                col = cond["column"]
-                op = cond["operator"]
-                val = cond["value"]
-
-                if op == "is_null":
-                    filters.append(pl.col(col).is_null())
-                elif op == "is_not_null":
-                    filters.append(pl.col(col).is_not_null())
-                elif op == "contains":
-                    filters.append(pl.col(col).str.contains(val))
-                elif op == "not_contains":
-                    filters.append(~pl.col(col).str.contains(val))
-                elif op == "starts_with":
-                    filters.append(pl.col(col).str.starts_with(val))
-                elif op == "ends_with":
-                    filters.append(pl.col(col).str.ends_with(val))
-                elif op == "in_list":
-                    values = [v.strip() for v in val.split(",")]
-                    filters.append(pl.col(col).is_in(values))
-                elif op == "between":
-                    parts = val.split(",")
-                    if len(parts) == 2:
-                        try:
-                            low, high = float(parts[0].strip()), float(parts[1].strip())
-                            filters.append(
-                                (pl.col(col) >= low) & (pl.col(col) <= high)
-                            )
-                        except ValueError:
-                            pass
-                else:
-                    try:
-                        num_val = float(val)
-                        if op == "==":
-                            filters.append(pl.col(col) == num_val)
-                        elif op == "!=":
-                            filters.append(pl.col(col) != num_val)
-                        elif op == ">":
-                            filters.append(pl.col(col) > num_val)
-                        elif op == ">=":
-                            filters.append(pl.col(col) >= num_val)
-                        elif op == "<":
-                            filters.append(pl.col(col) < num_val)
-                        elif op == "<=":
-                            filters.append(pl.col(col) <= num_val)
-                    except ValueError:
-                        if op == "==":
-                            filters.append(pl.col(col) == val)
-                        elif op == "!=":
-                            filters.append(pl.col(col) != val)
-
-            # Apply filters
-            if combine_op == "AND":
-                combined_filter = filters[0]
-                for f in filters[1:]:
-                    combined_filter = combined_filter & f
-                return self.original_df.filter(combined_filter)
-            else:  # OR
-                combined_filter = filters[0]
-                for f in filters[1:]:
-                    combined_filter = combined_filter | f
-                return self.original_df.filter(combined_filter)
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to apply filter:\n{str(e)}")

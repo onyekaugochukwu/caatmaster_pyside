@@ -21,7 +21,6 @@ class PromoteRowHeaderDialog(BaseModal):
     def __init__(self, dataframe: pl.DataFrame, parent=None):
         super().__init__("Use First Row as Headers", dataframe, parent)
         self.resize(1000, 700)
-        self._setup_ui()
 
     def _setup_ui(self):
         """Setup the UI components"""

@@ -280,6 +280,8 @@ class DataProcessor:
         # Replace values operation
         elif operation_id == 'replace_values':
             return self._call_mapped_method(self.replace_values, df, params)
+        elif operation_id == 'standardize_missing_values':
+            return self._call_mapped_method(self.standardize_missing_values, df, params)
 
         # Math transformations
         elif operation_id == 'math_round':
@@ -408,21 +410,22 @@ class DataProcessor:
         elif operation_id == 'audit_benford_law':
             return self._call_mapped_method(self.audit_benford_law, df, params)
 
-        # AI transformations
+        # AI transformations — ai_manager is threaded through so these can
+        # make real LLM calls (see services.ai_service.batched_ai_map).
         elif operation_id == 'ai_explain':
-            return self._call_mapped_method(self.ai_explain_column, df, params)
+            return self._call_mapped_method(self.ai_explain_column, df, params, ai_manager=params.get('_ai_manager'))
         elif operation_id == 'ai_sentiment':
-            return self._call_mapped_method(self.ai_sentiment_analysis, df, params)
+            return self._call_mapped_method(self.ai_sentiment_analysis, df, params, ai_manager=params.get('_ai_manager'))
         elif operation_id == 'ai_extract':
-            return self._call_mapped_method(self.ai_entity_extraction, df, params)
+            return self._call_mapped_method(self.ai_entity_extraction, df, params, ai_manager=params.get('_ai_manager'))
         elif operation_id == 'ai_pattern_learn':
-            return self._call_mapped_method(self.ai_pattern_learning, df, params)
+            return self._call_mapped_method(self.ai_pattern_learning, df, params, ai_manager=params.get('_ai_manager'))
         elif operation_id == 'ai_classify':
-            return self._call_mapped_method(self.ai_classify, df, params)
+            return self._call_mapped_method(self.ai_classify, df, params, ai_manager=params.get('_ai_manager'))
         elif operation_id == 'ai_summarize':
-            return self._call_mapped_method(self.ai_summarize, df, params)
+            return self._call_mapped_method(self.ai_summarize, df, params, ai_manager=params.get('_ai_manager'))
         elif operation_id == 'ai_enrich':
-            return self._call_mapped_method(self.ai_enrich, df, params)
+            return self._call_mapped_method(self.ai_enrich, df, params, ai_manager=params.get('_ai_manager'))
         elif operation_id == 'ai_generate_column':
             return self._call_mapped_method(self.ai_generate_column, df, params)
 
@@ -501,6 +504,8 @@ class DataProcessor:
         # New column/table operations
         elif operation_id == 'split_columns_by_delimiter':
             return self._call_mapped_method(self.split_columns_by_delimiter, df, params)
+        elif operation_id == 'split_into_rows':
+            return self._call_mapped_method(self.split_into_rows, df, params)
         elif operation_id == 'custom_column_from_math':
             return self._call_mapped_method(self.custom_column_from_math, df, params)
         elif operation_id == 'calculated_columns':
@@ -519,6 +524,8 @@ class DataProcessor:
             return self._call_mapped_method(self.transpose_table, df, params)
         elif operation_id == 'promote_row_header':
             return self.promote_row_as_header(df, params.get('row_index', 0))
+        elif operation_id == 'demote_header_to_row':
+            return self.demote_header_to_row(df)
         elif operation_id == 'remove_rows':
             return self.remove_rows(df, params.get('row_indices', []), params.get('remove', True))
         elif operation_id == 'filter_rows':
@@ -1186,45 +1193,144 @@ class DataProcessor:
     # AI TRANSFORMATION IMPLEMENTATIONS
     # ============================================================================
 
-    def ai_explain_column(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
-        """AI explanation - placeholder"""
-        return df.with_columns(
-            pl.lit(f"AI analysis of {column}").alias(output_col)
+    @staticmethod
+    def _require_ai_manager(ai_manager, feature_name: str):
+        if ai_manager is None or ai_manager.get_provider() is None:
+            raise ValueError(
+                f"No AI provider configured. Please configure one in AI Settings before using {feature_name}."
+            )
+
+    def ai_explain_column(self, df: pl.DataFrame, column: str, output_col: str,
+                          style: str = "concise", ai_manager=None, **kwargs) -> pl.DataFrame:
+        """AI-generated plain-English explanation of what each value in
+        `column` likely represents, in an audit context. Used to return the
+        literal static string f"AI analysis of {column}" regardless of the
+        data — not analysis at all. Now makes real batched LLM calls."""
+        from services.ai_service import batched_ai_map
+        self._require_ai_manager(ai_manager, "AI Explain")
+
+        detail = "one sentence" if style == "concise" else "two to three sentences, with specific reasoning"
+        values = df[column].to_list()
+
+        def build_prompt(batch):
+            items = "\n".join(f"{i}. {v}" for i, v in enumerate(batch))
+            return (
+                f"You are helping an auditor understand a dataset column named '{column}'.\n"
+                f"For each of the {len(batch)} values below, write a {detail} plain-English "
+                f"explanation of what it likely represents or indicates, in an audit context.\n\n{items}\n\n"
+                f'Return JSON: {{"results": ["explanation for item 0", "explanation for item 1", ...]}} '
+                f"— exactly {len(batch)} strings, same order as the input."
+            )
+
+        def parse_response(raw, batch):
+            return [str(x) for x in raw]
+
+        results = batched_ai_map(ai_manager, values, build_prompt, parse_response,
+                                  task_type="column_generation", fallback="[AI explanation unavailable for this batch]")
+        return df.with_columns(pl.Series(name=output_col, values=results))
+
+    def ai_sentiment_analysis(self, df: pl.DataFrame, column: str, output_col: str = None,
+                              output_cols: Optional[List[str]] = None, ai_manager=None, **kwargs) -> pl.DataFrame:
+        """Real LLM-based sentiment scoring (-1.0 very negative to 1.0 very
+        positive), plus a derived Positive/Negative/Neutral label. Used to
+        count matches against a 7-word positive / 7-word negative keyword
+        list — real text (sarcasm, negation, domain vocabulary like audit
+        findings) defeats that trivially.
+
+        The registry declares two output columns ({column}_sentiment_score
+        and {column}_sentiment_label), so the pipeline's auto-naming passes
+        output_cols=[score_name, label_name]; output_col alone is accepted
+        too for direct/manual calls."""
+        from services.ai_service import batched_ai_map
+        self._require_ai_manager(ai_manager, "AI Sentiment")
+
+        if output_cols and len(output_cols) >= 2:
+            score_col, label_col = output_cols[0], output_cols[1]
+        else:
+            score_col = output_col or f"{column}_sentiment_score"
+            label_col = f"{score_col}_label"
+
+        values = df[column].to_list()
+
+        def build_prompt(batch):
+            items = "\n".join(f"{i}. {v}" for i, v in enumerate(batch))
+            return (
+                f"Analyze the sentiment of each of the {len(batch)} texts below, on a scale from "
+                f"-1.0 (very negative) to 1.0 (very positive), 0.0 being neutral.\n\n{items}\n\n"
+                f'Return JSON: {{"results": [-0.2, 0.8, ...]}} — exactly {len(batch)} numbers, same order.'
+            )
+
+        def parse_response(raw, batch):
+            return [float(x) for x in raw]
+
+        scores = batched_ai_map(ai_manager, values, build_prompt, parse_response, fallback=0.0)
+        labels = ["Positive" if s > 0.15 else "Negative" if s < -0.15 else "Neutral" for s in scores]
+        return df.with_columns([
+            pl.Series(name=score_col, values=scores, dtype=pl.Float64),
+            pl.Series(name=label_col, values=labels),
+        ])
+
+    def ai_entity_extraction(self, df: pl.DataFrame, column: str, output_col: str,
+                             entity_type: str = 'email', ai_manager=None, **kwargs) -> pl.DataFrame:
+        """Real LLM-based entity extraction. Used to be plain regex — fine
+        for well-formed data, but real audit text is messy ("call me at
+        555.123.4567 x2", "paid $1,200 CAD on the 3rd") in ways a fixed
+        pattern misses and an LLM handles natively."""
+        from services.ai_service import batched_ai_map
+        self._require_ai_manager(ai_manager, "AI Extract")
+
+        entity_label = {
+            'email': 'email addresses', 'phone': 'phone numbers',
+            'date': 'dates', 'money': 'monetary amounts'
+        }.get(entity_type, entity_type)
+        values = df[column].to_list()
+
+        def build_prompt(batch):
+            items = "\n".join(f"{i}. {v}" for i, v in enumerate(batch))
+            return (
+                f"Extract all {entity_label} mentioned in each of the {len(batch)} texts below. "
+                f"If a text has multiple matches, join them with ', '. If none, use an empty string.\n\n{items}\n\n"
+                f'Return JSON: {{"results": ["match1, match2", "", ...]}} — exactly {len(batch)} strings, same order.'
+            )
+
+        def parse_response(raw, batch):
+            return [str(x) for x in raw]
+
+        results = batched_ai_map(ai_manager, values, build_prompt, parse_response, fallback="")
+        return df.with_columns(pl.Series(name=output_col, values=results))
+
+    def ai_pattern_learning(self, df: pl.DataFrame, column: str, output_col: str,
+                            pattern: str = None, ai_manager=None, **kwargs) -> pl.DataFrame:
+        """AI-powered Flash Fill: derive a new value from each row of
+        `column` per a described pattern/instruction (e.g. "extract just
+        the last name", "convert to YYYY-MM-DD", "keep only the numeric
+        part"). Used to literally copy the source column unchanged — a
+        100% no-op with no data-derived behavior at all."""
+        from services.ai_service import batched_ai_map
+        self._require_ai_manager(ai_manager, "AI Pattern Learning")
+
+        instruction = pattern or (
+            "Infer the most likely useful derived/cleaned-up version of each value "
+            "(e.g. normalize formatting, extract the most meaningful part) based on "
+            "the patterns visible across the values as a whole."
         )
+        values = df[column].to_list()
 
-    def ai_sentiment_analysis(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
-        """Sentiment analysis - simplified"""
-        positive_words = ['good', 'great', 'excellent', 'amazing', 'love', 'best', 'happy']
-        negative_words = ['bad', 'poor', 'terrible', 'awful', 'hate', 'worst', 'sad']
+        def build_prompt(batch):
+            items = "\n".join(f"{i}. {v}" for i, v in enumerate(batch))
+            return (
+                f"Apply this transformation instruction to each of the {len(batch)} values below: "
+                f'"{instruction}"\n\n{items}\n\n'
+                f'Return JSON: {{"results": ["transformed value 0", "transformed value 1", ...]}} '
+                f"— exactly {len(batch)} strings, same order as the input."
+            )
 
-        def simple_sentiment(text):
-            if text is None:
-                return 0.0
-            text_lower = str(text).lower()
-            pos_count = sum(1 for w in positive_words if w in text_lower)
-            neg_count = sum(1 for w in negative_words if w in text_lower)
-            return (pos_count - neg_count) / max(pos_count + neg_count, 1)
+        def parse_response(raw, batch):
+            return [str(x) for x in raw]
 
-        return df.with_columns(
-            pl.col(column).map_elements(simple_sentiment, return_dtype=pl.Float64).alias(output_col)
-        )
-
-    def ai_entity_extraction(self, df: pl.DataFrame, column: str, output_col: str, entity_type: str = 'email') -> pl.DataFrame:
-        """Entity extraction - placeholder"""
-        patterns = {
-            'email': r'[\w\.-]+@[\w\.-]+',
-            'phone': r'\d{3}-\d{3}-\d{4}|\d{10}',
-            'date': r'\d{1,2}/\d{1,2}/\d{2,4}|\d{4}-\d{2}-\d{2}',
-            'money': r'\$[\d,]+(?:\.\d{2})?|[\d,]+(?:\.\d{2})?\s*(?:USD|EUR|GBP)'
-        }
-        pattern = patterns.get(entity_type, r'.+')
-        return df.with_columns(
-            pl.col(column).str.extract_all(pattern).list.join(", ").alias(output_col)
-        )
-
-    def ai_pattern_learning(self, df: pl.DataFrame, column: str, output_col: str, pattern: str = None) -> pl.DataFrame:
-        """Pattern learning (flash fill) - placeholder"""
-        return df.with_columns(pl.col(column).alias(output_col))
+        results = batched_ai_map(ai_manager, values, build_prompt, parse_response,
+                                  task_type="column_generation", fallback=None)
+        return df.with_columns(pl.Series(name=output_col, values=results))
 
     # ============================================================================
     # ML CLASSIFICATION & PREDICTION IMPLEMENTATIONS
@@ -1350,108 +1456,103 @@ class DataProcessor:
     # ============================================================================
 
     def ai_classify(self, df: pl.DataFrame, column: str, categories: List[str], output_col: str,
-                   confidence_col: str, **kwargs) -> pl.DataFrame:
-        """AI Text Classification - simplified keyword-based"""
-        def classify_text(text):
-            if text is None:
-                return "Unknown", 0.0
-            text_lower = str(text).lower()
-            best_category = categories[0] if categories else "Unclassified"
-            best_score = 0.0
+                   confidence_col: str, ai_manager=None, **kwargs) -> pl.DataFrame:
+        """Real LLM-based text classification with a confidence score. Used
+        to be keyword-substring matching against the category names
+        themselves — meaning it could only ever "classify" text that
+        literally contained the category word."""
+        from services.ai_service import batched_ai_map
+        self._require_ai_manager(ai_manager, "AI Text Classification")
 
-            for cat in categories:
-                cat_lower = cat.lower()
-                if cat_lower in text_lower:
-                    return cat, 0.9
-                # Partial match score
-                words = cat_lower.split()
-                match_count = sum(1 for w in words if w in text_lower)
-                score = match_count / len(words) if words else 0
-                if score > best_score:
-                    best_score = score
-                    best_category = cat
+        cats = categories or ["Unclassified"]
+        values = df[column].to_list()
 
-            return best_category, best_score
+        def build_prompt(batch):
+            items = "\n".join(f"{i}. {v}" for i, v in enumerate(batch))
+            cat_list = ", ".join(f'"{c}"' for c in cats)
+            return (
+                f"Classify each of the {len(batch)} texts below into exactly one of these categories: "
+                f"{cat_list}.\n\n{items}\n\n"
+                f'Return JSON: {{"results": [{{"category": "...", "confidence": 0.0-1.0}}, ...]}} '
+                f"— exactly {len(batch)} objects, same order as the input, category must be one of the given options."
+            )
 
-        results = [classify_text(v) for v in df[column]]
+        def parse_response(raw, batch):
+            return [(str(r.get("category", cats[0])), float(r.get("confidence", 0.5))) for r in raw]
+
+        results = batched_ai_map(ai_manager, values, build_prompt, parse_response, fallback=(cats[0], 0.0))
         return df.with_columns([
             pl.Series(name=output_col, values=[r[0] for r in results]),
-            pl.Series(name=confidence_col, values=[r[1] for r in results])
+            pl.Series(name=confidence_col, values=[r[1] for r in results], dtype=pl.Float64)
         ])
 
-    def ai_summarize(self, df: pl.DataFrame, column: str, max_length: int, output_col: str) -> pl.DataFrame:
-        """AI Summarize - simplified extraction"""
-        def summarize(text):
-            if text is None:
-                return ""
-            text = str(text)
-            # Simple truncation with ellipsis
-            if len(text) > max_length:
-                return text[:max_length - 3] + "..."
-            return text
+    def ai_summarize(self, df: pl.DataFrame, column: str, max_length: int, output_col: str,
+                     ai_manager=None, **kwargs) -> pl.DataFrame:
+        """Real LLM summarization. Used to just truncate the text and add
+        "..." — truncation is not summarization, it discards whatever was
+        past the cutoff instead of condensing the whole thing."""
+        from services.ai_service import batched_ai_map
+        self._require_ai_manager(ai_manager, "AI Summarize")
 
-        return df.with_columns(
-            pl.col(column).map_elements(summarize, return_dtype=pl.Utf8).alias(output_col)
-        )
+        values = df[column].to_list()
 
-    def ai_enrich(self, df: pl.DataFrame, column: str, enrichment_type: str, output_col: str) -> pl.DataFrame:
-        """AI Enrich - simplified enrichment based on type"""
-        def enrich(value):
-            if value is None:
-                return ""
-            value = str(value)
-            if enrichment_type == "industry":
-                # Simple heuristic classification
-                keywords = {"tech": "Technology", "health": "Healthcare", "finance": "Financial",
-                           "retail": "Retail", "manufacturing": "Manufacturing"}
-                for kw, ind in keywords.items():
-                    if kw in value.lower():
-                        return ind
-                return "Other"
-            elif enrichment_type == "sentiment":
-                return "Neutral"
-            elif enrichment_type == "category":
-                return value.split()[0] if value else "Unknown"
-            else:
-                return value
+        def build_prompt(batch):
+            items = "\n".join(f"{i}. {v}" for i, v in enumerate(batch))
+            return (
+                f"Summarize each of the {len(batch)} texts below in no more than {max_length} characters each. "
+                f"Preserve the most important facts/figures.\n\n{items}\n\n"
+                f'Return JSON: {{"results": ["summary 0", "summary 1", ...]}} — exactly {len(batch)} strings, same order.'
+            )
 
-        return df.with_columns(
-            pl.col(column).map_elements(enrich, return_dtype=pl.Utf8).alias(output_col)
-        )
+        def parse_response(raw, batch):
+            return [str(x)[:max_length] for x in raw]
+
+        results = batched_ai_map(ai_manager, values, build_prompt, parse_response,
+                                  task_type="column_generation", fallback="")
+        return df.with_columns(pl.Series(name=output_col, values=results))
+
+    def ai_enrich(self, df: pl.DataFrame, column: str, enrichment_type: str, output_col: str,
+                 ai_manager=None, **kwargs) -> pl.DataFrame:
+        """Real LLM-based enrichment. Used to be a 5-keyword industry
+        lookup table, a hardcoded "Neutral" for sentiment (never actually
+        computed), and a first-word split for category — none of which
+        looked at the value's actual meaning."""
+        from services.ai_service import batched_ai_map
+        self._require_ai_manager(ai_manager, "AI Enrich")
+
+        instructions = {
+            "industry": "Identify the most likely industry this value relates to (e.g. Technology, Healthcare, Financial, Retail, Manufacturing, Other).",
+            "sentiment": "Classify the sentiment as exactly one of: Positive, Negative, Neutral.",
+            "category": "Assign the single most fitting short category label for this value.",
+            "entity": "Extract the primary named entity (person, organization, or place) mentioned, or an empty string if none.",
+        }
+        instruction = instructions.get(enrichment_type, f"Enrich this value according to: {enrichment_type}")
+        values = df[column].to_list()
+
+        def build_prompt(batch):
+            items = "\n".join(f"{i}. {v}" for i, v in enumerate(batch))
+            return (
+                f"For each of the {len(batch)} values below: {instruction}\n\n{items}\n\n"
+                f'Return JSON: {{"results": ["answer 0", "answer 1", ...]}} — exactly {len(batch)} short strings, same order.'
+            )
+
+        def parse_response(raw, batch):
+            return [str(x) for x in raw]
+
+        results = batched_ai_map(ai_manager, values, build_prompt, parse_response, fallback="")
+        return df.with_columns(pl.Series(name=output_col, values=results))
 
     def ai_generate_column(self, df: pl.DataFrame, column_name: str, instruction: str,
                            generated_code: str, **kwargs) -> pl.DataFrame:
-        """Execute AI-generated column code"""
+        """Execute AI-generated column code — sandboxed via
+        services.ai_service.safe_exec_polars_code (see that module for why
+        a bare exec_globals={"pl": pl} wasn't actually a sandbox: Python
+        auto-injects the real __builtins__ into any globals dict that
+        doesn't define its own, so generated code previously had full
+        access to __import__/open/eval/etc.)."""
+        from services.ai_service import safe_exec_polars_code
         try:
-            # Create execution context with df available
-            exec_globals = {"pl": pl}
-            exec_locals = {"df": df}
-
-            # Check if code reassigns df
-            lines = generated_code.strip().split("\n")
-            first_line = lines[0] if lines else ""
-            reassigns_df = "=" in first_line and first_line.split("=")[0].strip() in ("df", "_df")
-
-            if not reassigns_df:
-                # Wrap to capture result
-                wrapped = "_result = (" + generated_code.strip() + ")\n_result"
-                code_to_exec = wrapped
-            else:
-                code_to_exec = generated_code
-
-            exec(code_to_exec, exec_globals, exec_locals)
-
-            # Get result
-            if "_result" in exec_locals:
-                result = exec_locals["_result"]
-                if isinstance(result, pl.DataFrame):
-                    return result
-            if "df" in exec_locals:
-                result_df = exec_locals["df"]
-                if isinstance(result_df, pl.DataFrame):
-                    return result_df
-
-            return df
+            return safe_exec_polars_code(generated_code, df)
         except Exception as e:
             print(f"Error executing AI-generated column code: {e}")
             raise
@@ -2359,16 +2460,6 @@ class DataProcessor:
         """Rename column"""
         return df.rename({column: new_name})
 
-    def change_data_type(self, df: pl.DataFrame, column: str, new_type: str) -> pl.DataFrame:
-        """Change column data type"""
-        type_map = {
-            'Int64': pl.Int64, 'Float64': pl.Float64, 'Utf8': pl.Utf8,
-            'Boolean': pl.Boolean, 'Date': pl.Date, 'Datetime': pl.Datetime
-        }
-        if new_type not in type_map:
-            raise ValueError(f"Unsupported type: {new_type}")
-        return df.with_columns(pl.col(column).cast(type_map[new_type], strict=False))
-
     def duplicate_column(self, df: pl.DataFrame, column: str, new_name: str = None) -> pl.DataFrame:
         """Duplicate column"""
         target = new_name or f"{column}_copy"
@@ -2390,62 +2481,120 @@ class DataProcessor:
             )
         ).unnest(column)
 
-    def split_columns_by_delimiter(self, df: pl.DataFrame, column: str, delimiter: str = ' ', custom_delimiter: str = None, max_splits: int = -1, output_prefix: str = None) -> pl.DataFrame:
-        """Split column by delimiter into multiple columns"""
-        # Map delimiter options to actual characters
+    @staticmethod
+    def _resolve_delimiter(delimiter: str, custom_delimiter: str = None) -> str:
+        """Map a delimiter option name to its actual character(s), shared
+        by every split operation so the option list stays consistent."""
         delimiter_map = {
             'space': ' ',
             'comma': ',',
             'tab': '\t',
             'period': '.',
-            'asterisk': '*'
+            'asterisk': '*',
+            'pipe': '|',
+            'semicolon': ';',
         }
         actual_delimiter = delimiter_map.get(delimiter, delimiter)
         if delimiter == 'custom' and custom_delimiter:
             actual_delimiter = custom_delimiter
+        return actual_delimiter
+
+    def split_columns_by_delimiter(self, df: pl.DataFrame, column: str, delimiter: str = ' ', custom_delimiter: str = None, max_splits: int = -1, output_prefix: str = None) -> pl.DataFrame:
+        """Split column by delimiter into multiple columns"""
+        actual_delimiter = self._resolve_delimiter(delimiter, custom_delimiter)
+
+        # str.split/str.splitn require a String column - a numeric column
+        # (e.g. splitting "609.98" on "." to separate whole/decimal parts,
+        # or an ID column stored as an int) would otherwise raise a
+        # SchemaError before any splitting happens at all.
+        if df[column].dtype != pl.Utf8:
+            df = df.with_columns(pl.col(column).cast(pl.Utf8))
 
         # Use provided prefix or default to column name
         prefix = output_prefix or f"{column}_"
 
-        # Determine number of output columns
         if max_splits > 0:
-            num_cols = max_splits + 1
-        else:
-            # Estimate based on first few rows
-            sample = df[column].head(10).to_list()
-            max_parts = max((str(v).count(actual_delimiter) for v in sample if v), default=0) + 1
-            num_cols = min(max(max_parts, 2), 10)  # Between 2 and 10 columns
-
-        output_cols = [f"{prefix}{i+1}" for i in range(num_cols)]
-
-        # Split and create columns
-        if max_splits > 0:
-            # Limit splits
+            # str.splitn returns a Struct (field_0, field_1, ...), not a
+            # List - it already null-pads rows with fewer parts than
+            # max_splits + 1, so no separate out-of-bounds handling is
+            # needed here.
             result = df.with_columns(
                 pl.col(column).str.splitn(actual_delimiter, max_splits + 1).alias("_split_parts")
             )
-        else:
-            result = df.with_columns(
-                pl.col(column).str.split(actual_delimiter).alias("_split_parts")
-            )
+            num_cols = max_splits + 1
+            for i in range(num_cols):
+                col_name = f"{column}_{i+1}"
+                result = result.with_columns(
+                    pl.col("_split_parts").struct.field(f"field_{i}").alias(col_name)
+                )
+            return result.drop("_split_parts")
 
-        # Get actual number of parts for each row
-        result = result.with_columns(
-            pl.col("_split_parts").list.len().alias("_num_parts")
+        # str.split returns a List, whose length varies per row when the
+        # delimiter count isn't uniform across the column.
+        result = df.with_columns(
+            pl.col(column).str.split(actual_delimiter).alias("_split_parts")
         )
 
-        # Create output columns, handling varying lengths
+        # Determine number of output columns from the TRUE max across the
+        # whole column, not a sample of the first few rows - a sample-based
+        # estimate silently truncated any row further down that had more
+        # delimiters than every sampled row, and worse, list.get(i) used to
+        # raise "get index is out of bounds" for rows shorter than i+1 even
+        # inside a when/otherwise guard (polars evaluates .then() eagerly
+        # across the whole column before masking) - that crashed the whole
+        # operation the moment num_cols was set too low.
+        actual_max_parts = result.select(pl.col("_split_parts").list.len().max()).item() or 0
+        num_cols = min(max(actual_max_parts, 2), 10)  # Between 2 and 10 columns
+
+        # null_on_oob=True returns null for rows with fewer parts than i+1,
+        # instead of raising - the actual fix for non-uniform delimiter counts.
         for i in range(num_cols):
             col_name = f"{column}_{i+1}"
             result = result.with_columns(
-                pl.when(pl.col("_num_parts") > i)
-                .then(pl.col("_split_parts").list.get(i))
-                .otherwise(pl.lit(None))
-                .alias(col_name)
+                pl.col("_split_parts").list.get(i, null_on_oob=True).alias(col_name)
             )
 
-        # Clean up and return
-        return result.drop("_split_parts", "_num_parts")
+        return result.drop("_split_parts")
+
+    def split_into_rows(self, df: pl.DataFrame, columns: List[str], delimiter: str = 'pipe', custom_delimiter: str = None) -> pl.DataFrame:
+        """
+        Split delimiter-separated values in one or more aligned columns into
+        separate rows — the reverse of cramming multiple line items into one
+        cell (e.g. one order row with a pipe-separated "Category" column and
+        a pipe-separated "Amount" column, where position i in one pairs with
+        position i in the other). Every listed column is split by the same
+        delimiter and exploded together, so a row with N delimited values
+        becomes N rows, with every other column's value repeated across
+        them. A row where none of the columns contain the delimiter is left
+        as a single row (a length-1 list explodes to itself).
+
+        Raises if any row ends up with a different item count across the
+        selected columns after splitting — that means the columns weren't
+        actually aligned, and exploding them anyway would silently pair the
+        wrong category with the wrong amount instead of erroring.
+        """
+        if not columns:
+            raise ValueError("Select at least one column to split into rows.")
+        for col in columns:
+            if col not in df.columns:
+                raise ValueError(f"Column '{col}' not found.")
+
+        actual_delimiter = self._resolve_delimiter(delimiter, custom_delimiter)
+
+        result = df
+        for col in columns:
+            if result[col].dtype != pl.Utf8:
+                result = result.with_columns(pl.col(col).cast(pl.Utf8))
+            result = result.with_columns(pl.col(col).str.split(actual_delimiter))
+
+        try:
+            return result.explode(columns)
+        except pl.exceptions.ShapeError:
+            raise ValueError(
+                f"Columns {columns} don't have matching '{actual_delimiter}'-separated item counts in every "
+                f"row — check that the delimiter consistently separates the same number of values across all "
+                f"the selected columns before splitting into rows."
+            )
 
     def custom_column_from_math(self, df: pl.DataFrame, expression: str, output_col: str = "custom_result", columns: List[str] = None) -> pl.DataFrame:
         """Create custom column using mathematical expression"""
@@ -2496,8 +2645,17 @@ class DataProcessor:
         """Add a sequential row-number column."""
         return df.with_row_index(name=output_col, offset=start)
 
-    def change_data_type_extended(self, df: pl.DataFrame, column: str, new_dtype: str, format_string: str = None) -> pl.DataFrame:
-        """Change column data type with extended type support"""
+    def change_data_type_extended(self, df: pl.DataFrame, column: str, new_dtype: str, format_string: str = None,
+                                   on_error: str = "coerce") -> pl.DataFrame:
+        """Change column data type with extended type support.
+
+        on_error controls what happens to values that can't convert:
+        "coerce" (default) turns them into null so the rest of the column
+        still converts — matches how a real messy dataset with a handful
+        of "???"/"-" placeholders usually needs to be handled: don't fail
+        the whole step over one bad cell. "raise" restores strict
+        validation for when you specifically want to be stopped by any
+        value that doesn't fit the target type."""
         dtype_map = {
             "Int8": pl.Int8, "Int16": pl.Int16, "Int32": pl.Int32, "Int64": pl.Int64,
             "Float32": pl.Float32, "Float64": pl.Float64,
@@ -2508,12 +2666,14 @@ class DataProcessor:
         if not target_type:
             raise ValueError(f"Unsupported data type: {new_dtype}")
 
+        strict = (on_error == "raise")
+
         if new_dtype in ["Date", "Datetime"] and format_string:
             return df.with_columns(
-                pl.col(column).str.to_date(format_string) if new_dtype == "Date"
-                else pl.col(column).str.to_datetime(format_string)
+                pl.col(column).str.to_date(format_string, strict=strict) if new_dtype == "Date"
+                else pl.col(column).str.to_datetime(format_string, strict=strict)
             )
-        return df.with_columns(pl.col(column).cast(target_type))
+        return df.with_columns(pl.col(column).cast(target_type, strict=strict))
 
     def rename_columns_bulk(self, df: pl.DataFrame, renames: List[dict] = None, prefix: str = None, suffix: str = None, lowercase: bool = False, uppercase: bool = False) -> pl.DataFrame:
         """Bulk rename columns"""
@@ -2597,6 +2757,23 @@ class DataProcessor:
         # Remove the header row and return with new column names
         return df[row_index+1:].rename(dict(zip(df.columns, new_headers)))
 
+    def demote_header_to_row(self, df: pl.DataFrame) -> pl.DataFrame:
+        """
+        Reverse of promote_row_as_header: turn the current column names into
+        the first row of data, and reset columns to generic positional names
+        (column_1, column_2, ...). Every column is cast to string first,
+        since a header label has to fit into every column regardless of
+        that column's original dtype.
+        """
+        old_headers = [str(c) for c in df.columns]
+        new_names = [f"column_{i + 1}" for i in range(len(old_headers))]
+
+        header_row = pl.DataFrame([old_headers], schema=new_names, orient="row")
+        str_df = df.select([pl.col(c).cast(pl.Utf8) for c in df.columns])
+        str_df.columns = new_names
+
+        return pl.concat([header_row, str_df], how="vertical")
+
     def remove_rows(self, df: pl.DataFrame, row_indices: List[int], remove: bool = True) -> pl.DataFrame:
         """
         Remove or keep specific rows by index.
@@ -2649,6 +2826,9 @@ class DataProcessor:
             raise ValueError(f"Column '{column}' not found in dataframe")
 
         col = pl.col(column)
+
+        if operator in ("==", "!=", ">", "<", ">=", "<="):
+            value = self._coerce_value_to_dtype(value, df[column].dtype)
 
         # Handle different operators
         if operator == "==":
@@ -2957,52 +3137,31 @@ class DataProcessor:
     # FILTER/SORT IMPLEMENTATIONS
     # ============================================================================
 
-    def filter_rows(self, df: pl.DataFrame, column: str, operator: str, value: Any) -> pl.DataFrame:
-        """Filter rows based on column value"""
-        if operator == '==':
-            return df.filter(pl.col(column) == value)
-        elif operator == '!=':
-            return df.filter(pl.col(column) != value)
-        elif operator == '>':
-            return df.filter(pl.col(column) > value)
-        elif operator == '>=':
-            return df.filter(pl.col(column) >= value)
-        elif operator == '<':
-            return df.filter(pl.col(column) < value)
-        elif operator == '<=':
-            return df.filter(pl.col(column) <= value)
-        elif operator == 'contains':
-            return df.filter(pl.col(column).str.contains(str(value)))
-        elif operator == 'starts_with':
-            return df.filter(pl.col(column).str.starts_with(str(value)))
-        elif operator == 'ends_with':
-            return df.filter(pl.col(column).str.ends_with(str(value)))
-        elif operator == 'is_null':
-            return df.filter(pl.col(column).is_null())
-        elif operator == 'is_not_null':
-            return df.filter(pl.col(column).is_not_null())
-        elif operator == 'in':
-            return df.filter(pl.col(column).is_in(value))
-        else:
-            raise ValueError(f"Unsupported operator: {operator}")
+    @staticmethod
+    def _coerce_value_to_dtype(value, dtype):
+        """Convert a raw (typically string, from a QLineEdit) filter value
+        to match a column's dtype — polars refuses to compare a string
+        against a numeric column ("cannot compare string with numeric type"),
+        so every numeric-comparison filter needs this, not just the
+        Filter/Audit Flag dialogs' multi-condition builder."""
+        if dtype.is_float():
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return value
+        if dtype.is_integer():
+            try:
+                return int(float(value))
+            except (TypeError, ValueError):
+                return value
+        return value
 
     def _build_condition_expr(self, df: pl.DataFrame, conditions: list, combine_operator: str = "AND"):
         """Build a single combined polars boolean expression from a list of
         {column, operator, value} conditions — shared by the Filter and
         Audit Flag dialogs, which only differ in what they do with the
         resulting boolean mask (filter vs. flag)."""
-        def coerce(value, dtype):
-            if dtype in (pl.Float32, pl.Float64):
-                try:
-                    return float(value)
-                except (TypeError, ValueError):
-                    return value
-            if dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64):
-                try:
-                    return int(float(value))
-                except (TypeError, ValueError):
-                    return value
-            return value
+        coerce = self._coerce_value_to_dtype
 
         exprs = []
         for cond in conditions:
@@ -3015,18 +3174,28 @@ class DataProcessor:
             col = pl.col(column)
             dtype = df[column].dtype
 
-            if operator == "==":
-                exprs.append(col == coerce(value, dtype))
-            elif operator == "!=":
-                exprs.append(col != coerce(value, dtype))
-            elif operator == ">":
-                exprs.append(col > coerce(value, dtype))
-            elif operator == ">=":
-                exprs.append(col >= coerce(value, dtype))
-            elif operator == "<":
-                exprs.append(col < coerce(value, dtype))
-            elif operator == "<=":
-                exprs.append(col <= coerce(value, dtype))
+            if operator in ("==", "!=", ">", ">=", "<", "<="):
+                coerced = coerce(value, dtype)
+                # A numeric column whose value couldn't be coerced (e.g. the
+                # value field is empty or not-yet-a-number while the user is
+                # mid-typing, in a live preview) can't be compared at all —
+                # skip the condition rather than build a doomed comparison
+                # that would crash with "cannot compare string with numeric
+                # type" the moment it's evaluated.
+                if dtype.is_numeric() and isinstance(coerced, str):
+                    continue
+                if operator == "==":
+                    exprs.append(col == coerced)
+                elif operator == "!=":
+                    exprs.append(col != coerced)
+                elif operator == ">":
+                    exprs.append(col > coerced)
+                elif operator == ">=":
+                    exprs.append(col >= coerced)
+                elif operator == "<":
+                    exprs.append(col < coerced)
+                elif operator == "<=":
+                    exprs.append(col <= coerced)
             elif operator == "contains":
                 exprs.append(col.cast(pl.Utf8).str.contains(str(value), literal=True))
             elif operator == "not_contains":
@@ -3197,10 +3366,26 @@ class DataProcessor:
     # REPLACE VALUES OPERATION
     # =========================================================================
 
-    def replace_values(self, df: pl.DataFrame, column: str, find_value: str, replace_value: str,
-                       case_sensitive: bool = True, output_col: str = None) -> pl.DataFrame:
-        """Find and replace values in a column"""
+    def replace_values(self, df: pl.DataFrame, column: str, find_value: str, replace_value: str = None,
+                       case_sensitive: bool = True, replace_with_null: bool = False, output_col: str = None) -> pl.DataFrame:
+        """Find and replace values in a column.
+
+        replace_with_null=True treats find_value as an exact, whole-value
+        match (not a substring/regex pattern) and turns any matching cell
+        into a true null — for standardizing ad-hoc missing-value markers
+        ("???", "-", "N/A") into real nulls, which a numeric cast can then
+        handle instead of choking on leftover text. Without it, this
+        behaves as before: find_value is a substring/regex pattern
+        replaced within each string value."""
         output_col = output_col or f"{column}_replaced"
+
+        if replace_with_null:
+            col_expr = pl.col(column).cast(pl.Utf8, strict=False)
+            match_expr = (col_expr == find_value) if case_sensitive else (col_expr.str.to_lowercase() == find_value.lower())
+            return df.with_columns(
+                pl.when(match_expr).then(None).otherwise(pl.col(column)).alias(output_col)
+            )
+
         if case_sensitive:
             return df.with_columns(
                 pl.col(column).str.replace(find_value, replace_value).alias(output_col)
@@ -3209,6 +3394,26 @@ class DataProcessor:
             return df.with_columns(
                 pl.col(column).str.replace(find_value, replace_value, literal=False).alias(output_col)
             )
+
+    def standardize_missing_values(self, df: pl.DataFrame, column: str, markers: List[str],
+                                   case_sensitive: bool = False) -> pl.DataFrame:
+        """Replace any of several ad-hoc missing-value marker tokens
+        ("???", "-", "N/A", ...) with a true null, in one step, in place —
+        the dedicated fix for what used to require one Find and Replace
+        step per marker plus hoping Change Data Type's strict cast
+        wouldn't choke on whatever was left. Matches on the whole,
+        trimmed cell value, not a substring — a marker token appearing
+        inside a longer real value is deliberately left alone."""
+        if not markers:
+            return df
+        col_expr = pl.col(column).cast(pl.Utf8, strict=False).str.strip_chars()
+        if case_sensitive:
+            match_expr = col_expr.is_in(markers)
+        else:
+            match_expr = col_expr.str.to_lowercase().is_in([m.lower() for m in markers])
+        return df.with_columns(
+            pl.when(match_expr).then(None).otherwise(pl.col(column)).alias(column)
+        )
 
     # =========================================================================
     # STANDARDIZATION OPERATIONS
@@ -3258,6 +3463,12 @@ class TransformationPipeline:
         # etc.) — not persisted per-step, set from the owning Project each
         # time this pipeline becomes active. See set_parameters().
         self.parameters: Dict[str, Any] = {}
+        # The app's one shared AIManager, set from main_window.py each time
+        # this pipeline becomes active (see set_ai_manager()) — lets the
+        # real AI transformation operations (ai_sentiment, ai_classify,
+        # etc.) reach the configured provider without DataProcessor needing
+        # to construct/own an AIManager itself.
+        self.ai_manager = None
 
     def set_parameters(self, parameters: Dict[str, Any]):
         """Set the project-level parameters available to steps (e.g. SQL
@@ -3267,6 +3478,13 @@ class TransformationPipeline:
             return
         self.parameters = dict(parameters) if parameters else {}
         self._cache = {k: v for k, v in self._cache.items() if k == 0}
+
+    def set_ai_manager(self, ai_manager):
+        """Attach the shared AIManager instance so AI transformation steps
+        can make real LLM calls. Does not invalidate the cache — unlike
+        set_parameters(), attaching a manager doesn't change what any
+        already-computed step produced."""
+        self.ai_manager = ai_manager
 
     def add_step(self, operation_id: str, params: Dict[str, Any]) -> List[str]:
         """
@@ -3368,7 +3586,7 @@ class TransformationPipeline:
                 # (R², feature importances, cluster centers...) — ignored by
                 # every operation that doesn't ask for it.
                 metrics_sink: Dict[str, Any] = {}
-                call_params = {**step.params, '_metrics_sink': metrics_sink}
+                call_params = {**step.params, '_metrics_sink': metrics_sink, '_ai_manager': self.ai_manager}
                 if self.parameters:
                     call_params['_pipeline_parameters'] = self.parameters
                 current_df = self._data_processor.apply_operation(
@@ -3659,6 +3877,31 @@ class LegacyDataProcessor:
             return pl.read_parquet(file_path)
         else:
             raise ValueError(f"Unsupported file format: {file_extension}")
+
+    def read_file_raw(self, file_path: str, sheet_name: str = None) -> pl.DataFrame:
+        """Read a file with NO header assumed — every row becomes data,
+        columns get auto-generated names ('column_1', 'column_2', ...).
+        Used by the Data Cleaning Wizard, which needs to see header rows,
+        spanning/merged labels, and footer rows as data in order to detect
+        them at all; the normal read_file() would already have silently
+        mangled all of that by treating row 1 as a header."""
+        file_path_obj = Path(file_path)
+        file_extension = file_path_obj.suffix.lower()
+
+        if file_extension == '.csv':
+            return pl.read_csv(file_path_obj, has_header=False)
+        elif file_extension in ['.xlsx', '.xls']:
+            import io
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+            if sheet_name:
+                return pl.read_excel(io.BytesIO(file_content), sheet_name=sheet_name, has_header=False)
+            return pl.read_excel(io.BytesIO(file_content), has_header=False)
+        elif file_extension == '.parquet':
+            df = pl.read_parquet(file_path_obj)
+            return df.rename({c: f"column_{i+1}" for i, c in enumerate(df.columns)})
+        else:
+            raise ValueError(f"Unsupported file format for raw import: {file_extension}")
 
     def get_excel_sheets(self, file_path: str) -> List[str]:
         """Get list of available sheets in Excel file"""
