@@ -2,53 +2,80 @@
 CaatMaster design tokens — single source of truth for color, spacing, radius,
 and typography.
 
-Palette follows Microsoft's Fluent Design tokens for a clean, professional,
-data-tool look rather than inventing its own visual language from scratch.
+Palette is a refinement of Microsoft's Fluent Design tokens - same family
+(a "communication blue" accent, clean neutrals), tuned toward a slightly more
+confident, cool-toned reading rather than stock Fluent defaults. This is a
+deliberate choice for a tool auditors use alongside Excel/Office all day: keep
+the visual vocabulary they already trust, don't invent a new one.
 
 Every widget-level stylesheet in the app should build on these tokens instead
 of hardcoding hex values. `get_stylesheet()` returns the one application-wide
 QSS string loaded once in main.py; nothing else should call setStyleSheet()
 with its own hardcoded palette.
 """
+from pathlib import Path
+
+
+def load_bundled_fonts() -> bool:
+    """Register the bundled Inter variable fonts (resources/fonts/) with
+    Qt's font database, so the app renders identically on Windows/Mac/
+    Linux instead of depending on whichever system font happens to be
+    installed. Must be called once, after QApplication exists and before
+    get_stylesheet() is applied. Returns whether both files loaded - if
+    not (or if this is never called at all), Typography.FONT_FAMILY's
+    system-font fallbacks still make the app usable, just OS-dependent."""
+    from PySide6.QtGui import QFontDatabase
+
+    fonts_dir = Path(__file__).resolve().parent.parent.parent / "resources" / "fonts"
+    regular_id = QFontDatabase.addApplicationFont(str(fonts_dir / "Inter-Variable.ttf"))
+    italic_id = QFontDatabase.addApplicationFont(str(fonts_dir / "Inter-Italic-Variable.ttf"))
+    return regular_id != -1 and italic_id != -1
 
 
 class Colors:
     # Backgrounds
-    BG_PRIMARY = "#ffffff"        # main content area, dialogs, grid
-    BG_SECONDARY = "#f3f2f1"      # query pane, ribbon groups, panels (Fluent neutralLighter)
-    BG_TERTIARY = "#edebe9"       # hover state (Fluent neutralLighter2)
-    BG_PRESSED = "#e1dfdd"        # pressed state (Fluent neutralLight)
-    BG_SELECTED = "#deecf9"       # selected row/item (Fluent themeLighterAlt-ish)
-    BG_SELECTED_STRONG = "#c7e0f4"  # selected + hover
+    BG_PRIMARY = "#ffffff"        # main content area, dialogs, grid ("surface")
+    BG_SECONDARY = "#eaeff4"      # query pane, ribbon groups, panels - cool-toned, not flat gray ("muted")
+    BG_TERTIARY = "#e4e9ef"       # hover state
+    BG_PRESSED = "#d8dfe7"        # pressed state
+    BG_SELECTED = "#e4edf9"       # selected row/item - tinted toward the accent
+    BG_SELECTED_STRONG = "#cfe0f5"  # selected + hover
 
     # Borders / dividers
-    BORDER = "#e1dfdd"
-    BORDER_STRONG = "#d2d0ce"
+    BORDER = "#dce3ea"
+    BORDER_STRONG = "#c7d1db"
 
     # Text
-    TEXT_PRIMARY = "#201f1e"      # Fluent neutralDark
-    TEXT_SECONDARY = "#605e5c"    # Fluent neutralSecondary
-    TEXT_TERTIARY = "#8a8886"     # Fluent neutralTertiary
-    TEXT_DISABLED = "#a19f9d"
+    TEXT_PRIMARY = "#151a21"      # near-black, cool undertone ("ink")
+    TEXT_SECONDARY = "#5b6472"
+    TEXT_TERTIARY = "#8a93a1"
+    TEXT_DISABLED = "#a7b0bc"
     TEXT_ON_ACCENT = "#ffffff"
 
-    # Accent (Fluent "communication blue")
-    ACCENT = "#0078d4"
-    ACCENT_HOVER = "#106ebe"
-    ACCENT_PRESSED = "#005a9e"
-    ACCENT_SOFT = "#deecf9"       # tint for selected tabs/rows
+    # Accent - a more confident, deeper blue than stock Fluent, still the
+    # same "communication blue" family so nothing feels replaced.
+    ACCENT = "#1657a6"
+    ACCENT_HOVER = "#124b8f"
+    ACCENT_PRESSED = "#0d3b70"
+    ACCENT_SOFT = "#e4edf9"       # tint for selected tabs/rows
 
-    # Semantic
-    SUCCESS = "#107c10"
-    WARNING = "#797673"
-    WARNING_STRONG = "#d29200"
-    DANGER = "#d13438"
-    DANGER_HOVER = "#a4262c"
+    # Semantic - deliberately distinct hues from the accent, so status is
+    # never confused with "this is clickable". _SOFT variants are tinted
+    # backgrounds for status chips/labels (text stays the full-strength color).
+    SUCCESS = "#1e8e5a"
+    SUCCESS_HOVER = "#17703f"
+    SUCCESS_SOFT = "#e1f4ea"
+    WARNING = "#8a6d1f"
+    WARNING_STRONG = "#b8710e"
+    WARNING_SOFT = "#faf0dd"
+    DANGER = "#c4302b"
+    DANGER_HOVER = "#a12723"
+    DANGER_SOFT = "#fbe6e5"
 
     # Data-quality bar segments (column profiling)
-    QUALITY_VALID = "#107c10"
-    QUALITY_ERROR = "#d13438"
-    QUALITY_EMPTY = "#c8c6c4"
+    QUALITY_VALID = "#1e8e5a"
+    QUALITY_ERROR = "#c4302b"
+    QUALITY_EMPTY = "#c7d1db"
 
 
 class Spacing:
@@ -68,7 +95,12 @@ class Radii:
 
 
 class Typography:
-    FONT_FAMILY = '"Segoe UI", "Inter", sans-serif'
+    # Inter is bundled (resources/fonts/, loaded by load_bundled_fonts() in
+    # main.py) so the app renders identically on Windows/Mac/Linux instead
+    # of depending on whichever system font happens to be installed. The
+    # rest of the chain is a graceful fallback for the (should never
+    # happen) case where loading the bundled font failed.
+    FONT_FAMILY = '"Inter", "Segoe UI", -apple-system, "Helvetica Neue", sans-serif'
     SIZE_SM = 11
     SIZE_MD = 12
     SIZE_LG = 13
@@ -143,6 +175,27 @@ def get_stylesheet() -> str:
         border: none;
     }}
     QPushButton#GhostButton:hover {{ background-color: {c.BG_TERTIARY}; }}
+    /* For a "commit/apply to dataset" action that needs to read as
+    distinct from the primary "run/preview" action alongside it (e.g. a
+    dialog with both "Run Analysis" and "Apply to Dataset" buttons). */
+    QPushButton#SuccessButton {{
+        background-color: {c.SUCCESS};
+        color: {c.TEXT_ON_ACCENT};
+        border: none;
+    }}
+    QPushButton#SuccessButton:hover {{ background-color: {c.SUCCESS_HOVER}; }}
+    /* Without these, a disabled #PrimaryButton/#DangerButton still painted
+    its full-strength color (the ID selector's un-conditioned background
+    otherwise wins over the generic QPushButton:disabled rule above) -
+    fully clickable-looking buttons that were actually inert. */
+    QPushButton#PrimaryButton:disabled, QPushButton#DangerButton:disabled, QPushButton#SuccessButton:disabled {{
+        background-color: {c.BG_SECONDARY};
+        color: {c.TEXT_DISABLED};
+        border: 1px solid {c.BORDER};
+    }}
+    QPushButton#GhostButton:disabled {{
+        color: {c.TEXT_DISABLED};
+    }}
 
     QToolButton {{
         background-color: transparent;
@@ -259,14 +312,37 @@ def get_stylesheet() -> str:
     QGroupBox {{
         border: 1px solid {c.BORDER};
         border-radius: {r.MD}px;
-        margin-top: 10px;
-        padding-top: 12px;
-        font-weight: 600;
+        margin-top: 14px;
+        padding-top: 14px;
+        font-weight: 700;
     }}
     QGroupBox::title {{
         subcontrol-origin: margin;
         left: 8px;
-        color: {c.TEXT_SECONDARY};
+        padding: 0 4px;
+        color: {c.ACCENT};
+    }}
+
+    /* ------------------------------------------------------------------ */
+    /* Lists                                                               */
+    /* ------------------------------------------------------------------ */
+    QListWidget {{
+        background-color: {c.BG_PRIMARY};
+        border: 1px solid {c.BORDER};
+        border-radius: {r.MD}px;
+        padding: 4px;
+    }}
+    QListWidget::item {{
+        padding: 8px;
+        border-radius: {r.SM}px;
+        color: {c.TEXT_PRIMARY};
+    }}
+    QListWidget::item:hover {{
+        background-color: {c.BG_TERTIARY};
+    }}
+    QListWidget::item:selected {{
+        background-color: {c.ACCENT};
+        color: {c.TEXT_ON_ACCENT};
     }}
 
     /* ------------------------------------------------------------------ */

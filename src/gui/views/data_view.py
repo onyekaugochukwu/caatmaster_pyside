@@ -8,6 +8,53 @@ from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QFont, QColor
 
 from core.project_manager import Dataset
+from gui.theme import Colors, Spacing, Typography
+
+
+# Keyword -> (background, text color) for status pill rendering. Matched
+# case-insensitively against the whole cell value; first match wins.
+_STATUS_PILL_COLORS = [
+    (("approved", "complete", "completed", "passed", "valid", "active", "resolved"),
+     (Colors.SUCCESS_SOFT, Colors.SUCCESS)),
+    (("pending", "in progress", "in review", "review", "processing", "open"),
+     (Colors.WARNING_SOFT, Colors.WARNING_STRONG)),
+    (("rejected", "failed", "invalid", "error", "denied", "cancelled", "canceled"),
+     (Colors.DANGER_SOFT, Colors.DANGER)),
+]
+
+
+def make_status_pill(value: str) -> QWidget:
+    """A small colored pill for a Status-like cell - state should be
+    visible at a glance in a grid this dense, not just more plain text
+    indistinguishable from every other column. Falls back to a neutral
+    gray pill (rather than plain text) for values that don't match a
+    recognized keyword, so the column still reads as a consistent set of
+    states either way."""
+    lowered = value.strip().lower()
+    bg, fg = Colors.BG_TERTIARY, Colors.TEXT_SECONDARY
+    for keywords, colors in _STATUS_PILL_COLORS:
+        if any(kw in lowered for kw in keywords):
+            bg, fg = colors
+            break
+
+    container = QWidget()
+    layout = QHBoxLayout(container)
+    layout.setContentsMargins(8, 0, 8, 0)
+
+    label = QLabel(value)
+    label.setStyleSheet(f"""
+        QLabel {{
+            background-color: {bg};
+            color: {fg};
+            font-size: 11px;
+            font-weight: 600;
+            border-radius: 9px;
+            padding: 2px 10px;
+        }}
+    """)
+    layout.addWidget(label)
+    layout.addStretch()
+    return container
 
 
 class DataView(QWidget):
@@ -39,41 +86,30 @@ class DataView(QWidget):
         data_scroll.setWidgetResizable(True)
         data_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         data_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        data_scroll.setStyleSheet("""
-            QScrollArea {
+        data_scroll.setStyleSheet(f"""
+            QScrollArea {{
                 border: none;
-                background-color: white;
-            }
+                background-color: {Colors.BG_PRIMARY};
+            }}
         """)
 
-        # Data table - Light mode
+        # Data table - only overrides what needs to differ from the
+        # app-wide QTableWidget rule in theme.py (no border, since it's
+        # already wrapped in a borderless scroll area; a bit more row
+        # padding, since this is the primary data grid). Colors all come
+        # from theme.py's tokens rather than being hardcoded again here.
         self.data_table = QTableWidget()
-        self.data_table.setStyleSheet("""
-            QTableWidget {
+        self.data_table.setStyleSheet(f"""
+            QTableWidget {{
                 border: none;
-                background-color: white;
-                gridline-color: #e5e7eb;
-                color: #111827;
-            }
-            QTableWidget::item {
-                padding: 8px;
-                color: #111827;
-                font-size: 13px;
-            }
-            QTableWidget::item:selected {
-                background-color: #dbeafe;
-                color: #111827;
-            }
-            QHeaderView::section {
-                background-color: #f9fafb;
-                color: #374151;
+            }}
+            QTableWidget::item {{
+                padding: {Spacing.SM}px;
+            }}
+            QHeaderView::section {{
+                border-bottom: 2px solid {Colors.ACCENT};
                 font-weight: 600;
-                font-size: 12px;
-                border: none;
-                border-bottom: 1px solid #e5e7eb;
-                border-right: 1px solid #e5e7eb;
-                padding: 10px 8px;
-            }
+            }}
         """)
         self.data_table.setAlternatingRowColors(True)
         self.data_table.verticalHeader().setVisible(False)
@@ -415,12 +451,38 @@ class DataView(QWidget):
         self.data_table.setColumnCount(len(df.columns))
         self.data_table.setHorizontalHeaderLabels(df.columns)
 
+        numeric_cols = {col for col in df.columns if df[col].dtype.is_numeric()}
+        status_cols = {col for col in df.columns if col.strip().lower() == "status"}
+
         for row_idx in range(len(display_df)):
             for col_idx, col_name in enumerate(df.columns):
                 value = display_df[row_idx, col_idx]
+                if col_name in status_cols and value is not None:
+                    self.data_table.setCellWidget(row_idx, col_idx, make_status_pill(str(value)))
+                    continue
                 item = QTableWidgetItem(str(value) if value is not None else "")
                 item.setData(Qt.UserRole, value)  # Store original value
+                if col_name in numeric_cols:
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.data_table.setItem(row_idx, col_idx, item)
 
         # Resize columns
         self.data_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.data_table.resizeColumnsToContents()
+        self._fill_leftover_width()
+
+    def _fill_leftover_width(self):
+        """Give any leftover horizontal space to the last column instead of
+        leaving it as dead background - only when the columns don't already
+        need the full width (a genuinely wide dataset still scrolls
+        normally, since this never shrinks a column, only grows the last
+        one to use space that would otherwise go unused)."""
+        col_count = self.data_table.columnCount()
+        if col_count == 0:
+            return
+        total_width = sum(self.data_table.columnWidth(c) for c in range(col_count))
+        viewport_width = self.data_table.viewport().width()
+        if total_width < viewport_width:
+            last_col = col_count - 1
+            extra = viewport_width - total_width
+            self.data_table.setColumnWidth(last_col, self.data_table.columnWidth(last_col) + extra)

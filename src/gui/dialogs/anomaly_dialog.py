@@ -15,8 +15,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QTimer
 
 from ..components.common_modals import (
-    BaseModal, PreviewTable, NumberInput, ColumnSelector, StatusLabel
+    BaseModal, PreviewTable, NumberInput, ColumnSelector, StatusLabel, create_primary_button
 )
+from ..theme import Colors
 
 
 class AnomalyDetectionDialog(BaseModal):
@@ -51,16 +52,9 @@ class AnomalyDetectionDialog(BaseModal):
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
 
-        # Method selection tabs
+        # Method selection tabs - styling inherited from the app-wide
+        # QTabWidget rule in theme.py.
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #bdbdbd;
-            }
-            QTabBar::tab {
-                padding: 8px 16px;
-            }
-        """)
 
         # Isolation Forest tab
         self._create_iforest_tab()
@@ -120,20 +114,7 @@ class AnomalyDetectionDialog(BaseModal):
         self.preview_btn.clicked.connect(self.preview)
         btn_layout.addWidget(self.preview_btn)
 
-        self.run_btn = QPushButton("Run Detection")
-        self.run_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.run_btn = create_primary_button("Run Detection")
         self.run_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.run_btn)
 

@@ -4,10 +4,13 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QTextEdit, QComboBox, QGroupBox, QListWidget,
     QListWidgetItem, QMessageBox, QProgressBar, QFrame,
-    QSizePolicy, QGridLayout, QScrollArea, QTabWidget, QWidget, QSpacerItem
+    QSizePolicy, QFormLayout, QScrollArea, QTabWidget, QWidget, QSpacerItem
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize
 from PySide6.QtGui import QFont
+
+from gui.theme import Colors
+from gui.components.common_modals import create_primary_button, create_secondary_button, create_success_button
 
 
 class ComplianceReportDialog(QDialog):
@@ -86,11 +89,7 @@ class ComplianceReportDialog(QDialog):
     def setup_ui(self):
         self.setWindowTitle("AI Compliance Report Generator")
         self.setMinimumSize(800, 600)
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #f3f2f1;
-            }
-        """)
+        # Dialog background inherited from the app-wide QDialog rule in theme.py.
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -103,48 +102,27 @@ class ComplianceReportDialog(QDialog):
         title_layout.addWidget(title_icon)
 
         title = QLabel("Compliance Report Generator")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 18px;
                 font-weight: 700;
-                color: #201f1e;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         title_layout.addWidget(title)
         title_layout.addStretch()
         layout.addLayout(title_layout)
 
-        # Dataset selector (if multiple datasets available)
+        # Dataset selector (if multiple datasets available) - QGroupBox/
+        # QComboBox chrome inherited from the app-wide rules in theme.py.
         if len(self.dataframes) > 1:
             dataset_group = QGroupBox("Select Dataset")
-            dataset_group.setStyleSheet("""
-                QGroupBox {
-                    font-weight: 600;
-                    color: #605e5c;
-                    border: 1px solid #e1dfdd;
-                    border-radius: 8px;
-                    padding-top: 10px;
-                }
-                QGroupBox::title {
-                    subcontrol-origin: margin;
-                    left: 10px;
-                    padding: 0 5px;
-                }
-            """)
             dataset_layout = QHBoxLayout(dataset_group)
             dataset_layout.setContentsMargins(16, 20, 16, 16)
 
             dataset_layout.addWidget(QLabel("Dataset:"))
             self.dataset_combo = QComboBox()
-            self.dataset_combo.setStyleSheet("""
-                QComboBox {
-                    padding: 8px 12px;
-                    border: 1px solid #d2d0ce;
-                    border-radius: 6px;
-                    font-size: 13px;
-                    min-width: 200px;
-                }
-            """)
+            self.dataset_combo.setStyleSheet("QComboBox { min-width: 200px; }")
             for key in self.dataframes.keys():
                 self.dataset_combo.addItem(key, key)
             self.dataset_combo.currentIndexChanged.connect(self._on_dataset_changed)
@@ -154,19 +132,10 @@ class ComplianceReportDialog(QDialog):
         else:
             self.dataset_combo = None
 
-        # Tabs for different compliance modes
+        # Tabs for different compliance modes - pane/border chrome
+        # inherited from the app-wide QTabWidget rule; only sizing here.
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #e1dfdd;
-                border-radius: 8px;
-                background-color: white;
-            }
-            QTabBar::tab {
-                padding: 10px 20px;
-                font-size: 13px;
-            }
-        """)
+        self.tabs.setStyleSheet("QTabBar::tab { padding: 10px 20px; }")
 
         # Tab 1: Policy Compliance Check
         self.policy_tab = self.create_policy_tab()
@@ -187,19 +156,6 @@ class ComplianceReportDialog(QDialog):
         button_layout.addStretch()
 
         close_btn = QPushButton("✕ Close")
-        close_btn.setStyleSheet("""
-            QPushButton {
-                padding: 10px 20px;
-                background-color: white;
-                border: 1px solid #d2d0ce;
-                border-radius: 6px;
-                font-size: 13px;
-                color: #605e5c;
-            }
-            QPushButton:hover {
-                background-color: #f3f2f1;
-            }
-        """)
         close_btn.clicked.connect(self.reject)
         button_layout.addWidget(close_btn)
 
@@ -212,22 +168,8 @@ class ComplianceReportDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        # Policy text input
+        # Policy text input - QGroupBox chrome inherited from theme.py.
         policy_group = QGroupBox("Compliance Policy")
-        policy_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: 600;
-                color: #605e5c;
-                border: 1px solid #e1dfdd;
-                border-radius: 8px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
 
         policy_layout = QVBoxLayout(policy_group)
 
@@ -241,39 +183,13 @@ class ComplianceReportDialog(QDialog):
             "• Vendor payments must have proper approval signatures\n"
             "• Expense reports must be submitted within 30 days"
         )
-        self.policy_edit.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #d2d0ce;
-                border-radius: 6px;
-                padding: 10px;
-                font-size: 13px;
-                background-color: white;
-                min-height: 150px;
-            }
-            QTextEdit:focus {
-                border-color: #0078d4;
-            }
-        """)
+        self.policy_edit.setStyleSheet("QTextEdit { min-height: 150px; }")
         policy_layout.addWidget(self.policy_edit)
 
         layout.addWidget(policy_group)
 
         # Quick policy templates
         templates_group = QGroupBox("Policy Templates")
-        templates_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: 600;
-                color: #605e5c;
-                border: 1px solid #e1dfdd;
-                border-radius: 8px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
 
         templates_layout = QVBoxLayout(templates_group)
 
@@ -287,18 +203,18 @@ class ComplianceReportDialog(QDialog):
 
         for name, template in templates:
             btn = QPushButton(name)
-            btn.setStyleSheet("""
-                QPushButton {
+            btn.setStyleSheet(f"""
+                QPushButton {{
                     padding: 8px 16px;
-                    background-color: #deecf9;
-                    border: 1px solid #c7e0f4;
+                    background-color: {Colors.ACCENT_SOFT};
+                    border: 1px solid {Colors.BG_SELECTED_STRONG};
                     border-radius: 4px;
                     font-size: 12px;
-                    color: #005a9e;
-                }
-                QPushButton:hover {
-                    background-color: #deecf9;
-                }
+                    color: {Colors.ACCENT};
+                }}
+                QPushButton:hover {{
+                    background-color: {Colors.BG_SELECTED_STRONG};
+                }}
             """)
             btn.clicked.connect(lambda checked, t=template: self.policy_edit.setText(t))
             template_buttons_layout.addWidget(btn)
@@ -307,21 +223,7 @@ class ComplianceReportDialog(QDialog):
         layout.addWidget(templates_group)
 
         # Run check button
-        self.run_check_btn = QPushButton("🔍 Run Compliance Check")
-        self.run_check_btn.setStyleSheet("""
-            QPushButton {
-                padding: 12px 24px;
-                background-color: #0078d4;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 14px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.run_check_btn = create_primary_button("🔍 Run Compliance Check")
         self.run_check_btn.clicked.connect(self.run_policy_check)
         layout.addWidget(self.run_check_btn)
 
@@ -338,14 +240,14 @@ class ComplianceReportDialog(QDialog):
 
         # Status label
         self.policy_status = QLabel()
-        self.policy_status.setStyleSheet("""
-            QLabel {
+        self.policy_status.setStyleSheet(f"""
+            QLabel {{
                 font-size: 12px;
-                color: #605e5c;
+                color: {Colors.TEXT_SECONDARY};
                 padding: 8px;
                 border-radius: 4px;
-                background-color: #edebe9;
-            }
+                background-color: {Colors.BG_SECONDARY};
+            }}
         """)
         self.policy_status.setVisible(False)
         layout.addWidget(self.policy_status)
@@ -360,22 +262,8 @@ class ComplianceReportDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        # Rules input
+        # Rules input - QGroupBox chrome inherited from theme.py.
         rules_group = QGroupBox("Detection Rules")
-        rules_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: 600;
-                color: #605e5c;
-                border: 1px solid #e1dfdd;
-                border-radius: 8px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
 
         rules_layout = QVBoxLayout(rules_group)
 
@@ -389,49 +277,38 @@ class ComplianceReportDialog(QDialog):
             "Weekend Transaction | day_of_week in [5, 6] | medium\n"
             "Round Amount | amount % 100 == 0 | low"
         )
-        self.rules_edit.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #d2d0ce;
-                border-radius: 6px;
-                padding: 10px;
-                font-size: 13px;
-                background-color: white;
-                min-height: 150px;
-            }
-            QTextEdit:focus {
-                border-color: #0078d4;
-            }
-        """)
+        self.rules_edit.setStyleSheet("QTextEdit { min-height: 150px; }")
         rules_layout.addWidget(self.rules_edit)
 
         layout.addWidget(rules_group)
 
         # Sample rules
         sample_rules = QLabel("Sample: Large Transaction | amount > 10000 | high")
-        sample_rules.setStyleSheet("""
-            QLabel {
+        sample_rules.setStyleSheet(f"""
+            QLabel {{
                 font-size: 11px;
-                color: #605e5c;
+                color: {Colors.TEXT_SECONDARY};
                 font-style: italic;
-            }
+            }}
         """)
         layout.addWidget(sample_rules)
 
-        # Run detection button
+        # Run detection button - amber, distinct from the blue "Run
+        # Compliance Check" primary action on the other tab.
         self.run_detection_btn = QPushButton("🎯 Detect Violations")
-        self.run_detection_btn.setStyleSheet("""
-            QPushButton {
+        self.run_detection_btn.setStyleSheet(f"""
+            QPushButton {{
                 padding: 12px 24px;
-                background-color: #f59e0b;
-                color: white;
+                background-color: {Colors.WARNING_STRONG};
+                color: {Colors.TEXT_ON_ACCENT};
                 border: none;
                 border-radius: 6px;
                 font-size: 14px;
                 font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #d97706;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.WARNING};
+            }}
         """)
         self.run_detection_btn.clicked.connect(self.run_rule_detection)
         layout.addWidget(self.run_detection_btn)
@@ -452,32 +329,37 @@ class ComplianceReportDialog(QDialog):
 
     def create_report_tab(self) -> QWidget:
         """Create the report generation tab"""
+        # This tab has more content (2 group boxes, a disclaimer, and a
+        # 150px-min-height report output box) than fits inside the
+        # dialog's own 800x600 minimum size - without a scroll area, Qt
+        # compressed the "Report Options" combo boxes down to an
+        # unreadable ~11px tall to make everything else fit instead of
+        # letting the user scroll.
+        outer = QWidget()
+        outer_layout = QVBoxLayout(outer)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        outer_layout.addWidget(scroll)
+
         tab = QWidget()
+        scroll.setWidget(tab)
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        # Report options
+        # Report options - QGroupBox/QComboBox chrome inherited from
+        # theme.py. QFormLayout (not QGridLayout) for the same reason
+        # ProviderConfigWidget uses it elsewhere in this codebase - it
+        # sizes label+field rows correctly by default, where the grid
+        # layout needed extra fighting to stop rows overlapping.
         options_group = QGroupBox("Report Options")
-        options_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: 600;
-                color: #605e5c;
-                border: 1px solid #e1dfdd;
-                border-radius: 8px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
-
-        options_layout = QGridLayout(options_group)
+        options_layout = QFormLayout(options_group)
+        options_layout.setVerticalSpacing(10)
 
         # Engagement type
-        options_layout.addWidget(QLabel("Engagement Type:"), 0, 0)
         self.engagement_combo = QComboBox()
         self.engagement_combo.addItems([
             "Financial Statement Audit",
@@ -487,51 +369,19 @@ class ComplianceReportDialog(QDialog):
             "Fraud Investigation",
             "Special Investigation"
         ])
-        self.engagement_combo.setStyleSheet("""
-            QComboBox {
-                padding: 8px 12px;
-                border: 1px solid #d2d0ce;
-                border-radius: 6px;
-                font-size: 13px;
-                min-width: 200px;
-            }
-        """)
-        options_layout.addWidget(self.engagement_combo, 0, 1)
+        self.engagement_combo.setStyleSheet("QComboBox { min-width: 200px; }")
+        options_layout.addRow("Engagement Type:", self.engagement_combo)
 
         # Report tone
-        options_layout.addWidget(QLabel("Report Tone:"), 1, 0)
         self.tone_combo = QComboBox()
         self.tone_combo.addItems(["Professional", "Formal", "Constructive", "Objective"])
-        self.tone_combo.setStyleSheet("""
-            QComboBox {
-                padding: 8px 12px;
-                border: 1px solid #d2d0ce;
-                border-radius: 6px;
-                font-size: 13px;
-                min-width: 200px;
-            }
-        """)
-        options_layout.addWidget(self.tone_combo, 1, 1)
+        self.tone_combo.setStyleSheet("QComboBox { min-width: 200px; }")
+        options_layout.addRow("Report Tone:", self.tone_combo)
 
         layout.addWidget(options_group)
 
         # Findings summary
         findings_group = QGroupBox("Audit Findings Summary")
-        findings_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: 600;
-                color: #605e5c;
-                border: 1px solid #e1dfdd;
-                border-radius: 8px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
-
         findings_layout = QVBoxLayout(findings_group)
 
         self.findings_edit = QTextEdit()
@@ -539,39 +389,13 @@ class ComplianceReportDialog(QDialog):
             "Enter or paste your audit findings summary here...\n\n"
             "The AI will use this to help draft the report sections."
         )
-        self.findings_edit.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #d2d0ce;
-                border-radius: 6px;
-                padding: 10px;
-                font-size: 13px;
-                background-color: white;
-                min-height: 120px;
-            }
-            QTextEdit:focus {
-                border-color: #0078d4;
-            }
-        """)
+        self.findings_edit.setStyleSheet("QTextEdit { min-height: 120px; }")
         findings_layout.addWidget(self.findings_edit)
 
         layout.addWidget(findings_group)
 
         # Generate report button
-        self.generate_report_btn = QPushButton("📄 Generate Compliance Report")
-        self.generate_report_btn.setStyleSheet("""
-            QPushButton {
-                padding: 12px 24px;
-                background-color: #10b981;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 14px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #059669;
-            }
-        """)
+        self.generate_report_btn = create_success_button("📄 Generate Compliance Report")
         self.generate_report_btn.clicked.connect(self.generate_compliance_report)
         layout.addWidget(self.generate_report_btn)
 
@@ -597,8 +421,10 @@ class ComplianceReportDialog(QDialog):
             "are in AI → AI Activity Log."
         )
         disclaimer.setWordWrap(True)
-        disclaimer.setStyleSheet("color: #8a6d3b; background-color: #fcf8e3; border: 1px solid #faebcc; "
-                                  "border-radius: 4px; padding: 6px 10px; font-size: 11px;")
+        disclaimer.setStyleSheet(
+            f"color: {Colors.WARNING_STRONG}; background-color: {Colors.WARNING_SOFT}; "
+            f"border: 1px solid {Colors.WARNING_STRONG}; border-radius: 4px; padding: 6px 10px; font-size: 11px;"
+        )
         layout.addWidget(disclaimer)
 
         # Report output — editable (not read-only) so a reviewer can
@@ -607,39 +433,17 @@ class ComplianceReportDialog(QDialog):
         # the export button with no way to fix it inline.
         self.report_output = QTextEdit()
         self.report_output.setPlaceholderText("Generated report will appear here — you can edit it before exporting.")
-        self.report_output.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #d2d0ce;
-                border-radius: 6px;
-                padding: 10px;
-                font-size: 12px;
-                background-color: white;
-                min-height: 150px;
-            }
-        """)
+        self.report_output.setStyleSheet("QTextEdit { min-height: 150px; }")
         layout.addWidget(self.report_output)
 
-        # Export button
-        export_btn = QPushButton("📥 Export Report")
-        export_btn.setStyleSheet("""
-            QPushButton {
-                padding: 10px 20px;
-                background-color: #6366f1;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #4f46e5;
-            }
-        """)
+        # Export button - a neutral utility action, not a primary/success
+        # one, same convention as Reports view's "Export Current Report".
+        export_btn = create_secondary_button("📥 Export Report")
         export_btn.clicked.connect(self.export_report)
         layout.addWidget(export_btn, alignment=Qt.AlignRight)
 
         layout.addStretch()
-        return tab
+        return outer
 
     def sox_template(self) -> str:
         """Return SOX compliance template"""

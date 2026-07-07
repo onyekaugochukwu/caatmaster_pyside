@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt
 from core.cleaning_wizard import build_cleaning_plan, CleaningStep
 from core.data_processor import DataProcessor
 from core.operation_registry import OPERATION_REGISTRY
+from gui.theme import Colors
 
 
 class CleaningWizardDialog(QDialog):
@@ -44,7 +45,7 @@ class CleaningWizardDialog(QDialog):
             "normal Applied Steps pipeline, so they stay fully visible and undoable afterward."
         )
         intro.setWordWrap(True)
-        intro.setStyleSheet("color: #555; padding: 6px;")
+        intro.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; padding: 6px;")
         layout.addWidget(intro)
 
         if self.plan.notes:
@@ -53,7 +54,7 @@ class CleaningWizardDialog(QDialog):
             for note in self.plan.notes:
                 note_label = QLabel(f"⚠ {note}")
                 note_label.setWordWrap(True)
-                note_label.setStyleSheet("color: #8a6d3b;")
+                note_label.setStyleSheet(f"color: {Colors.WARNING_STRONG};")
                 notes_layout.addWidget(note_label)
             layout.addWidget(notes_box)
 
@@ -112,12 +113,12 @@ class CleaningWizardDialog(QDialog):
         checkbox.setChecked(step.confidence == "high")
         checkbox.stateChanged.connect(self._update_preview)
         if step.confidence == "review":
-            checkbox.setStyleSheet("font-weight: bold; color: #8a6d3b;")
+            checkbox.setStyleSheet(f"font-weight: bold; color: {Colors.WARNING_STRONG};")
         box_layout.addWidget(checkbox)
 
         desc = QLabel(step.description)
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #444; margin-left: 20px;")
+        desc.setStyleSheet(f"color: {Colors.TEXT_PRIMARY}; margin-left: 20px;")
         box_layout.addWidget(desc)
 
         self.step_checkboxes.append((checkbox, step))
@@ -209,7 +210,7 @@ class CleaningWizardDialog(QDialog):
                 break
 
         if error:
-            self.preview_summary.setText(f"<span style='color:#991b1b'>{error}</span>")
+            self.preview_summary.setText(f"<span style='color:{Colors.DANGER}'>{error}</span>")
             self.apply_btn.setEnabled(False)
             return
 

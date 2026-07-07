@@ -9,6 +9,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 import traceback
 
+from gui.theme import Colors
+from gui.components.common_modals import create_primary_button, create_success_button
+
 
 class LoginDialog(QDialog):
     """Dialog for user login"""
@@ -30,12 +33,12 @@ class LoginDialog(QDialog):
 
         # Logo/title
         title = QLabel("Welcome to CaatMaster")
-        title.setStyleSheet("font-size: 24px; font-weight: bold; color: #0078d4; padding: 20px;")
+        title.setStyleSheet(f"font-size: 24px; font-weight: bold; color: {Colors.ACCENT}; padding: 20px;")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
         subtitle = QLabel("Professional Continuous Audit Analytics Tool")
-        subtitle.setStyleSheet("font-size: 14px; color: #666; padding-bottom: 20px;")
+        subtitle.setStyleSheet(f"font-size: 14px; color: {Colors.TEXT_SECONDARY}; padding-bottom: 20px;")
         subtitle.setAlignment(Qt.AlignCenter)
         layout.addWidget(subtitle)
 
@@ -61,21 +64,8 @@ class LoginDialog(QDialog):
         # Buttons
         button_layout = QHBoxLayout()
 
-        self.login_btn = QPushButton("Login")
-        self.login_btn.setStyleSheet("""
-            QPushButton {
-                background: #0078d4;
-                color: white;
-                padding: 10px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background: #106ebe;
-            }
-        """)
+        self.login_btn = create_primary_button("Login")
+        self.login_btn.setStyleSheet("QPushButton#PrimaryButton { padding: 10px 20px; font-size: 14px; }")
         self.login_btn.clicked.connect(self.attempt_login)
         button_layout.addWidget(self.login_btn)
 
@@ -158,7 +148,7 @@ class RegisterDialog(QDialog):
 
         # Title
         title = QLabel("Create New Account")
-        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #0078d4; padding: 10px;")
+        title.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {Colors.ACCENT}; padding: 10px;")
         layout.addWidget(title)
 
         # Registration form
@@ -200,21 +190,8 @@ class RegisterDialog(QDialog):
         # Buttons
         button_layout = QHBoxLayout()
 
-        self.register_btn = QPushButton("Register")
-        self.register_btn.setStyleSheet("""
-            QPushButton {
-                background: #28a745;
-                color: white;
-                padding: 10px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background: #218838;
-            }
-        """)
+        self.register_btn = create_success_button("Register")
+        self.register_btn.setStyleSheet("QPushButton#SuccessButton { padding: 10px 20px; font-size: 14px; }")
         self.register_btn.clicked.connect(self.attempt_register)
         button_layout.addWidget(self.register_btn)
 
@@ -247,7 +224,7 @@ class RegisterDialog(QDialog):
             strength += 1
 
         levels = ["Very Weak", "Weak", "Fair", "Good", "Strong"]
-        colors = ["#dc3545", "#dc3545", "#ffc107", "#28a745", "#28a745"]
+        colors = [Colors.DANGER, Colors.DANGER, Colors.WARNING_STRONG, Colors.SUCCESS, Colors.SUCCESS]
 
         level = levels[min(strength, 4)]
         color = colors[min(strength, 4)]
@@ -376,20 +353,8 @@ class ChangePasswordDialog(QDialog):
         # Buttons
         button_layout = QHBoxLayout()
 
-        self.change_btn = QPushButton("Change Password")
-        self.change_btn.setStyleSheet("""
-            QPushButton {
-                background: #0078d4;
-                color: white;
-                padding: 10px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #106ebe;
-            }
-        """)
+        self.change_btn = create_primary_button("Change Password")
+        self.change_btn.setStyleSheet("QPushButton#PrimaryButton { padding: 10px 20px; }")
         self.change_btn.clicked.connect(self.attempt_change)
         button_layout.addWidget(self.change_btn)
 

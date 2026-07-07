@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 
-from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector
+from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector, create_primary_button
+from ..theme import Colors
 
 
 class AIExplainDialog(BaseModal):
@@ -68,9 +69,14 @@ class AIExplainDialog(BaseModal):
             ("Full Analysis", "full"),
         ]
 
-        for label, value in explain_types:
+        # QButtonGroup ids are always ints in Qt (addButton(button, id: int)),
+        # never strings - map each button to a sequential int id here and
+        # translate back to the real string value in get_parameters() below.
+        self.explain_type_values = {}
+        for i, (label, value) in enumerate(explain_types):
             radio = QRadioButton(label)
-            self.explain_type.addButton(radio, value)
+            self.explain_type.addButton(radio, i)
+            self.explain_type_values[i] = value
             options_layout.addWidget(radio)
             if value == "full":
                 radio.setChecked(True)
@@ -107,20 +113,7 @@ class AIExplainDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.explain_btn = QPushButton("Generate Explanation")
-        self.explain_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.explain_btn = create_primary_button("Generate Explanation")
         self.explain_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.explain_btn)
 
@@ -131,7 +124,7 @@ class AIExplainDialog(BaseModal):
         return {
             "column": self.column_selector.get_column(),
             "output_column": self.output_col_edit.text() or "explanation",
-            "explain_type": self.explain_type.checkedId(),
+            "explain_type": self.explain_type_values[self.explain_type.checkedId()],
         }
 
     def validate(self) -> bool:
@@ -206,7 +199,7 @@ class AISentimentDialog(BaseModal):
         preview_layout.addWidget(self.preview_table)
 
         self.stats_label = QLabel()
-        self.stats_label.setStyleSheet("color: #666; font-style: italic;")
+        self.stats_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-style: italic;")
         preview_layout.addWidget(self.stats_label)
 
         layout.addWidget(preview_group)
@@ -223,20 +216,7 @@ class AISentimentDialog(BaseModal):
         self.preview_btn.clicked.connect(self.preview)
         btn_layout.addWidget(self.preview_btn)
 
-        self.analyze_btn = QPushButton("Analyze")
-        self.analyze_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.analyze_btn = create_primary_button("Analyze")
         self.analyze_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.analyze_btn)
 
@@ -396,7 +376,7 @@ class AIEntityExtractionDialog(BaseModal):
         preview_layout.addWidget(self.preview_table)
 
         self.stats_label = QLabel()
-        self.stats_label.setStyleSheet("color: #666; font-style: italic;")
+        self.stats_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-style: italic;")
         preview_layout.addWidget(self.stats_label)
 
         layout.addWidget(preview_group)
@@ -413,20 +393,7 @@ class AIEntityExtractionDialog(BaseModal):
         self.preview_btn.clicked.connect(self.preview)
         btn_layout.addWidget(self.preview_btn)
 
-        self.extract_btn = QPushButton("Extract")
-        self.extract_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.extract_btn = create_primary_button("Extract")
         self.extract_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.extract_btn)
 

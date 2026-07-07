@@ -1,13 +1,37 @@
 """AI Panel Component - Interactive AI assistant for CaatMaster"""
 from typing import Dict, List
+import qtawesome as qta
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextEdit, QLineEdit, QFrame, QScrollArea, QGraphicsDropShadowEffect,
     QListWidget, QListWidgetItem, QComboBox, QSizePolicy,
-    QProgressBar, QToolButton, QSpacerItem
+    QProgressBar, QToolButton, QSpacerItem, QDialog, QApplication
 )
 from PySide6.QtCore import Qt, QSize, Signal, Slot, QTimer
-from PySide6.QtGui import QFont, QColor, QIcon, QTextCursor, QKeyEvent, QAction, QPixmap
+from PySide6.QtGui import QFont, QColor, QIcon, QPainter, QTextCursor, QKeyEvent, QAction, QPixmap
+
+from ..theme import Colors
+
+
+def _avatar_pixmap(icon_name: str, bg: str, fg: str, size: int = 26) -> QPixmap:
+    """A circular tinted-chip avatar for chat bubbles - replaces the raw
+    emoji glyphs (which rendered as a blank box wherever the bundled Inter
+    font has no emoji coverage) with the same qtawesome icon language used
+    everywhere else in the app (sidebar, dashboard)."""
+    pm = QPixmap(size, size)
+    pm.fill(Qt.transparent)
+    painter = QPainter(pm)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(bg))
+    painter.drawEllipse(0, 0, size, size)
+    glyph_size = int(size * 0.6)
+    glyph = qta.icon(icon_name, color=fg).pixmap(glyph_size, glyph_size)
+    x = (size - glyph.width()) // 2
+    y = (size - glyph.height()) // 2
+    painter.drawPixmap(x, y, glyph)
+    painter.end()
+    return pm
 
 
 class _AutoHeightTextEdit(QTextEdit):
@@ -50,27 +74,28 @@ class AIMessageWidget(QFrame):
     def setup_ui(self, message: str):
         # Color scheme based on sender
         if self.is_user:
-            bg_color = "#3b82f6"  # Blue for user
-            text_color = "white"
-            bubble_style = """
-                QFrame {{
-                    background-color: {0};
+            bg_color = Colors.ACCENT
+            text_color = Colors.TEXT_ON_ACCENT
+            bubble_style = f"""
+                QFrame#chatBubble {{
+                    background-color: {bg_color};
                     border-radius: 14px;
                     padding: 12px 14px;
                 }}
-            """.format(bg_color)
+            """
         else:
-            bg_color = "#f3f4f6"  # Light gray for AI
-            text_color = "#1f2937"
-            bubble_style = """
-                QFrame {{
-                    background-color: {0};
+            bg_color = Colors.BG_SECONDARY
+            text_color = Colors.TEXT_PRIMARY
+            bubble_style = f"""
+                QFrame#chatBubble {{
+                    background-color: {bg_color};
                     border-radius: 14px;
-                    border: 1px solid #e5e7eb;
+                    border: 1px solid {Colors.BORDER};
                     padding: 12px 14px;
                 }}
-            """.format(bg_color)
+            """
 
+        self.setObjectName("chatBubble")
         self.setStyleSheet(bubble_style)
         # Comfortably inside the AI panel's fixed 440px width, leaving room
         # for the scroll area's margins/scrollbar and (for AI messages)
@@ -84,8 +109,11 @@ class AIMessageWidget(QFrame):
         layout.setSpacing(6)
 
         # Avatar/Icon
-        icon_label = QLabel("👤" if self.is_user else "🤖")
-        icon_label.setStyleSheet("font-size: 15px;")
+        icon_label = QLabel()
+        if self.is_user:
+            icon_label.setPixmap(_avatar_pixmap("fa5s.user", Colors.BG_TERTIARY, Colors.TEXT_SECONDARY, 22))
+        else:
+            icon_label.setPixmap(_avatar_pixmap("fa5s.robot", Colors.ACCENT_SOFT, Colors.ACCENT, 22))
         icon_label.setFixedSize(22, 22)
         icon_label.setAlignment(Qt.AlignCenter)
 
@@ -125,12 +153,7 @@ class AIMessageWidget(QFrame):
         # Timestamp
         from datetime import datetime
         time_label = QLabel(datetime.now().strftime("%H:%M"))
-        time_label.setStyleSheet("""
-            QLabel {
-                color: #9ca3af;
-                font-size: 10px;
-            }
-        """)
+        time_label.setStyleSheet(f"QLabel {{ color: {Colors.TEXT_TERTIARY}; font-size: 10px; }}")
         time_label.setAlignment(Qt.AlignRight if self.is_user else Qt.AlignLeft)
 
         # Add to layout - both branches now actually add their icon row,
@@ -148,6 +171,72 @@ class AIMessageWidget(QFrame):
         layout.addWidget(time_label)
 
 
+class ClickableImageLabel(QLabel):
+    """A QLabel that emits a signal on left-click - used for the inline
+    chart thumbnail so it can offer a "click to enlarge" affordance."""
+
+    clicked = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip("Click to enlarge")
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+class ChartEnlargeDialog(QDialog):
+    """Full-size view of an AI-generated chart, opened by clicking its
+    inline thumbnail. Charts are read-only display data, so this is just a
+    viewer - no approval gate, no editing."""
+
+    def __init__(self, image_bytes: bytes, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Chart")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        pixmap = QPixmap()
+        pixmap.loadFromData(image_bytes)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet(f"QScrollArea {{ border: 1px solid {Colors.BORDER}; background-color: {Colors.BG_PRIMARY}; }}")
+
+        image_label = QLabel()
+        image_label.setAlignment(Qt.AlignCenter)
+        if not pixmap.isNull():
+            # Cap to a comfortable viewing size instead of showing the raw
+            # (often huge) render resolution at 1:1 - fits the screen the
+            # dialog opens on, but never upscales a small chart past its
+            # native size.
+            screen = self.screen() or QApplication.primaryScreen()
+            available = screen.availableGeometry().size() * 0.85
+            target_size = pixmap.size().boundedTo(available)
+            if target_size != pixmap.size():
+                image_label.setPixmap(pixmap.scaled(
+                    target_size, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                ))
+            else:
+                image_label.setPixmap(pixmap)
+        else:
+            image_label.setText("(chart failed to render)")
+        scroll.setWidget(image_label)
+        layout.addWidget(scroll, 1)
+
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        button_row.addWidget(close_btn)
+        layout.addLayout(button_row)
+
+        self.resize(min(pixmap.width() + 60, 900), min(pixmap.height() + 120, 800))
+
+
 class AIChartMessageWidget(QFrame):
     """Shows an AI-generated chart image inline in the chat, styled like a
     normal AI message bubble. Charts are read-only (never mutate the
@@ -156,13 +245,15 @@ class AIChartMessageWidget(QFrame):
 
     def __init__(self, image_bytes: bytes, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("""
-            QFrame {
-                background-color: #f3f4f6;
+        self._image_bytes = image_bytes
+        self.setObjectName("chatBubble")
+        self.setStyleSheet(f"""
+            QFrame#chatBubble {{
+                background-color: {Colors.BG_SECONDARY};
                 border-radius: 14px;
-                border: 1px solid #e5e7eb;
+                border: 1px solid {Colors.BORDER};
                 padding: 12px 14px;
-            }
+            }}
         """)
         self.setMaximumWidth(340)
 
@@ -172,19 +263,20 @@ class AIChartMessageWidget(QFrame):
 
         row = QHBoxLayout()
         row.setSpacing(8)
-        icon_label = QLabel("🤖")
-        icon_label.setStyleSheet("font-size: 15px;")
+        icon_label = QLabel()
+        icon_label.setPixmap(_avatar_pixmap("fa5s.robot", Colors.ACCENT_SOFT, Colors.ACCENT, 22))
         icon_label.setFixedSize(22, 22)
         icon_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
         row.addWidget(icon_label, 0, Qt.AlignTop)
 
-        image_label = QLabel()
+        image_label = ClickableImageLabel()
         pixmap = QPixmap()
         pixmap.loadFromData(image_bytes)
         available_width = 340 - 22 - 8 - 28  # bubble max width minus icon/spacing/padding
         if not pixmap.isNull():
             scaled = pixmap.scaledToWidth(available_width, Qt.SmoothTransformation)
             image_label.setPixmap(scaled)
+            image_label.clicked.connect(self._show_enlarged)
         else:
             image_label.setText("(chart failed to render)")
         row.addWidget(image_label, 1)
@@ -192,41 +284,14 @@ class AIChartMessageWidget(QFrame):
 
         from datetime import datetime
         time_label = QLabel(datetime.now().strftime("%H:%M"))
-        time_label.setStyleSheet("QLabel { color: #9ca3af; font-size: 10px; }")
+        time_label.setStyleSheet(f"QLabel {{ color: {Colors.TEXT_TERTIARY}; font-size: 10px; }}")
         time_label.setAlignment(Qt.AlignLeft)
         layout.addWidget(time_label)
 
-
-class QuickActionButton(QPushButton):
-    """Quick action button for AI panel"""
-
-    def __init__(self, text: str, icon: str, description: str, parent=None):
-        super().__init__(text, parent)
-        self.icon = icon
-        self.description = description
-        self.setCursor(Qt.PointingHandCursor)
-        self.setup_ui()
-
-    def setup_ui(self):
-        self.setStyleSheet("""
-            QPushButton {
-                text-align: left;
-                padding: 12px 16px;
-                background-color: white;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-                font-size: 13px;
-                font-weight: 600;
-                color: #1f2937;
-            }
-            QPushButton:hover {
-                background-color: #f9fafb;
-                border-color: #3b82f6;
-            }
-            QPushButton:pressed {
-                background-color: #f3f4f6;
-            }
-        """)
+    def _show_enlarged(self):
+        """Open the full-size chart in a viewer dialog."""
+        dialog = ChartEnlargeDialog(self._image_bytes, self)
+        dialog.exec()
 
 
 class AIPanel(QWidget):
@@ -303,9 +368,6 @@ class AIPanel(QWidget):
         scroll.setWidget(self.messages_widget)
         layout.addWidget(scroll, 1)
 
-        # Welcome message
-        self.add_welcome_message()
-
         # Attached files (PDF/CSV/Excel become part of the chat context) —
         # ported from the standalone AI Chat dialog, which duplicated this
         # panel's general chat capability while being the only place file
@@ -317,61 +379,91 @@ class AIPanel(QWidget):
         input_frame = self.create_input_area()
         layout.addWidget(input_frame)
 
-        # Quick actions
-        quick_actions = self.create_quick_actions()
-        layout.addWidget(quick_actions)
+        # Quick actions - only shown in the empty/welcome state (see
+        # _update_quick_actions_visibility), the same way Claude/ChatGPT
+        # show suggested prompts before a conversation starts and get out
+        # of the way once one is underway, rather than permanently eating
+        # vertical space in every conversation regardless of length.
+        self.quick_actions_frame = self.create_quick_actions()
+        layout.addWidget(self.quick_actions_frame)
+
+        # Welcome message - added last, since it triggers
+        # _update_quick_actions_visibility(), which needs quick_actions_frame
+        # to already exist.
+        self.add_welcome_message()
 
     def create_header(self) -> QWidget:
         """Create the panel header"""
         header = QWidget()
-        header.setStyleSheet("""
-            QWidget {
-                background-color: white;
-                border-bottom: 1px solid #e5e7eb;
-            }
+        header.setObjectName("AIPanelHeader")
+        # Scoped to #AIPanelHeader specifically - QLabel is itself a
+        # QWidget (via QFrame), so a blanket "QWidget { border-bottom:
+        # ... }" selector here cascaded that same border down onto the
+        # "AI Assistant" title and "Model: ..." labels individually,
+        # showing as a stray outline/box around the header text.
+        header.setStyleSheet(f"""
+            QWidget#AIPanelHeader {{
+                background-color: {Colors.BG_PRIMARY};
+                border-bottom: 1px solid {Colors.BORDER};
+            }}
         """)
         layout = QHBoxLayout(header)
         layout.setContentsMargins(16, 12, 16, 12)
 
-        # Title with icon
+        # Title with icon, and the current model as a small badge
+        # underneath - moved up from the input area so it's visible at a
+        # glance instead of buried under the message textbox.
         title_layout = QHBoxLayout()
-        icon_label = QLabel("🤖")
-        icon_label.setStyleSheet("font-size: 20px;")
+        icon_label = QLabel()
+        icon_label.setPixmap(_avatar_pixmap("fa5s.robot", Colors.ACCENT_SOFT, Colors.ACCENT, 28))
+        icon_label.setFixedSize(28, 28)
         title_layout.addWidget(icon_label)
 
+        text_col = QVBoxLayout()
+        text_col.setSpacing(0)
+
         title = QLabel("AI Assistant")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 16px;
                 font-weight: 700;
-                color: #1f2937;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
-        title_layout.addWidget(title)
+        text_col.addWidget(title)
+
+        self.provider_label = QLabel("Model: Not configured")
+        self.provider_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_TERTIARY};
+                font-size: 10.5px;
+            }}
+        """)
+        text_col.addWidget(self.provider_label)
+
+        title_layout.addLayout(text_col)
         layout.addLayout(title_layout, 1)
 
         # Settings button (using QToolButton for better icon visibility)
         settings_btn = QToolButton()
         settings_btn.setFixedSize(32, 32)
-        settings_btn.setText("⚙")
-        settings_btn.setStyleSheet("""
-            QToolButton {
+        settings_btn.setIcon(qta.icon("fa5s.cog", color=Colors.TEXT_SECONDARY))
+        settings_btn.setIconSize(QSize(14, 14))
+        settings_btn.setStyleSheet(f"""
+            QToolButton {{
                 background-color: transparent;
-                border: 1px solid #d1d5db;
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 6px;
-                font-size: 14px;
-                font-weight: bold;
-                color: #374151;
                 padding: 4px;
-            }
-            QToolButton:hover {
-                background-color: #e5e7eb;
-                border-color: #9ca3af;
-                color: #1f2937;
-            }
-            QToolButton:pressed {
-                background-color: #d1d5db;
-            }
+            }}
+            QToolButton:hover {{
+                background-color: {Colors.BG_TERTIARY};
+                border-color: {Colors.TEXT_TERTIARY};
+                color: {Colors.TEXT_PRIMARY};
+            }}
+            QToolButton:pressed {{
+                background-color: {Colors.BORDER_STRONG};
+            }}
         """)
         settings_btn.clicked.connect(self.showSettings.emit)
         settings_btn.setToolTip("AI Settings")
@@ -380,25 +472,23 @@ class AIPanel(QWidget):
         # Clear chat button
         clear_btn = QToolButton()
         clear_btn.setFixedSize(32, 32)
-        clear_btn.setText("✕")
-        clear_btn.setStyleSheet("""
-            QToolButton {
+        clear_btn.setIcon(qta.icon("fa5s.times", color=Colors.TEXT_SECONDARY))
+        clear_btn.setIconSize(QSize(14, 14))
+        clear_btn.setStyleSheet(f"""
+            QToolButton {{
                 background-color: transparent;
-                border: 1px solid #d1d5db;
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 6px;
-                font-size: 14px;
-                font-weight: bold;
-                color: #374151;
                 padding: 4px;
-            }
-            QToolButton:hover {
-                background-color: #fee2e2;
-                border-color: #fca5a5;
-                color: #991b1b;
-            }
-            QToolButton:pressed {
-                background-color: #fecaca;
-            }
+            }}
+            QToolButton:hover {{
+                background-color: {Colors.DANGER_SOFT};
+                border-color: {Colors.DANGER};
+                color: {Colors.DANGER};
+            }}
+            QToolButton:pressed {{
+                background-color: {Colors.DANGER_SOFT};
+            }}
         """)
         clear_btn.clicked.connect(self._on_clear_chat)
         clear_btn.setToolTip("Clear Chat")
@@ -409,11 +499,12 @@ class AIPanel(QWidget):
     def create_input_area(self) -> QWidget:
         """Create the message input area"""
         frame = QFrame()
-        frame.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border-top: 1px solid #e5e7eb;
-            }
+        frame.setObjectName("AIPanelInputArea")
+        frame.setStyleSheet(f"""
+            QFrame#AIPanelInputArea {{
+                background-color: {Colors.BG_PRIMARY};
+                border-top: 1px solid {Colors.BORDER};
+            }}
         """)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(16, 12, 16, 12)
@@ -421,12 +512,12 @@ class AIPanel(QWidget):
 
         # Processing indicator
         self.processing_label = QLabel("AI is thinking...")
-        self.processing_label.setStyleSheet("""
-            QLabel {
-                color: #6b7280;
+        self.processing_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 12px;
                 font-style: italic;
-            }
+            }}
         """)
         self.processing_label.hide()
         layout.addWidget(self.processing_label)
@@ -434,100 +525,93 @@ class AIPanel(QWidget):
         # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setMaximumHeight(4)
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{
                 border: none;
                 background-color: transparent;
-            }
-            QProgressBar::chunk {
-                background-color: #3b82f6;
-            }
+            }}
+            QProgressBar::chunk {{
+                background-color: {Colors.ACCENT};
+            }}
         """)
         self.progress_bar.hide()
         layout.addWidget(self.progress_bar)
 
-        # Input field
+        # Input row - textbox with an icon-only send/stop button inline at
+        # the end, instead of a separate button row below (the model name
+        # moved up into the header, so this row no longer needs to carry
+        # it too).
+        input_row = QHBoxLayout()
+        input_row.setSpacing(8)
+
         self.input_edit = QTextEdit()
         self.input_edit.setPlaceholderText("Ask AI about your data...")
         self.input_edit.setMaximumHeight(100)
-        self.input_edit.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #e5e7eb;
+        self.input_edit.setStyleSheet(f"""
+            QTextEdit {{
+                border: 1px solid {Colors.BORDER};
                 border-radius: 8px;
                 padding: 10px;
                 font-size: 13px;
-                background-color: #f9fafb;
-            }
-            QTextEdit:focus {
-                border-color: #3b82f6;
-                background-color: white;
-            }
+                background-color: {Colors.BG_SECONDARY};
+            }}
+            QTextEdit:focus {{
+                border-color: {Colors.ACCENT};
+                background-color: {Colors.BG_PRIMARY};
+            }}
         """)
         self.input_edit.textChanged.connect(self.on_text_changed)
         # Handle Enter key for sending messages
         self.input_edit.keyPressEvent = self._on_input_keypress
-        layout.addWidget(self.input_edit)
+        input_row.addWidget(self.input_edit, 1)
 
-        # Button row
-        button_layout = QHBoxLayout()
-
-        # Provider indicator
-        self.provider_label = QLabel("Model: Not configured")
-        self.provider_label.setStyleSheet("""
-            QLabel {
-                color: #6b7280;
-                font-size: 11px;
-            }
-        """)
-        button_layout.addWidget(self.provider_label)
-
-        button_layout.addStretch()
-
-        # Cancel button (hidden by default, shown during processing)
-        self.cancel_btn = QPushButton("Stop")
-        self.cancel_btn.setEnabled(True)
-        self.cancel_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ef4444;
-                color: white;
+        # Send button - icon-only, inline with the textbox
+        self.send_btn = QToolButton()
+        self.send_btn.setFixedSize(40, 40)
+        self.send_btn.setIcon(qta.icon("fa5s.paper-plane", color=Colors.TEXT_ON_ACCENT))
+        self.send_btn.setIconSize(QSize(15, 15))
+        self.send_btn.setCursor(Qt.PointingHandCursor)
+        self.send_btn.setEnabled(False)
+        self.send_btn.setToolTip("Send")
+        self.send_btn.setStyleSheet(f"""
+            QToolButton {{
+                background-color: {Colors.ACCENT};
                 border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #dc2626;
-            }
+                border-radius: 20px;
+            }}
+            QToolButton:hover {{
+                background-color: {Colors.ACCENT_HOVER};
+            }}
+            QToolButton:disabled {{
+                background-color: {Colors.BORDER_STRONG};
+            }}
+        """)
+        self.send_btn.clicked.connect(self.send_message)
+        input_row.addWidget(self.send_btn)
+
+        # Stop button - same slot as Send, shown instead of it during
+        # processing (hidden by default).
+        self.cancel_btn = QToolButton()
+        self.cancel_btn.setFixedSize(40, 40)
+        self.cancel_btn.setIcon(qta.icon("fa5s.stop", color=Colors.TEXT_ON_ACCENT))
+        self.cancel_btn.setIconSize(QSize(14, 14))
+        self.cancel_btn.setCursor(Qt.PointingHandCursor)
+        self.cancel_btn.setToolTip("Stop")
+        self.cancel_btn.setStyleSheet(f"""
+            QToolButton {{
+                background-color: {Colors.DANGER};
+                border: none;
+                border-radius: 20px;
+            }}
+            QToolButton:hover {{
+                background-color: {Colors.DANGER_HOVER};
+            }}
         """)
         self.cancel_btn.clicked.connect(self.cancelRequest.emit)
         self.cancel_btn.hide()
-        button_layout.addWidget(self.cancel_btn)
+        input_row.addWidget(self.cancel_btn)
 
-        # Send button
-        self.send_btn = QPushButton("Send")
-        self.send_btn.setEnabled(False)
-        self.send_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
-            QPushButton:disabled {
-                background-color: #9ca3af;
-            }
-        """)
-        self.send_btn.clicked.connect(self.send_message)
-        button_layout.addWidget(self.send_btn)
-
-        layout.addLayout(button_layout)
+        layout.addLayout(input_row)
 
         return frame
 
@@ -536,11 +620,12 @@ class AIPanel(QWidget):
         via get_attachment_context(), which main_window._get_ai_context()
         folds into every message sent from this panel."""
         frame = QFrame()
-        frame.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border-top: 1px solid #e5e7eb;
-            }
+        frame.setObjectName("AIPanelAttachments")
+        frame.setStyleSheet(f"""
+            QFrame#AIPanelAttachments {{
+                background-color: {Colors.BG_PRIMARY};
+                border-top: 1px solid {Colors.BORDER};
+            }}
         """)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(16, 8, 16, 8)
@@ -548,30 +633,30 @@ class AIPanel(QWidget):
 
         header_row = QHBoxLayout()
         label = QLabel("Attached Files")
-        label.setStyleSheet("""
-            QLabel {
+        label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 11px;
                 font-weight: 600;
-                color: #6b7280;
+                color: {Colors.TEXT_SECONDARY};
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
-            }
+            }}
         """)
         header_row.addWidget(label)
         header_row.addStretch()
 
-        small_btn_style = """
-            QPushButton {
+        small_btn_style = f"""
+            QPushButton {{
                 padding: 4px 10px;
                 font-size: 11px;
-                border: 1px solid #d1d5db;
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 4px;
-                background-color: white;
-                color: #374151;
-            }
-            QPushButton:hover {
-                background-color: #f3f4f6;
-            }
+                background-color: {Colors.BG_PRIMARY};
+                color: {Colors.TEXT_SECONDARY};
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.BG_SECONDARY};
+            }}
         """
 
         pdf_btn = QPushButton("+ PDF")
@@ -590,29 +675,22 @@ class AIPanel(QWidget):
 
         self.file_list = QListWidget()
         self.file_list.setMaximumHeight(70)
-        self.file_list.setStyleSheet("""
-            QListWidget {
-                border: 1px solid #e5e7eb;
-                border-radius: 6px;
-                font-size: 11px;
-            }
-        """)
         self.file_list.setVisible(False)
         layout.addWidget(self.file_list)
 
         self.clear_files_btn = QPushButton("Clear Files")
         self.clear_files_btn.setCursor(Qt.PointingHandCursor)
-        self.clear_files_btn.setStyleSheet("""
-            QPushButton {
+        self.clear_files_btn.setStyleSheet(f"""
+            QPushButton {{
                 padding: 4px 10px;
                 font-size: 11px;
-                color: #991b1b;
+                color: {Colors.DANGER};
                 border: none;
                 text-align: left;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 text-decoration: underline;
-            }
+            }}
         """)
         self.clear_files_btn.setVisible(False)
         self.clear_files_btn.clicked.connect(self._clear_files)
@@ -642,7 +720,10 @@ class AIPanel(QWidget):
             self.uploaded_files.append({
                 "name": Path(filename).name, "type": file_ext, "path": filename, "data": data
             })
-            self.file_list.addItem(QListWidgetItem(f"📄 {Path(filename).name}"))
+            file_item = QListWidgetItem(Path(filename).name)
+            icon_name = "fa5s.file-pdf" if file_type == "pdf" else "fa5s.file-excel"
+            file_item.setIcon(qta.icon(icon_name, color=Colors.TEXT_SECONDARY))
+            self.file_list.addItem(file_item)
             self.file_list.setVisible(True)
             self.clear_files_btn.setVisible(True)
             self.add_message(f"Attached: {Path(filename).name} — ask me anything about it.", is_user=False)
@@ -699,88 +780,96 @@ class AIPanel(QWidget):
     def create_quick_actions(self) -> QWidget:
         """Create quick action buttons"""
         frame = QWidget()
-        frame.setStyleSheet("""
-            QWidget {
-                background-color: white;
-                border-top: 1px solid #e5e7eb;
-            }
+        frame.setObjectName("AIPanelQuickActions")
+        frame.setStyleSheet(f"""
+            QWidget#AIPanelQuickActions {{
+                background-color: {Colors.BG_PRIMARY};
+                border-top: 1px solid {Colors.BORDER};
+            }}
         """)
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(8)
 
         label = QLabel("Quick Actions")
-        label.setStyleSheet("""
-            QLabel {
+        label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 12px;
                 font-weight: 600;
-                color: #6b7280;
+                color: {Colors.TEXT_SECONDARY};
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
-            }
+            }}
         """)
         layout.addWidget(label)
 
-        # Action buttons grid
+        # Action buttons grid - each a distinct semantic tint (data/success/
+        # caution) rather than a priority ranking, since the three actions
+        # are equally valid, unrelated things to do next.
         actions_layout = QHBoxLayout()
         actions_layout.setSpacing(8)
 
         # Analyze dataset button
-        analyze_btn = QPushButton("📊 Analyze")
+        analyze_btn = QPushButton(" Analyze")
+        analyze_btn.setIcon(qta.icon("fa5s.chart-bar", color=Colors.ACCENT))
         analyze_btn.setCursor(Qt.PointingHandCursor)
-        analyze_btn.setStyleSheet("""
-            QPushButton {
+        analyze_btn.setStyleSheet(f"""
+            QPushButton {{
                 padding: 10px 12px;
-                background-color: #eff6ff;
-                border: 1px solid #bfdbfe;
+                background-color: {Colors.ACCENT_SOFT};
+                border: 1px solid {Colors.ACCENT};
                 border-radius: 6px;
                 font-size: 12px;
                 font-weight: 600;
-                color: #1e40af;
-            }
-            QPushButton:hover {
-                background-color: #dbeafe;
-            }
+                color: {Colors.ACCENT};
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.BG_SELECTED_STRONG};
+            }}
         """)
         analyze_btn.clicked.connect(self.analyzeDataset.emit)
         actions_layout.addWidget(analyze_btn)
 
         # Generate column button
-        column_btn = QPushButton("📝 New Column")
+        column_btn = QPushButton(" New Column")
+        column_btn.setIcon(qta.icon("fa5s.plus", color=Colors.SUCCESS))
         column_btn.setCursor(Qt.PointingHandCursor)
-        column_btn.setStyleSheet("""
-            QPushButton {
+        column_btn.setStyleSheet(f"""
+            QPushButton {{
                 padding: 10px 12px;
-                background-color: #f0fdf4;
-                border: 1px solid #bbf7d0;
+                background-color: {Colors.SUCCESS_SOFT};
+                border: 1px solid {Colors.SUCCESS};
                 border-radius: 6px;
                 font-size: 12px;
                 font-weight: 600;
-                color: #166534;
-            }
-            QPushButton:hover {
-                background-color: #dcfce7;
-            }
+                color: {Colors.SUCCESS};
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.SUCCESS_SOFT};
+                border-color: {Colors.SUCCESS_HOVER};
+            }}
         """)
         column_btn.clicked.connect(self.generateColumn.emit)
         actions_layout.addWidget(column_btn)
 
         # Compliance check button
-        compliance_btn = QPushButton("⚠️ Compliance")
+        compliance_btn = QPushButton(" Compliance")
+        compliance_btn.setIcon(qta.icon("fa5s.exclamation-triangle", color=Colors.WARNING_STRONG))
         compliance_btn.setCursor(Qt.PointingHandCursor)
-        compliance_btn.setStyleSheet("""
-            QPushButton {
+        compliance_btn.setStyleSheet(f"""
+            QPushButton {{
                 padding: 10px 12px;
-                background-color: #fefce8;
-                border: 1px solid #fde047;
+                background-color: {Colors.WARNING_SOFT};
+                border: 1px solid {Colors.WARNING_STRONG};
                 border-radius: 6px;
                 font-size: 12px;
                 font-weight: 600;
-                color: #854d0e;
-            }
-            QPushButton:hover {
-                background-color: #fef9c3;
-            }
+                color: {Colors.WARNING_STRONG};
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.WARNING_SOFT};
+                border-color: {Colors.WARNING};
+            }}
         """)
         compliance_btn.clicked.connect(self.complianceCheck.emit)
         actions_layout.addWidget(compliance_btn)
@@ -794,11 +883,12 @@ class AIPanel(QWidget):
         welcome = """Hello! I'm CaatMaster AI, your audit analytics assistant.
 
 I can help you with:
-• **Data Analysis** - Understand your datasets, find anomalies
-• **Column Generation** - Create derived columns from natural language
-• **Compliance Checking** - Test data against policies
-• **Report Writing** - Draft audit findings and memos
-• **Document Analysis** - Attach a PDF, CSV, or Excel file below and ask me about it
+
+- **Data Analysis** - Understand your datasets, find anomalies
+- **Column Generation** - Create derived columns from natural language
+- **Compliance Checking** - Test data against policies
+- **Report Writing** - Draft audit findings and memos
+- **Document Analysis** - Attach a PDF, CSV, or Excel file below and ask me about it
 
 What would you like to do?"""
         self.add_message(welcome, is_user=False)
@@ -815,8 +905,17 @@ What would you like to do?"""
         alignment = Qt.AlignRight if is_user else Qt.AlignLeft
         self.messages_layout.insertWidget(self.messages_layout.count() - 1, widget, 0, alignment)
 
+        self._update_quick_actions_visibility()
+
         # Scroll to bottom
         QTimer.singleShot(50, self.scroll_to_bottom)
+
+    def _update_quick_actions_visibility(self):
+        """Quick Actions are only useful before a conversation starts -
+        once the user has sent a real message, keep that vertical space
+        for the conversation instead of a permanently-pinned row. Only the
+        welcome message counts as "empty"."""
+        self.quick_actions_frame.setVisible(len(self.messages) <= 1)
 
     def add_chart_message(self, image_bytes: bytes):
         """Show an AI-generated chart inline in the chat, the same way a
@@ -830,15 +929,27 @@ What would you like to do?"""
         # Remove any existing typing indicator first
         self._remove_typing_indicator()
 
-        widget = QLabel("🤖 AI is typing...")
-        widget.setStyleSheet("""
-            QLabel {
-                color: #6b7280;
+        widget = QWidget()
+        row = QHBoxLayout(widget)
+        row.setContentsMargins(16, 8, 16, 8)
+        row.setSpacing(8)
+
+        icon_label = QLabel()
+        icon_label.setPixmap(_avatar_pixmap("fa5s.robot", Colors.ACCENT_SOFT, Colors.ACCENT, 18))
+        icon_label.setFixedSize(18, 18)
+        row.addWidget(icon_label)
+
+        text_label = QLabel("AI is typing...")
+        text_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 12px;
                 font-style: italic;
-                padding: 8px 16px;
-            }
+            }}
         """)
+        row.addWidget(text_label)
+        row.addStretch()
+
         self.messages_layout.insertWidget(self.messages_layout.count() - 1, widget)
         QTimer.singleShot(50, self.scroll_to_bottom)
         self.typing_indicator = widget

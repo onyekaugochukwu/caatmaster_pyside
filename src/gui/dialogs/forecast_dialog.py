@@ -17,7 +17,7 @@ from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis, QCategoryAxis
 
 from ..components.common_modals import (
-    BaseModal, PreviewTable, ColumnSelector, StatusLabel
+    BaseModal, PreviewTable, ColumnSelector, StatusLabel, create_primary_button
 )
 from ..components.common_modals import TimeSeriesChart
 
@@ -67,9 +67,15 @@ class ForecastDialog(BaseModal):
             ("Prophet-style (Trend + Seasonality)", "prophet"),
         ]
 
-        for label, value in methods:
+        # QButtonGroup ids are always ints in Qt (addButton(button, id: int)),
+        # never strings - map each button to a sequential int id here and
+        # translate back to the method's real string name wherever the
+        # selection is read (_on_method_changed, get_parameters below).
+        self.method_values = {}
+        for i, (label, value) in enumerate(methods):
             radio = QRadioButton(label)
-            self.method_group.addButton(radio, value)
+            self.method_group.addButton(radio, i)
+            self.method_values[i] = value
             method_layout.addWidget(radio)
             if value == "linear":
                 radio.setChecked(True)
@@ -168,20 +174,7 @@ class ForecastDialog(BaseModal):
         self.preview_btn.clicked.connect(self._generate_forecast)
         btn_layout.addWidget(self.preview_btn)
 
-        self.run_btn = QPushButton("Apply Forecast")
-        self.run_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.run_btn = create_primary_button("Apply Forecast")
         self.run_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.run_btn)
 
@@ -193,7 +186,7 @@ class ForecastDialog(BaseModal):
 
     def _on_method_changed(self, button):
         """Handle forecast method change"""
-        method = self.method_group.id(button)
+        method = self.method_values[self.method_group.id(button)]
 
         if method == "moving_average":
             self.window_spin.setEnabled(True)
@@ -210,7 +203,7 @@ class ForecastDialog(BaseModal):
         return {
             "date_column": self.date_col_selector.get_column(),
             "value_column": self.value_col_selector.get_column(),
-            "method": self.method_group.checkedId(),
+            "method": self.method_values[self.method_group.checkedId()],
             "horizon": self.horizon_spin.value(),
             "confidence": self.confidence_spin.value() / 100,
             "window": self.window_spin.value(),

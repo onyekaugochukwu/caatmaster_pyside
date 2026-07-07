@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QMimeData
 from PySide6.QtGui import QDrag, QPixmap, QFont, QColor
 
-from ..components.common_modals import BaseModal, PreviewTable
+from ..components.common_modals import BaseModal, PreviewTable, create_primary_button
+from ..theme import Colors
 
 
 class DraggableColumnLabel(QLabel):
@@ -27,17 +28,17 @@ class DraggableColumnLabel(QLabel):
         self.setFixedHeight(30)
         self.setFixedWidth(120)
         self.setAlignment(Qt.AlignCenter)
-        self.setStyleSheet("""
-            QLabel {
-                background-color: #e3f2fd;
-                border: 1px solid #2196f3;
+        self.setStyleSheet(f"""
+            QLabel {{
+                background-color: {Colors.ACCENT_SOFT};
+                border: 1px solid {Colors.ACCENT};
                 border-radius: 4px;
                 padding: 4px;
                 font-size: 12px;
-            }
-            QLabel:hover {
-                background-color: #bbdefb;
-            }
+            }}
+            QLabel:hover {{
+                background-color: {Colors.BG_SELECTED_STRONG};
+            }}
         """)
         self.setCursor(Qt.OpenHandCursor)
 
@@ -70,31 +71,37 @@ class DropZone(QFrame):
         self.columns = []
         self._setup_ui()
 
+    _IDLE_STYLE = f"""
+        QFrame {{
+            background-color: {Colors.BG_SECONDARY};
+            border: 2px dashed {Colors.BORDER_STRONG};
+            border-radius: 4px;
+            min-height: 60px;
+        }}
+    """
+    _DRAG_OVER_STYLE = f"""
+        QFrame {{
+            background-color: {Colors.ACCENT_SOFT};
+            border: 2px dashed {Colors.ACCENT};
+            border-radius: 4px;
+            min-height: 60px;
+        }}
+    """
+
     def _setup_ui(self):
         self.setAcceptDrops(True)
-        self.setStyleSheet("""
-            QFrame {
-                background-color: #f5f5f5;
-                border: 2px dashed #bdbdbd;
-                border-radius: 4px;
-                min-height: 60px;
-            }
-            QFrame:dragEnter {
-                background-color: #e3f2fd;
-                border-color: #2196f3;
-            }
-        """)
+        self.setStyleSheet(self._IDLE_STYLE)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
 
         self.title_label = QLabel(self.title)
-        self.title_label.setStyleSheet("""
-            QLabel {
+        self.title_label.setStyleSheet(f"""
+            QLabel {{
                 font-weight: bold;
-                color: #666;
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 11px;
-            }
+            }}
         """)
         layout.addWidget(self.title_label)
 
@@ -107,24 +114,10 @@ class DropZone(QFrame):
     def dragEnterEvent(self, event):
         if event.mimeData().hasText():
             event.acceptProposedAction()
-            self.setStyleSheet("""
-                QFrame {
-                    background-color: #e3f2fd;
-                    border: 2px dashed #2196f3;
-                    border-radius: 4px;
-                    min-height: 60px;
-                }
-            """)
+            self.setStyleSheet(self._DRAG_OVER_STYLE)
 
     def dragLeaveEvent(self, event):
-        self.setStyleSheet("""
-            QFrame {
-                background-color: #f5f5f5;
-                border: 2px dashed #bdbdbd;
-                border-radius: 4px;
-                min-height: 60px;
-            }
-        """)
+        self.setStyleSheet(self._IDLE_STYLE)
 
     def dropEvent(self, event):
         column_name = event.mimeData().text()
@@ -132,14 +125,7 @@ class DropZone(QFrame):
             self.columns.append(column_name)
             self._add_column_label(column_name)
 
-        self.setStyleSheet("""
-            QFrame {
-                background-color: #f5f5f5;
-                border: 2px dashed #bdbdbd;
-                border-radius: 4px;
-                min-height: 60px;
-            }
-        """)
+        self.setStyleSheet(self._IDLE_STYLE)
 
     def _add_column_label(self, column_name: str):
         """Add a column label to the drop zone"""
@@ -147,31 +133,31 @@ class DropZone(QFrame):
         label.setFixedHeight(24)
         label.setFixedWidth(100)
         label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("""
-            QLabel {
-                background-color: #2196f3;
-                color: white;
+        label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {Colors.ACCENT};
+                color: {Colors.TEXT_ON_ACCENT};
                 border-radius: 12px;
                 padding: 2px 8px;
                 font-size: 11px;
-            }
+            }}
         """)
         self.columns_layout.addWidget(label)
 
         # Add remove button
         remove_btn = QPushButton("×")
         remove_btn.setFixedSize(20, 20)
-        remove_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f44336;
-                color: white;
+        remove_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.DANGER};
+                color: {Colors.TEXT_ON_ACCENT};
                 border-radius: 10px;
                 border: none;
                 font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #d32f2f;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.DANGER_HOVER};
+            }}
         """)
         remove_btn.clicked.connect(lambda: self._remove_column(column_name, label, remove_btn))
         self.columns_layout.addWidget(remove_btn)
@@ -314,20 +300,7 @@ class PivotTableDialog(BaseModal):
         self.preview_btn.clicked.connect(self.preview)
         btn_layout.addWidget(self.preview_btn)
 
-        self.create_btn = QPushButton("Create Pivot")
-        self.create_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.create_btn = create_primary_button("Create Pivot")
         self.create_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.create_btn)
 
@@ -358,7 +331,7 @@ class PivotTableDialog(BaseModal):
         if not filtered_cols:
             placeholder = QLabel("No matching columns")
             placeholder.setAlignment(Qt.AlignCenter)
-            placeholder.setStyleSheet("color: #999;")
+            placeholder.setStyleSheet(f"color: {Colors.TEXT_TERTIARY};")
             self.columns_grid.addWidget(placeholder, 0, 0, 1, 3)
 
     def _on_search_changed(self, text):

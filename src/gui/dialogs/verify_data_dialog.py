@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from services.data_verification import verify_data_integrity, CHECK_TYPES
+from ..theme import Colors
+from ..components.common_modals import create_primary_button
 
 
 class VerifyDataDialog(QDialog):
@@ -34,7 +36,7 @@ class VerifyDataDialog(QDialog):
             "values actually violate that expectation."
         )
         info.setWordWrap(True)
-        info.setStyleSheet("color: #4b5563;")
+        info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         layout.addWidget(info)
 
         add_group = QGroupBox("Add Expectation")
@@ -81,12 +83,7 @@ class VerifyDataDialog(QDialog):
         list_layout.addWidget(self.checks_table)
         layout.addWidget(list_group)
 
-        run_btn = QPushButton("Run Verification")
-        run_btn.setStyleSheet("""
-            QPushButton { padding: 10px 20px; background-color: #0078d4; color: white;
-                          border: none; border-radius: 6px; font-weight: 600; }
-            QPushButton:hover { background-color: #106ebe; }
-        """)
+        run_btn = create_primary_button("Run Verification")
         run_btn.clicked.connect(self._run_verification)
         layout.addWidget(run_btn)
 

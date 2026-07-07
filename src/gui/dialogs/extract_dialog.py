@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer
 
-from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector
+from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector, create_primary_button
 
 
 class ExtractDialog(BaseModal):
@@ -104,20 +104,7 @@ class ExtractDialog(BaseModal):
         self.preview_btn.clicked.connect(self.preview)
         btn_layout.addWidget(self.preview_btn)
 
-        self.extract_btn = QPushButton("Extract")
-        self.extract_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.extract_btn = create_primary_button("Extract")
         self.extract_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.extract_btn)
 

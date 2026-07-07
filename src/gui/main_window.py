@@ -32,6 +32,7 @@ from gui.components.sidebar import Sidebar
 from gui.components.app_menu import CommandRegistry, build_menu_bar
 from gui.components.backstage import BackstageView
 from gui.components.ai_panel import AIPanel
+from gui.theme import Colors
 
 
 class MainWindow(QMainWindow):
@@ -62,6 +63,14 @@ class MainWindow(QMainWindow):
         self.setup_auth()
         self.setup_ai()
         self.setup_ui()
+        # setup_ai() -> _load_ai_credentials() already loaded any saved
+        # provider into self.ai_manager, but self.ai_panel didn't exist yet
+        # at that point (it's created inside setup_ui(), one line above) -
+        # its hasattr() guard silently skipped pushing the provider name to
+        # the panel, so it kept showing "Model: Not configured" even with a
+        # provider correctly configured and loaded. Push it again now that
+        # the panel actually exists.
+        self._update_ai_panel_provider()
         self.setup_backstage()
         self.create_statusbar()
         self.setup_autosave()
@@ -207,6 +216,7 @@ class MainWindow(QMainWindow):
         self.sidebar.cvs_dialog_requested.connect(self.on_cvs_dialog_requested)
         self.sidebar.upload_requested.connect(self.on_upload_requested)
         self.sidebar.cleaning_wizard_requested.connect(self.on_cleaning_wizard_requested)
+        self.sidebar.financial_import_wizard_requested.connect(self.on_financial_import_wizard_requested)
         self.sidebar.paste_requested.connect(self.on_paste_requested)
         self.sidebar.import_folder_listing_requested.connect(self.on_import_folder_listing_requested)
         self.sidebar.project_edit_requested.connect(self.edit_current_project)
@@ -2160,6 +2170,98 @@ class MainWindow(QMainWindow):
             f"Created dataset '{dataset.name}' with {len(accepted_steps)} cleaning step(s) applied"
         )
 
+    def on_financial_import_wizard_requested(self):
+        """Import a GL/JE detail, trial balance, financial statement, or
+        chart of accounts file with no header assumed, run the Financial
+        Data Import Wizard over it, and - if any proposed steps are
+        accepted - create a new dataset with those steps already applied
+        as real, visible, undoable Applied Steps. Separate from the
+        generic Cleaning Wizard: see core.financial_import_wizard for why
+        and core.cleaning_wizard for the detectors it reuses."""
+        from PySide6.QtWidgets import QFileDialog, QInputDialog, QMessageBox, QDialog
+        from pathlib import Path
+        from core.data_processor import LegacyDataProcessor, TransformationPipeline
+        from core.project_manager import Dataset
+        from core.financial_import_wizard import DOCUMENT_TYPES
+        from gui.dialogs.financial_import_wizard_dialog import FinancialImportWizardDialog
+
+        if not self.current_project:
+            QMessageBox.warning(
+                self, "No Project Selected",
+                "Please create or open a project before importing a dataset."
+            )
+            return
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Import Financial Data", "",
+            "Supported Files (*.csv *.txt *.xlsx *.xls);;CSV Files (*.csv);;Text Files (*.txt);;Excel Files (*.xlsx *.xls)"
+        )
+        if not file_path:
+            return
+
+        dp = LegacyDataProcessor()
+        sheet_name = None
+        if file_path.endswith(('.xlsx', '.xls')):
+            try:
+                sheets = dp.get_excel_sheets(file_path)
+                if len(sheets) > 1:
+                    sheet_name, ok = QInputDialog.getItem(
+                        self, "Select Worksheet", "Select a worksheet:", sheets, 0, False
+                    )
+                    if not ok:
+                        return
+            except Exception as e:
+                QMessageBox.warning(self, "Warning", f"Could not read Excel sheets: {e}\nLoading first sheet.")
+
+        try:
+            raw_df = dp.read_file_raw(file_path, sheet_name)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to read file:\n{e}")
+            return
+
+        if raw_df is None or raw_df.height == 0:
+            QMessageBox.warning(self, "Empty Data", "The selected file/sheet contains no data.")
+            return
+
+        dialog = FinancialImportWizardDialog(raw_df, ai_manager=getattr(self, "ai_manager", None), parent=self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        accepted_steps = dialog.get_accepted_steps()
+
+        file_name = Path(file_path).stem
+        dataset_name, ok = QInputDialog.getText(
+            self, "Dataset Name", "Enter a name for this dataset:", text=file_name
+        )
+        if not ok or not dataset_name.strip():
+            dataset_name = f"Dataset_{len(self.current_project.datasets) + 1}"
+
+        pipeline = TransformationPipeline(initial_df=raw_df)
+        try:
+            for operation_id, params in accepted_steps:
+                pipeline.add_step(operation_id, dict(params))
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to apply an accepted step:\n{e}")
+            return
+
+        dataset = Dataset(
+            name=dataset_name.strip(), dataframe=raw_df,
+            source_file_path=file_path, source_sheet_name=sheet_name
+        )
+        dataset.set_pipeline(pipeline)
+
+        data_view = self.views.get("data")
+        transform_view = self.views.get("transform")
+        if data_view:
+            data_view._finalize_new_dataset(dataset, pipeline.apply())
+        if transform_view:
+            transform_view.set_dataframe(raw_df, pipeline)
+
+        self.statusBar().showMessage(
+            f"Created dataset '{dataset.name}' with {len(accepted_steps)} step(s) applied "
+            f"({DOCUMENT_TYPES.get(dialog.doc_type, dialog.doc_type)})"
+        )
+
     @Slot()
     def on_paste_requested(self):
         """Handle "paste dataset from clipboard" request from the sidebar or Ctrl+Shift+V"""
@@ -3548,15 +3650,15 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             "About CaatMaster",
-            """
+            f"""
             <div style="text-align: center;">
-                <h2 style="color: #3b82f6;">CaatMaster</h2>
+                <h2 style="color: {Colors.ACCENT};">CaatMaster</h2>
                 <p><b>Professional Continuous Audit Analytics Tool</b></p>
                 <p>Version 1.0.0</p>
-                <hr style="border-color: #3f3f46;">
+                <hr style="border-color: {Colors.BORDER_STRONG};">
                 <p>A powerful desktop application for audit professionals
                 to perform sophisticated data analysis with ML and AI capabilities.</p>
-                <p style="color: #71717a;">Built with PySide 6 and Polars</p>
+                <p style="color: {Colors.TEXT_SECONDARY};">Built with PySide 6 and Polars</p>
             </div>
             """
         )

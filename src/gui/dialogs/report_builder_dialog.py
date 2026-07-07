@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from pathlib import Path
 
+from gui.components.common_modals import create_primary_button
+
 
 class ReportSectionItem:
     """Represents a report section item"""
@@ -286,20 +288,7 @@ class ReportBuilderDialog(QDialog):
         # Buttons
         buttons = QHBoxLayout()
 
-        generate_btn = QPushButton("Generate Report")
-        generate_btn.setStyleSheet("""
-            QPushButton {
-                background: #0078d4;
-                color: white;
-                padding: 8px 16px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #106ebe;
-            }
-        """)
+        generate_btn = create_primary_button("Generate Report")
         generate_btn.clicked.connect(self.generate_report)
         buttons.addWidget(generate_btn)
 

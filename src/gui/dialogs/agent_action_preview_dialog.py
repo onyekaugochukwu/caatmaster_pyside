@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from core.operation_registry import OPERATION_REGISTRY
+from gui.theme import Colors
+from gui.components.common_modals import create_success_button
 
 
 class AgentActionPreviewDialog(QDialog):
@@ -48,7 +50,7 @@ class AgentActionPreviewDialog(QDialog):
             reason_label = QLabel(reason)
             reason_label.setWordWrap(True)
             reason_label.setStyleSheet(
-                "color: #4b5563; padding: 8px; background-color: #edebe9; border-radius: 4px;"
+                f"color: {Colors.TEXT_SECONDARY}; padding: 8px; background-color: {Colors.BG_SECONDARY}; border-radius: 4px;"
             )
             layout.addWidget(reason_label)
 
@@ -74,13 +76,7 @@ class AgentActionPreviewDialog(QDialog):
         reject_btn = QPushButton("Not this one")
         reject_btn.clicked.connect(self.reject)
         button_row.addWidget(reject_btn)
-        self.apply_btn = QPushButton("Apply")
-        self.apply_btn.setStyleSheet("""
-            QPushButton { padding: 10px 20px; background-color: #10b981; color: white;
-                          border: none; border-radius: 6px; font-weight: 600; }
-            QPushButton:hover { background-color: #059669; }
-            QPushButton:disabled { background-color: #8a8886; }
-        """)
+        self.apply_btn = create_success_button("Apply")
         self.apply_btn.clicked.connect(self._on_apply)
         button_row.addWidget(self.apply_btn)
         layout.addLayout(button_row)
@@ -97,7 +93,7 @@ class AgentActionPreviewDialog(QDialog):
             result_df = self.data_processor.apply_operation(self.df, self.operation_id, dict(self.params))
         except Exception as e:
             self.summary_label.setText(f"⚠ This operation failed to preview: {e}")
-            self.summary_label.setStyleSheet("color: #991b1b; font-weight: 600;")
+            self.summary_label.setStyleSheet(f"color: {Colors.DANGER}; font-weight: 600;")
             self.apply_btn.setEnabled(False)
             return
 

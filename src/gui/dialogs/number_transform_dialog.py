@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer
 
-from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector
+from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector, create_primary_button
+from ..theme import Colors
 
 
 class NumberTransformDialog(BaseModal):
@@ -104,7 +105,7 @@ class NumberTransformDialog(BaseModal):
 
         # Stats
         self.stats_label = QLabel()
-        self.stats_label.setStyleSheet("color: #666; font-style: italic;")
+        self.stats_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-style: italic;")
         preview_layout.addWidget(self.stats_label)
 
         scroll_layout.addWidget(preview_group)
@@ -125,20 +126,7 @@ class NumberTransformDialog(BaseModal):
         self.preview_btn.clicked.connect(self.preview)
         btn_layout.addWidget(self.preview_btn)
 
-        self.transform_btn = QPushButton("Apply Transform")
-        self.transform_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.transform_btn = create_primary_button("Apply Transform")
         self.transform_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.transform_btn)
 
@@ -162,7 +150,7 @@ class NumberTransformDialog(BaseModal):
 
         # Store remainder info
         options_info = QLabel("Returns the remainder after division (e.g., 17 mod 10 = 7)")
-        options_info.setStyleSheet("color: #666; font-size: 11px;")
+        options_info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
         options_layout.addWidget(options_info, 1, 0, 1, 2)
 
         layout.addWidget(options_group)

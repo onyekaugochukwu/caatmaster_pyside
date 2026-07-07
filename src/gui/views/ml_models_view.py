@@ -10,6 +10,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from pathlib import Path
 
+from gui.theme import Colors
+from gui.components.common_modals import create_primary_button
+
 
 class MLModelInventoryView(QWidget):
     """ML Model management and inventory view"""
@@ -46,16 +49,16 @@ class MLModelInventoryView(QWidget):
         # Statistics cards
         stats_layout = QHBoxLayout()
 
-        self.total_label = self.create_stat_card("Total Models", "0", "#0078d4")
+        self.total_label = self.create_stat_card("Total Models", "0", Colors.ACCENT)
         stats_layout.addWidget(self.total_label)
 
-        self.anomaly_label = self.create_stat_card("Anomaly Detection", "0", "#28a745")
+        self.anomaly_label = self.create_stat_card("Anomaly Detection", "0", Colors.SUCCESS)
         stats_layout.addWidget(self.anomaly_label)
 
-        self.classification_label = self.create_stat_card("Classification", "0", "#ff6b35")
+        self.classification_label = self.create_stat_card("Classification", "0", Colors.WARNING_STRONG)
         stats_layout.addWidget(self.classification_label)
 
-        self.storage_label = self.create_stat_card("Storage", "0 MB", "#6c757d")
+        self.storage_label = self.create_stat_card("Storage", "0 MB", Colors.TEXT_SECONDARY)
         stats_layout.addWidget(self.storage_label)
 
         main_layout.addLayout(stats_layout)
@@ -126,7 +129,7 @@ class MLModelInventoryView(QWidget):
         label = QLabel()
         label.setStyleSheet(f"""
             background: {color};
-            color: white;
+            color: {Colors.TEXT_ON_ACCENT};
             padding: 15px;
             border-radius: 6px;
             font-weight: bold;
@@ -435,20 +438,7 @@ class ModelImportDialog(QDialog):
 
         # Buttons
         buttons = QHBoxLayout()
-        import_btn = QPushButton("Import")
-        import_btn.setStyleSheet("""
-            QPushButton {
-                background: #0078d4;
-                color: white;
-                padding: 8px 16px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #106ebe;
-            }
-        """)
+        import_btn = create_primary_button("Import")
         import_btn.clicked.connect(self.validate_and_accept)
         buttons.addWidget(import_btn)
 

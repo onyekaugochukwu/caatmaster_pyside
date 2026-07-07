@@ -8,6 +8,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 
+from gui.theme import Colors
+from gui.components.common_modals import create_primary_button
+
 
 class SettingsView(QWidget):
     """Application settings view with user management"""
@@ -38,18 +41,18 @@ class SettingsView(QWidget):
 
         # Logout button
         self.logout_btn = QPushButton("Logout")
-        self.logout_btn.setStyleSheet("""
-            QPushButton {
-                background: #dc3545;
-                color: white;
+        self.logout_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {Colors.DANGER};
+                color: {Colors.TEXT_ON_ACCENT};
                 padding: 8px 16px;
                 border: none;
                 border-radius: 4px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #c82333;
-            }
+            }}
+            QPushButton:hover {{
+                background: {Colors.DANGER_HOVER};
+            }}
         """)
         self.logout_btn.clicked.connect(self.logout)
         self.logout_btn.setEnabled(False)
@@ -59,7 +62,7 @@ class SettingsView(QWidget):
 
         # User info label
         self.user_info_label = QLabel("Not logged in")
-        self.user_info_label.setStyleSheet("color: #666; padding: 5px;")
+        self.user_info_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; padding: 5px;")
         layout.addWidget(self.user_info_label)
 
         # Create tab widget for different settings categories
@@ -152,6 +155,11 @@ class SettingsView(QWidget):
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.clicked.connect(self.refresh_user_info)
         actions_layout.addWidget(self.refresh_btn)
+
+        # Without this, QHBoxLayout stretched both buttons to split the
+        # full row width evenly - odd for two short labels sitting in a
+        # wide panel.
+        actions_layout.addStretch()
 
         actions_group.setLayout(actions_layout)
         layout.addWidget(actions_group)
@@ -261,24 +269,11 @@ class SettingsView(QWidget):
             "Hugging Face, Ollama, LlamaCPP, and custom providers."
         )
         config_desc.setWordWrap(True)
-        config_desc.setStyleSheet("color: #666; font-size: 12px;")
+        config_desc.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 12px;")
         config_layout.addWidget(config_desc)
 
-        config_btn = QPushButton("Edit AI Settings")
-        config_btn.setStyleSheet("""
-            QPushButton {
-                padding: 12px 24px;
-                background-color: #3b82f6;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 14px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
-        """)
+        config_btn = create_primary_button("Edit AI Settings")
+        config_btn.setStyleSheet("QPushButton#PrimaryButton { padding: 12px 24px; font-size: 14px; }")
         config_btn.clicked.connect(self.open_ai_settings)
         config_layout.addWidget(config_btn)
 

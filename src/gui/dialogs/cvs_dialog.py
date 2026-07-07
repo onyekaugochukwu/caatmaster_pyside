@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 
 from services.sampling_evaluation import calculate_sample_size, evaluate_sample, ESTIMATION_METHODS
+from ..theme import Colors
+from ..components.common_modals import create_primary_button
 
 
 class ClassicalVariablesSamplingDialog(QDialog):
@@ -55,7 +57,7 @@ class ClassicalVariablesSamplingDialog(QDialog):
             "data, or a reasonable judgment estimate)."
         )
         info.setWordWrap(True)
-        info.setStyleSheet("color: #4b5563;")
+        info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         layout.addWidget(info)
 
         form_group = QGroupBox("Inputs")
@@ -86,19 +88,14 @@ class ClassicalVariablesSamplingDialog(QDialog):
 
         layout.addWidget(form_group)
 
-        calc_btn = QPushButton("Calculate Sample Size")
-        calc_btn.setStyleSheet("""
-            QPushButton { padding: 10px 20px; background-color: #0078d4; color: white;
-                          border: none; border-radius: 6px; font-weight: 600; }
-            QPushButton:hover { background-color: #106ebe; }
-        """)
+        calc_btn = create_primary_button("Calculate Sample Size")
         calc_btn.clicked.connect(self._on_calculate_size)
         layout.addWidget(calc_btn)
 
         self.size_result_label = QLabel("")
         self.size_result_label.setWordWrap(True)
         self.size_result_label.setStyleSheet(
-            "padding: 12px; background-color: #f0fdf4; border: 1px solid #22c55e; border-radius: 6px; font-size: 13px;"
+            f"padding: 12px; background-color: {Colors.SUCCESS_SOFT}; border: 1px solid {Colors.SUCCESS}; border-radius: 6px; font-size: 13px;"
         )
         self.size_result_label.setVisible(False)
         layout.addWidget(self.size_result_label)
@@ -138,7 +135,7 @@ class ClassicalVariablesSamplingDialog(QDialog):
             "EVALUATE/CVSEVALUATE commands."
         )
         info.setWordWrap(True)
-        info.setStyleSheet("color: #4b5563;")
+        info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         layout.addWidget(info)
 
         if self.df is None or self.df.is_empty():
@@ -194,19 +191,14 @@ class ClassicalVariablesSamplingDialog(QDialog):
             method_layout.addWidget(radio)
         layout.addWidget(method_group)
 
-        eval_btn = QPushButton("Evaluate Sample")
-        eval_btn.setStyleSheet("""
-            QPushButton { padding: 10px 20px; background-color: #0078d4; color: white;
-                          border: none; border-radius: 6px; font-weight: 600; }
-            QPushButton:hover { background-color: #106ebe; }
-        """)
+        eval_btn = create_primary_button("Evaluate Sample")
         eval_btn.clicked.connect(self._on_evaluate_sample)
         layout.addWidget(eval_btn)
 
         self.eval_result_label = QLabel("")
         self.eval_result_label.setWordWrap(True)
         self.eval_result_label.setStyleSheet(
-            "padding: 12px; background-color: #f0fdf4; border: 1px solid #22c55e; border-radius: 6px; font-size: 13px;"
+            f"padding: 12px; background-color: {Colors.SUCCESS_SOFT}; border: 1px solid {Colors.SUCCESS}; border-radius: 6px; font-size: 13px;"
         )
         self.eval_result_label.setVisible(False)
         layout.addWidget(self.eval_result_label)

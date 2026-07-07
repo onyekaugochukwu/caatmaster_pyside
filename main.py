@@ -16,7 +16,7 @@ src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
 from gui.main_window import MainWindow
-from gui.theme import get_stylesheet, Colors
+from gui.theme import get_stylesheet, Colors, load_bundled_fonts
 from core.database import init_db
 
 
@@ -49,6 +49,11 @@ def main():
 
     # Set application style
     app.setStyle("Fusion")
+
+    # Load the bundled Inter font before the stylesheet references it by
+    # name — must happen after QApplication exists (Qt's font database
+    # isn't available before that) and before setStyleSheet() below.
+    load_bundled_fonts()
 
     # Apply the CaatMaster light theme — single source of truth for the
     # whole app's styling, see src/gui/theme.py

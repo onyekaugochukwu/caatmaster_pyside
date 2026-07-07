@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 import polars as pl
 
-from ..components.common_modals import BaseModal
+from ..components.common_modals import BaseModal, create_primary_button
 
 class CosoDialog(BaseModal):
     """Dialog for COSO Risk Mapping"""
@@ -72,8 +72,7 @@ class CosoDialog(BaseModal):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(self.reject)
         
-        run_btn = QPushButton("Generate Heatmap Data")
-        run_btn.setStyleSheet("background-color: #0078d4; color: white; font-weight: bold; padding: 8px 16px;")
+        run_btn = create_primary_button("Generate Heatmap Data")
         run_btn.clicked.connect(self.accept_changes)
         
         btn_layout.addWidget(cancel_btn)

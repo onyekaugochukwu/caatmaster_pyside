@@ -6,7 +6,7 @@ logical groupings.
 
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QIcon, QCursor
-from PySide6.QtWidgets import QMenu, QWidget, QVBoxLayout, QLabel, QFrame
+from PySide6.QtWidgets import QMenu, QWidget
 
 # Import operations registry
 import sys
@@ -773,41 +773,3 @@ class RowContextMenu(QMenu):
         delete_action.setProperty("danger", True)
         delete_action.triggered.connect(self.deleteRequested.emit)
         self.addAction(delete_action)
-
-
-# ============================================================================
-# TRANSFORMATION DIALOGS
-# ============================================================================
-
-class TransformationDialog(QFrame):
-    """
-    Base dialog for transformation parameters
-    To be subclassed for specific operations
-    """
-
-    submitted = Signal(dict)  # parameters
-
-    def __init__(self, operation: str, column: str, parent: QWidget = None):
-        super().__init__(parent)
-        self.operation = operation
-        self.column = column
-        self._setup_ui()
-
-    def _setup_ui(self):
-        """Setup the dialog UI - override in subclasses"""
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"Operation: {self.operation}"))
-        layout.addWidget(QLabel(f"Column: {self.column}"))
-
-    def get_parameters(self) -> dict:
-        """Get the parameters for the transformation"""
-        return {}
-
-    def accept(self):
-        """Submit the transformation"""
-        self.submitted.emit(self.get_parameters())
-        self.deleteLater()
-
-    def reject(self):
-        """Cancel the transformation"""
-        self.deleteLater()

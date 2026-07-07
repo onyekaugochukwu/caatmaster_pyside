@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from ..components.common_modals import BaseModal, PreviewTable
+from ..components.common_modals import BaseModal, PreviewTable, create_primary_button
 
 
 class SplitColumnsDialog(BaseModal):
@@ -127,20 +127,7 @@ class SplitColumnsDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Split Column")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Split Column")
         self.apply_btn.clicked.connect(self._apply_split)
         btn_layout.addWidget(self.apply_btn)
 

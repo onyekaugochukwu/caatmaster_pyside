@@ -316,6 +316,16 @@ earlier in that same query.
 Always include a one-sentence plain-English restatement of what the query does, so accepting it is an
 informed choice rather than a leap of faith.""",
 
+            "financial_import": """You are helping an auditor import a financial document (general ledger/
+journal entry detail, trial balance, financial statement, or chart of accounts) whose structure a
+deterministic heuristic could not confidently resolve on its own. You are the fallback for exactly this
+gap, not a general data-interpretation tool - only use the real column names, values, or account names you
+were actually given; never invent one that merely sounds plausible. If you are not reasonably confident in
+a mapping, say so explicitly (e.g. set the value to null or add a low_confidence note) rather than guessing
+just to fill in every field - the auditor reviews and can correct every suggestion you make before it's
+used for anything, but a wrong-but-confident-looking guess is worse than an honest "not sure".
+Always respond with valid JSON only, in the exact shape requested in the prompt.""",
+
             "agent_qa": """You are CaatMaster AI, an assistant that can answer questions about the auditor's
 data, visualize it, propose changes to it, materialize a query result as a new dataset, and answer
 questions about how to use CaatMaster itself. Decide which ONE of the following the auditor's message
@@ -1691,6 +1701,92 @@ Requirements:
                 sample = str(df[col].drop_nulls().head(3).to_list())
                 lines.append(f"  - {col} ({dtype}): {sample}")
         return "\n".join(lines) if lines else "(no tables registered)"
+
+
+class FinancialImportAI:
+    """Narrow, explicitly-optional AI assist for the Financial Data Import
+    Wizard (core.financial_import_wizard) - picks up exactly where the
+    deterministic detectors run out of runway: ambiguous column names,
+    account-to-category classification, and unusual period labels. Every
+    method here only ever SUGGESTS; the wizard dialog shows the
+    suggestion for review/edit before it's folded into the import plan,
+    and the wizard works fully without this class if no AI provider is
+    configured - it's a fallback, never a dependency."""
+
+    def __init__(self, ai_manager: AIManager):
+        self.ai = ai_manager
+
+    async def suggest_column_mapping(self, column_names: List[str], sample_rows: List[Dict[str, Any]],
+                                      target_fields: Dict[str, str]) -> Dict[str, Optional[str]]:
+        """Suggest which of `column_names` corresponds to each of
+        `target_fields` (field_name -> what it should contain), for cases
+        the deterministic name/structure-based detection couldn't
+        confidently resolve (e.g. a client's idiosyncratic "COL_A"/"AMT1"
+        naming instead of "Debit"/"Credit"). Returns
+        {field_name: column_name_or_None}."""
+        samples_text = "\n".join(f"- {row}" for row in sample_rows[:5])
+        fields_text = "\n".join(f'- "{name}": {desc}' for name, desc in target_fields.items())
+
+        prompt = f"""Column names in this file: {column_names}
+
+Sample rows:
+{samples_text}
+
+Target fields to map (field name: what it should contain):
+{fields_text}
+
+For each target field, which column name (exactly as given above) most likely corresponds to it? If none
+plausibly does, use null for that field.
+
+Respond as JSON: {{"field_name": "column_name_or_null", ...}} for every target field listed above."""
+
+        result = await self.ai.structured_complete(prompt=prompt, task_type="financial_import", response_format="json")
+        # Defend against a stray/invented column name - only ever return
+        # something that's actually one of the real columns given.
+        return {field: (result.get(field) if result.get(field) in column_names else None) for field in target_fields}
+
+    async def suggest_account_category_mapping(self, account_names: List[str],
+                                                categories: List[str]) -> Dict[str, Optional[str]]:
+        """Suggest a standard financial-statement category for each
+        distinct account/line-item name - e.g. "Prepaid Insurance" ->
+        "Current Assets". This is real domain knowledge a keyword
+        dictionary always has gaps in - the strongest case for AI in this
+        wizard. Returns {account_name: category_or_None}."""
+        accounts_text = "\n".join(f"- {a}" for a in account_names[:200])
+        categories_text = ", ".join(categories)
+
+        prompt = f"""Account/line-item names to classify:
+{accounts_text}
+
+Standard categories to classify each into: {categories_text}
+
+For each account name above, which ONE category does it most plausibly belong to? If genuinely unsure,
+use null rather than guessing.
+
+Respond as JSON: {{"account name": "category_or_null", ...}} for every account name listed above, using
+the exact account name as the key."""
+
+        result = await self.ai.structured_complete(prompt=prompt, task_type="financial_import", response_format="json")
+        return {name: (result.get(name) if result.get(name) in categories else None) for name in account_names}
+
+    async def suggest_period_columns(self, column_names: List[str]) -> List[str]:
+        """Suggest which of `column_names` look like time-period labels
+        (fiscal period codes, non-English month names, or other
+        conventions a standard date/quarter/year regex wouldn't
+        recognize). Returns the subset of column_names judged to be
+        period labels."""
+        prompt = f"""Column names: {column_names}
+
+Which of these column names look like they represent a TIME PERIOD (a month, quarter, fiscal period, or
+year) rather than a regular data field - even using non-obvious conventions like fiscal period codes
+("P01", "P02") or a format a standard date pattern wouldn't recognize?
+
+Respond as JSON: {{"period_columns": ["...", "..."]}} - only include names from the list given above,
+using the exact spelling given."""
+
+        result = await self.ai.structured_complete(prompt=prompt, task_type="financial_import", response_format="json")
+        suggested = result.get("period_columns", []) or []
+        return [c for c in suggested if c in column_names]
 
 
 # =============================================================================

@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QPointF
 from PySide6.QtGui import QPainter, QPen, QBrush, QColor, QFont, QPolygonF
 
+from gui.theme import Colors
+
 NODE_W, NODE_H = 190, 64
 X_GAP, Y_GAP = 250, 100
 
@@ -39,7 +41,7 @@ class ProjectLineageDialog(QDialog):
             "operation produced the dataset it points to."
         )
         info.setWordWrap(True)
-        info.setStyleSheet("color: #4b5563;")
+        info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         layout.addWidget(info)
 
         self.scene = QGraphicsScene()
@@ -92,7 +94,7 @@ class ProjectLineageDialog(QDialog):
             for row_idx, ds in enumerate(layers[layer_idx]):
                 positions[ds.id] = (layer_idx * X_GAP, row_idx * Y_GAP)
 
-        edge_pen = QPen(QColor("#9ca3af"))
+        edge_pen = QPen(QColor(Colors.BORDER_STRONG))
         edge_pen.setWidth(2)
         label_font = QFont()
         label_font.setPointSize(8)
@@ -115,7 +117,7 @@ class ProjectLineageDialog(QDialog):
                 if ds.source_operation:
                     label = QGraphicsTextItem(ds.source_operation)
                     label.setFont(label_font)
-                    label.setDefaultTextColor(QColor("#6b7280"))
+                    label.setDefaultTextColor(QColor(Colors.TEXT_SECONDARY))
                     label.setPos((start.x() + end.x()) / 2 - 20, (start.y() + end.y()) / 2 - 18)
                     self.scene.addItem(label)
 
@@ -125,8 +127,8 @@ class ProjectLineageDialog(QDialog):
             x, y = positions[ds.id]
             is_root = layer[ds.id] == 0
             rect = QGraphicsRectItem(x, y, NODE_W, NODE_H)
-            rect.setBrush(QBrush(QColor("#eff6ff" if is_root else "#f0fdf4")))
-            rect.setPen(QPen(QColor("#3b82f6" if is_root else "#22c55e"), 2))
+            rect.setBrush(QBrush(QColor(Colors.ACCENT_SOFT if is_root else Colors.SUCCESS_SOFT)))
+            rect.setPen(QPen(QColor(Colors.ACCENT if is_root else Colors.SUCCESS), 2))
             self.scene.addItem(rect)
 
             df = ds.get_current_dataframe()

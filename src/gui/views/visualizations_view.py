@@ -14,6 +14,8 @@ from matplotlib.patches import Rectangle, Wedge
 from matplotlib.collections import PathCollection
 
 from services.visualization_service import VisualizationService
+from gui.theme import Colors, Spacing
+from gui.components.common_modals import create_primary_button
 
 
 class ChartCanvas(QWidget):
@@ -40,7 +42,7 @@ class ChartCanvas(QWidget):
 
         self.placeholder_label = QLabel("Create a chart to see it here")
         self.placeholder_label.setAlignment(Qt.AlignCenter)
-        self.placeholder_label.setStyleSheet("color: #999; font-size: 14px; padding: 50px;")
+        self.placeholder_label.setStyleSheet(f"color: {Colors.TEXT_TERTIARY}; font-size: 14px; padding: 50px;")
         self.layout.addWidget(self.placeholder_label)
 
     def set_figure(self, figure, click_resolver=None):
@@ -230,7 +232,12 @@ class VisualizationsView(QWidget):
 
         header_layout.addStretch()
 
-        main_layout.addLayout(header_layout)
+        # Stretch 0 for the header row, so it stays at its natural height -
+        # without an explicit split, Qt was giving the header the vast
+        # majority of the view's vertical space (its QLabel stretched to
+        # ~300px tall) and squeezing the splitter below into a sliver,
+        # which read as a large dead gap above "Data Visualizations".
+        main_layout.addLayout(header_layout, 0)
 
         # Create splitter
         splitter = QSplitter(Qt.Horizontal)
@@ -312,25 +319,17 @@ class VisualizationsView(QWidget):
         options_group.setLayout(options_layout)
 
         config_layout.addLayout(form_layout)
+        # Extra breathing room before the "Options" group - its own
+        # top-margin/title (from theme.py's QGroupBox rule) sat close
+        # enough to "Label Column:" above it to read as a rendering
+        # glitch rather than two distinct sections.
+        config_layout.addSpacing(Spacing.MD)
         config_layout.addWidget(options_group)
 
         # Buttons
         button_layout = QVBoxLayout()
 
-        self.create_btn = QPushButton("Create Chart")
-        self.create_btn.setStyleSheet("""
-            QPushButton {
-                background: #0078d4;
-                color: white;
-                padding: 10px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #106ebe;
-            }
-        """)
+        self.create_btn = create_primary_button("Create Chart")
         self.create_btn.clicked.connect(self.create_chart)
         button_layout.addWidget(self.create_btn)
 
@@ -364,7 +363,7 @@ class VisualizationsView(QWidget):
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
 
-        main_layout.addWidget(splitter)
+        main_layout.addWidget(splitter, 1)
 
         # Initialize UI state
         self.on_chart_type_changed(0)

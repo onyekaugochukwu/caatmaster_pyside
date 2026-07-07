@@ -7,6 +7,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal
 
+from ...theme import Colors
+from ...components.common_modals import create_primary_button
+
 
 class MLUnsupervisedDialog(QDialog):
     """Dialog for unsupervised ML operations (clustering)"""
@@ -43,11 +46,7 @@ class MLUnsupervisedDialog(QDialog):
     def setup_ui(self):
         self.setWindowTitle("Unsupervised Learning - Clustering")
         self.setMinimumSize(550, 450)
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #f9fafb;
-            }
-        """)
+        # Dialog background inherited from the app-wide QDialog rule in theme.py.
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -60,91 +59,49 @@ class MLUnsupervisedDialog(QDialog):
         title_layout.addWidget(title_icon)
 
         title = QLabel("Unsupervised Learning")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 18px;
                 font-weight: 700;
-                color: #1f2937;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         title_layout.addWidget(title)
         title_layout.addStretch()
         layout.addLayout(title_layout)
 
-        # Algorithm selection
+        # Algorithm selection - QGroupBox/QComboBox/QListWidget chrome
+        # inherited from the app-wide rules in theme.py.
         algo_group = QGroupBox("Clustering Algorithm")
-        algo_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
         algo_layout = QVBoxLayout(algo_group)
         algo_layout.setContentsMargins(16, 20, 16, 16)
 
         self.algo_combo = QComboBox()
-        self.algo_combo.setStyleSheet("""
-            QComboBox {
-                padding: 10px 12px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 14px;
-            }
-        """)
         for algo_name in self.ALGORITHMS.keys():
             self.algo_combo.addItem(algo_name)
         self.algo_combo.currentIndexChanged.connect(self._on_algo_changed)
         algo_layout.addWidget(self.algo_combo)
 
         self.algo_desc = QLabel("Partition data into K clusters")
-        self.algo_desc.setStyleSheet("""
-            QLabel {
+        self.algo_desc.setStyleSheet(f"""
+            QLabel {{
                 font-size: 12px;
-                color: #6b7280;
+                color: {Colors.TEXT_SECONDARY};
                 margin-top: 4px;
-            }
+            }}
         """)
         algo_layout.addWidget(self.algo_desc)
         layout.addWidget(algo_group)
 
         # Parameters group
         params_group = QGroupBox("Parameters")
-        params_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
         params_layout = QFormLayout(params_group)
         params_layout.setContentsMargins(16, 20, 16, 16)
         params_layout.setSpacing(12)
 
         # Features list
         self.features_list = QListWidget()
-        self.features_list.setStyleSheet("""
-            QListWidget {
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 4px;
-                min-height: 100px;
-            }
-        """)
+        self.features_list.setStyleSheet("QListWidget { min-height: 100px; }")
         self.features_list.setSelectionMode(QListWidget.ExtendedSelection)
         for col in self.df.columns:
             # Only add numeric columns for clustering
@@ -155,14 +112,6 @@ class MLUnsupervisedDialog(QDialog):
 
         # Output column
         self.output_edit = QLineEdit("cluster")
-        self.output_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 8px 12px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 13px;
-            }
-        """)
         params_layout.addRow("Output Column:", self.output_edit)
 
         # Algorithm-specific parameters
@@ -176,30 +125,11 @@ class MLUnsupervisedDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
 
-        self.apply_btn = QPushButton("Apply")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2563eb;
-                color: white;
-                padding: 10px 20px;
-                border-radius: 6px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #1d4ed8;
-            }
-        """)
+        self.apply_btn = create_primary_button("Apply")
         self.apply_btn.clicked.connect(self._on_apply)
         button_layout.addWidget(self.apply_btn)
 
         cancel_btn = QPushButton("Cancel")
-        cancel_btn.setStyleSheet("""
-            QPushButton {
-                padding: 10px 20px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-            }
-        """)
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
 

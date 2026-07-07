@@ -19,6 +19,7 @@ import polars as pl
 import pandas as pd
 import re
 from core.project_manager import Project, Dataset
+from gui.theme import Colors
 
 
 _SQL_MAJOR_CLAUSES = [
@@ -269,23 +270,22 @@ class SQLTransformView(QWidget):
         toolbar_layout = QHBoxLayout()
 
         self.run_btn = QPushButton("▶ Execute")
-        self.run_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
+        self.run_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.ACCENT};
+                color: {Colors.TEXT_ON_ACCENT};
                 border: none;
                 border-radius: 6px;
                 padding: 8px 20px;
                 font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.ACCENT_HOVER};
+            }}
         """)
         self.run_btn.clicked.connect(self.execute_query)
         toolbar_layout.addWidget(self.run_btn)
 
-        from gui.theme import Colors
         self.apply_pipeline_btn = QPushButton("Apply to Dataset")
         self.apply_pipeline_btn.setToolTip(
             "Record this query as a step on the dataset's pipeline, so it shows up in\n"
@@ -330,33 +330,33 @@ class SQLTransformView(QWidget):
         toolbar_layout.addWidget(self.create_dataset_btn)
 
         self.clear_btn = QPushButton("Clear")
-        self.clear_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f9fafb;
-                color: #374151;
-                border: 1px solid #d1d5db;
+        self.clear_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.BG_SECONDARY};
+                color: {Colors.TEXT_SECONDARY};
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 6px;
                 padding: 8px 16px;
-            }
-            QPushButton:hover {
-                background-color: #f3f4f6;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.BG_TERTIARY};
+            }}
         """)
         self.clear_btn.clicked.connect(self.clear_query)
         toolbar_layout.addWidget(self.clear_btn)
 
         self.format_btn = QPushButton("Format SQL")
-        self.format_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f9fafb;
-                color: #374151;
-                border: 1px solid #d1d5db;
+        self.format_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.BG_SECONDARY};
+                color: {Colors.TEXT_SECONDARY};
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 6px;
                 padding: 8px 16px;
-            }
-            QPushButton:hover {
-                background-color: #f3f4f6;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.BG_TERTIARY};
+            }}
         """)
         self.format_btn.clicked.connect(self.format_sql)
         toolbar_layout.addWidget(self.format_btn)
@@ -366,18 +366,18 @@ class SQLTransformView(QWidget):
             "Describe the query you want in plain language — AI writes the SQL,\n"
             "you review it, and you still click Execute yourself."
         )
-        self.ask_ai_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f5f0ff;
-                color: #6d28d9;
-                border: 1px solid #ddd6fe;
+        self.ask_ai_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.BG_PRIMARY};
+                color: {Colors.ACCENT};
+                border: 1px solid {Colors.ACCENT};
                 border-radius: 6px;
                 padding: 8px 16px;
                 font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #ede9fe;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.ACCENT_SOFT};
+            }}
         """)
         self.ask_ai_btn.clicked.connect(self.open_ai_sql_generator)
         toolbar_layout.addWidget(self.ask_ai_btn)
@@ -386,13 +386,13 @@ class SQLTransformView(QWidget):
 
         # Saved queries dropdown
         self.saved_queries_combo = QComboBox()
-        self.saved_queries_combo.setStyleSheet("""
-            QComboBox {
+        self.saved_queries_combo.setStyleSheet(f"""
+            QComboBox {{
                 min-width: 180px;
                 padding: 6px 12px;
-                border: 1px solid #d1d5db;
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 6px;
-            }
+            }}
         """)
         self.saved_queries_combo.addItem("Saved Queries...")
         self.saved_queries_combo.addItems([
@@ -418,7 +418,6 @@ class SQLTransformView(QWidget):
             "Every checked dataset becomes a table you can reference by name in the query below.\n"
             "e.g. SELECT g.*, s.vendor FROM GL_Entries g JOIN Subledger s ON g.gl_id = s.gl_id"
         )
-        from gui.theme import Colors
         model_query_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-weight: 600;")
         dataset_selector_layout = QHBoxLayout()
         dataset_selector_layout.addWidget(model_query_label)
@@ -433,14 +432,14 @@ class SQLTransformView(QWidget):
         self.query_editor = CompletingTextEdit()
         self.query_editor.setFont(QFont("Consolas", 10))
         self.query_editor.setMinimumHeight(120)
-        self.query_editor.setStyleSheet("""
-            QTextEdit {
-                background-color: #ffffff;
-                color: #111827;
-                border: 1px solid #e5e7eb;
+        self.query_editor.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {Colors.BG_PRIMARY};
+                color: {Colors.TEXT_PRIMARY};
+                border: 1px solid {Colors.BORDER};
                 border-radius: 6px;
                 padding: 8px;
-            }
+            }}
         """)
 
         # Apply syntax highlighting
@@ -460,12 +459,12 @@ class SQLTransformView(QWidget):
 
         # Schema info
         self.schema_label = QLabel("No data loaded")
-        self.schema_label.setStyleSheet("""
-            QLabel {
-                color: #6b7280;
+        self.schema_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 12px;
                 padding: 4px 8px;
-            }
+            }}
         """)
         editor_layout.addWidget(self.schema_label)
 
@@ -478,26 +477,26 @@ class SQLTransformView(QWidget):
         # Results header
         results_header = QHBoxLayout()
         results_label = QLabel("Query Results")
-        results_label.setStyleSheet("""
-            QLabel {
+        results_label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 14px;
                 font-weight: 600;
-                color: #111827;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         results_header.addWidget(results_label)
 
         results_header.addStretch()
 
         self.row_count_label = QLabel("0 rows")
-        self.row_count_label.setStyleSheet("""
-            QLabel {
-                color: #6b7280;
+        self.row_count_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 12px;
                 padding: 4px 8px;
-                background-color: #f3f4f6;
+                background-color: {Colors.BG_TERTIARY};
                 border-radius: 4px;
-            }
+            }}
         """)
         results_header.addWidget(self.row_count_label)
 
@@ -508,12 +507,12 @@ class SQLTransformView(QWidget):
         results_scroll.setWidgetResizable(True)
         results_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         results_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        results_scroll.setStyleSheet("""
-            QScrollArea {
-                border: 1px solid #e5e7eb;
+        results_scroll.setStyleSheet(f"""
+            QScrollArea {{
+                border: 1px solid {Colors.BORDER};
                 border-radius: 6px;
-                background-color: white;
-            }
+                background-color: {Colors.BG_PRIMARY};
+            }}
         """)
 
         # Results table
@@ -522,18 +521,18 @@ class SQLTransformView(QWidget):
         self.results_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.results_table.horizontalHeader().setStretchLastSection(False)
         self.results_table.setHorizontalScrollMode(QTableWidget.ScrollPerPixel)
-        self.results_table.setStyleSheet("""
-            QTableWidget {
+        self.results_table.setStyleSheet(f"""
+            QTableWidget {{
                 border: none;
-                background-color: white;
-            }
-            QTableWidget::item {
+                background-color: {Colors.BG_PRIMARY};
+            }}
+            QTableWidget::item {{
                 padding: 8px;
-                color: #111827;
-            }
-            QTableWidget::item:selected {
-                background-color: #dbeafe;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
+            QTableWidget::item:selected {{
+                background-color: {Colors.ACCENT_SOFT};
+            }}
         """)
         results_scroll.setWidget(self.results_table)
         results_layout.addWidget(results_scroll)
@@ -547,14 +546,14 @@ class SQLTransformView(QWidget):
         self.info_text = QTextEdit()
         self.info_text.setReadOnly(True)
         self.info_text.setMaximumHeight(80)
-        self.info_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #f9fafb;
-                border: 1px solid #e5e7eb;
+        self.info_text.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {Colors.BG_SECONDARY};
+                border: 1px solid {Colors.BORDER};
                 border-radius: 6px;
-                color: #374151;
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 12px;
-            }
+            }}
         """)
         info_layout.addWidget(self.info_text)
 

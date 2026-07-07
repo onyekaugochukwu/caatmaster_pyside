@@ -12,6 +12,8 @@ from PySide6.QtCore import Qt, QSize, Signal, Slot, QThread
 from PySide6.QtGui import QFont, QColor
 
 from src.services.ai_service import AIProviderFactory, BaseAIProvider
+from ..theme import Colors
+from ..components.common_modals import StatusLabel, create_success_button, create_primary_button
 
 
 class ProviderConfigWidget(QWidget):
@@ -29,35 +31,27 @@ class ProviderConfigWidget(QWidget):
         # Check if this is a local provider (no API key needed)
         is_local = AIProviderFactory.is_local_provider(self.provider_name)
 
-        # API Key input (not shown for local providers)
+        # API Key input (not shown for local providers) - sizing overrides
+        # only, colors/border/focus inherited from the app-wide QLineEdit
+        # rule in theme.py.
+        input_style = "QLineEdit { padding: 12px 16px; min-width: 300px; }"
         if not is_local:
             self.api_key_edit = QLineEdit()
             self.api_key_edit.setPlaceholderText("Enter API key")
             self.api_key_edit.setEchoMode(QLineEdit.Password)
             self.api_key_edit.setMinimumWidth(350)
-            self.api_key_edit.setStyleSheet("""
-                QLineEdit {
-                    padding: 12px 16px;
-                    border: 1px solid #d2d0ce;
-                    border-radius: 8px;
-                    font-size: 14px;
-                    min-width: 300px;
-                }
-                QLineEdit:focus {
-                    border-color: #0078d4;
-                }
-            """)
+            self.api_key_edit.setStyleSheet(input_style)
             layout.addRow("API Key:", self.api_key_edit)
         else:
             self.api_key_edit = None
             api_note = QLabel("(Local provider - no API key required)")
-            api_note.setStyleSheet("""
-                QLabel {
+            api_note.setStyleSheet(f"""
+                QLabel {{
                     font-size: 13px;
-                    color: #605e5c;
+                    color: {Colors.TEXT_SECONDARY};
                     font-style: italic;
                     padding: 8px 0;
-                }
+                }}
             """)
             layout.addRow("", api_note)
 
@@ -65,18 +59,7 @@ class ProviderConfigWidget(QWidget):
         self.base_url_edit = QLineEdit()
         self.base_url_edit.setPlaceholderText("Leave empty for default or enter custom URL")
         self.base_url_edit.setMinimumWidth(350)
-        self.base_url_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 12px 16px;
-                border: 1px solid #d2d0ce;
-                border-radius: 8px;
-                font-size: 14px;
-                min-width: 300px;
-            }
-            QLineEdit:focus {
-                border-color: #0078d4;
-            }
-        """)
+        self.base_url_edit.setStyleSheet(input_style)
 
         # Set default URL
         default_config = AIProviderFactory.get_default_config(self.provider_name)
@@ -89,18 +72,7 @@ class ProviderConfigWidget(QWidget):
         self.model_edit = QLineEdit()
         self.model_edit.setPlaceholderText("Enter model name (e.g., gpt-4o, llama3.2)")
         self.model_edit.setMinimumWidth(350)
-        self.model_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 12px 16px;
-                border: 1px solid #d2d0ce;
-                border-radius: 8px;
-                font-size: 14px;
-                min-width: 300px;
-            }
-            QLineEdit:focus {
-                border-color: #0078d4;
-            }
-        """)
+        self.model_edit.setStyleSheet(input_style)
 
         # Pre-fill with default model if available
         if default_config:
@@ -111,33 +83,14 @@ class ProviderConfigWidget(QWidget):
         layout.addRow("Model:", self.model_edit)
 
         # Test button
-        test_btn = QPushButton("Test Connection")
-        test_btn.setStyleSheet("""
-            QPushButton {
-                padding: 10px 20px;
-                background-color: #10b981;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 14px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #059669;
-            }
-        """)
+        test_btn = create_success_button("Test Connection")
         layout.addRow("", test_btn)
         test_btn.clicked.connect(self.test_connection)
 
-        # Status label
-        self.status_label = QLabel()
-        self.status_label.setStyleSheet("""
-            QLabel {
-                font-size: 13px;
-                padding: 12px;
-                border-radius: 6px;
-            }
-        """)
+        # Status label - reuses StatusLabel's existing normal/success/
+        # warning/error color states instead of hand-rolling the same
+        # four-state color switch locally.
+        self.status_label = StatusLabel()
         layout.addRow("Status:", self.status_label)
 
     def setup_models(self):
@@ -193,27 +146,11 @@ class ProviderConfigWidget(QWidget):
         # Validate API key for non-local providers
         if not is_local and not config["api_key"]:
             self.status_label.setText("Please enter an API key")
-            self.status_label.setStyleSheet("""
-                QLabel {
-                    font-size: 12px;
-                    padding: 8px;
-                    border-radius: 4px;
-                    background-color: #fee2e2;
-                    color: #991b1b;
-                }
-            """)
+            self.status_label.setStatus("error")
             return
 
         self.status_label.setText("Testing connection...")
-        self.status_label.setStyleSheet("""
-            QLabel {
-                font-size: 12px;
-                padding: 8px;
-                border-radius: 4px;
-                background-color: #fef3c7;
-                color: #92400e;
-            }
-        """)
+        self.status_label.setStatus("warning")
 
         async def run_test():
             success, message = await AIProviderFactory.test_connection(
@@ -232,39 +169,11 @@ class ProviderConfigWidget(QWidget):
             finally:
                 loop.close()
 
-            if success:
-                self.status_label.setText(message)
-                self.status_label.setStyleSheet("""
-                    QLabel {
-                        font-size: 12px;
-                        padding: 8px;
-                        border-radius: 4px;
-                        background-color: #d1fae5;
-                        color: #065f46;
-                    }
-                """)
-            else:
-                self.status_label.setText(message)
-                self.status_label.setStyleSheet("""
-                    QLabel {
-                        font-size: 12px;
-                        padding: 8px;
-                        border-radius: 4px;
-                        background-color: #fee2e2;
-                        color: #991b1b;
-                    }
-                """)
+            self.status_label.setText(message)
+            self.status_label.setStatus("success" if success else "error")
         except Exception as e:
             self.status_label.setText(f"Error: {str(e)[:100]}")
-            self.status_label.setStyleSheet("""
-                QLabel {
-                    font-size: 12px;
-                    padding: 8px;
-                    border-radius: 4px;
-                    background-color: #fee2e2;
-                    color: #991b1b;
-                }
-            """)
+            self.status_label.setStatus("error")
 
 
 class CustomProviderWidget(QWidget):
@@ -278,19 +187,13 @@ class CustomProviderWidget(QWidget):
         layout = QFormLayout(self)
         layout.setSpacing(16)
 
+        input_style = "QLineEdit { padding: 12px 16px; min-width: 300px; }"
+
         # Provider name
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("My Custom Provider")
         self.name_edit.setMinimumWidth(350)
-        self.name_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 12px 16px;
-                border: 1px solid #d2d0ce;
-                border-radius: 8px;
-                font-size: 14px;
-                min-width: 300px;
-            }
-        """)
+        self.name_edit.setStyleSheet(input_style)
         layout.addRow("Provider Name:", self.name_edit)
 
         # API Key
@@ -298,75 +201,30 @@ class CustomProviderWidget(QWidget):
         self.api_key_edit.setPlaceholderText("Enter API key (optional for some servers)")
         self.api_key_edit.setEchoMode(QLineEdit.Password)
         self.api_key_edit.setMinimumWidth(350)
-        self.api_key_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 12px 16px;
-                border: 1px solid #d2d0ce;
-                border-radius: 8px;
-                font-size: 14px;
-                min-width: 300px;
-            }
-        """)
+        self.api_key_edit.setStyleSheet(input_style)
         layout.addRow("API Key:", self.api_key_edit)
 
         # Base URL
         self.base_url_edit = QLineEdit()
         self.base_url_edit.setPlaceholderText("https://api.example.com/v1")
         self.base_url_edit.setMinimumWidth(350)
-        self.base_url_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 12px 16px;
-                border: 1px solid #d2d0ce;
-                border-radius: 8px;
-                font-size: 14px;
-                min-width: 300px;
-            }
-        """)
+        self.base_url_edit.setStyleSheet(input_style)
         layout.addRow("Base URL:", self.base_url_edit)
 
         # Model
         self.model_edit = QLineEdit()
         self.model_edit.setPlaceholderText("e.g., llama3.2, my-model-name")
         self.model_edit.setMinimumWidth(350)
-        self.model_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 12px 16px;
-                border: 1px solid #d2d0ce;
-                border-radius: 8px;
-                font-size: 14px;
-                min-width: 300px;
-            }
-        """)
+        self.model_edit.setStyleSheet(input_style)
         layout.addRow("Model:", self.model_edit)
 
         # Test button
-        test_btn = QPushButton("Test Connection")
-        test_btn.setStyleSheet("""
-            QPushButton {
-                padding: 10px 20px;
-                background-color: #10b981;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 14px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #059669;
-            }
-        """)
+        test_btn = create_success_button("Test Connection")
         layout.addRow("", test_btn)
         test_btn.clicked.connect(self.test_connection)
 
         # Status label
-        self.status_label = QLabel()
-        self.status_label.setStyleSheet("""
-            QLabel {
-                font-size: 13px;
-                padding: 12px;
-                border-radius: 6px;
-            }
-        """)
+        self.status_label = StatusLabel()
         layout.addRow("Status:", self.status_label)
 
     def get_config(self) -> Dict:
@@ -389,40 +247,16 @@ class CustomProviderWidget(QWidget):
 
         if not config["base_url"]:
             self.status_label.setText("Please enter a base URL")
-            self.status_label.setStyleSheet("""
-                QLabel {
-                    font-size: 12px;
-                    padding: 8px;
-                    border-radius: 4px;
-                    background-color: #fee2e2;
-                    color: #991b1b;
-                }
-            """)
+            self.status_label.setStatus("error")
             return
 
         if not config["model"]:
             self.status_label.setText("Please enter a model name")
-            self.status_label.setStyleSheet("""
-                QLabel {
-                    font-size: 12px;
-                    padding: 8px;
-                    border-radius: 4px;
-                    background-color: #fee2e2;
-                    color: #991b1b;
-                }
-            """)
+            self.status_label.setStatus("error")
             return
 
         self.status_label.setText("Testing connection...")
-        self.status_label.setStyleSheet("""
-            QLabel {
-                font-size: 12px;
-                padding: 8px;
-                border-radius: 4px;
-                background-color: #fef3c7;
-                color: #92400e;
-            }
-        """)
+        self.status_label.setStatus("warning")
 
         from src.services.ai_service import AIProviderFactory
 
@@ -443,39 +277,11 @@ class CustomProviderWidget(QWidget):
             finally:
                 loop.close()
 
-            if success:
-                self.status_label.setText(message)
-                self.status_label.setStyleSheet("""
-                    QLabel {
-                        font-size: 12px;
-                        padding: 8px;
-                        border-radius: 4px;
-                        background-color: #d1fae5;
-                        color: #065f46;
-                    }
-                """)
-            else:
-                self.status_label.setText(message)
-                self.status_label.setStyleSheet("""
-                    QLabel {
-                        font-size: 12px;
-                        padding: 8px;
-                        border-radius: 4px;
-                        background-color: #fee2e2;
-                        color: #991b1b;
-                    }
-                """)
+            self.status_label.setText(message)
+            self.status_label.setStatus("success" if success else "error")
         except Exception as e:
             self.status_label.setText(f"Error: {str(e)[:100]}")
-            self.status_label.setStyleSheet("""
-                QLabel {
-                    font-size: 12px;
-                    padding: 8px;
-                    border-radius: 4px;
-                    background-color: #fee2e2;
-                    color: #991b1b;
-                }
-            """)
+            self.status_label.setStatus("error")
 
 
 class AISettingsDialog(QDialog):
@@ -495,11 +301,7 @@ class AISettingsDialog(QDialog):
     def setup_ui(self):
         self.setWindowTitle("AI Settings")
         self.setMinimumSize(750, 680)
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #f3f2f1;
-            }
-        """)
+        # Dialog background inherited from the app-wide QDialog rule in theme.py.
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -507,26 +309,21 @@ class AISettingsDialog(QDialog):
 
         # Title
         title = QLabel("AI Configuration")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 20px;
                 font-weight: 700;
-                color: #201f1e;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         layout.addWidget(title)
 
-        # Provider tabs (configuration first)
+        # Provider tabs (configuration first) - pane/tab chrome inherited
+        # from the app-wide QTabWidget rule in theme.py; only sizing here.
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #e1dfdd;
-                border-radius: 8px;
-                background-color: white;
-            }
             QTabBar::tab {
                 padding: 12px 24px;
-                font-size: 13px;
                 min-width: 100px;
             }
         """)
@@ -537,15 +334,6 @@ class AISettingsDialog(QDialog):
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setFrameShape(QFrame.NoFrame)
-            scroll.setStyleSheet("""
-                QScrollArea {
-                    border: none;
-                    background-color: white;
-                }
-                QScrollBar:vertical {
-                    width: 10px;
-                }
-            """)
 
             widget = ProviderConfigWidget(provider)
             self.provider_widgets[provider] = widget
@@ -558,15 +346,6 @@ class AISettingsDialog(QDialog):
         local_scroll = QScrollArea()
         local_scroll.setWidgetResizable(True)
         local_scroll.setFrameShape(QFrame.NoFrame)
-        local_scroll.setStyleSheet("""
-            QScrollArea {
-                border: none;
-                background-color: white;
-            }
-            QScrollBar:vertical {
-                width: 10px;
-            }
-        """)
 
         local_frame = QWidget()
         local_layout = QVBoxLayout(local_frame)
@@ -581,7 +360,6 @@ class AISettingsDialog(QDialog):
         separator = QFrame()
         separator.setFrameShape(QFrame.HLine)
         separator.setFrameShadow(QFrame.Sunken)
-        separator.setStyleSheet("color: #e1dfdd;")
         local_layout.addWidget(separator)
 
         # LlamaCPP widget
@@ -612,41 +390,19 @@ class AISettingsDialog(QDialog):
 
         layout.addWidget(self.tabs)
 
-        # Active Provider Selection Section (after configuration)
+        # Active Provider Selection Section (after configuration) -
+        # QGroupBox/QComboBox chrome inherited from the app-wide rules.
         active_group = QGroupBox("Select Active Provider")
-        active_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: 600;
-                color: #605e5c;
-                border: 1px solid #e1dfdd;
-                border-radius: 8px;
-                padding-top: 10px;
-                background-color: white;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
         active_layout = QHBoxLayout(active_group)
         active_layout.setContentsMargins(16, 20, 16, 16)
 
         active_label = QLabel("Use this provider for AI features:")
-        active_label.setStyleSheet("font-size: 14px; color: #605e5c;")
+        active_label.setStyleSheet(f"font-size: 14px; color: {Colors.TEXT_SECONDARY};")
         active_layout.addWidget(active_label)
 
         self.active_provider_combo = QComboBox()
         self.active_provider_combo.setMinimumWidth(250)
-        self.active_provider_combo.setStyleSheet("""
-            QComboBox {
-                padding: 10px 16px;
-                border: 1px solid #d2d0ce;
-                border-radius: 8px;
-                font-size: 14px;
-                min-width: 200px;
-            }
-        """)
+        self.active_provider_combo.setStyleSheet("QComboBox { min-width: 200px; }")
         active_layout.addWidget(self.active_provider_combo)
         active_layout.addStretch()
 
@@ -654,46 +410,20 @@ class AISettingsDialog(QDialog):
 
         # Usage section
         usage_group = QGroupBox("Usage & Costs")
-        usage_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: 600;
-                color: #605e5c;
-                border: 1px solid #e1dfdd;
-                border-radius: 8px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
         usage_layout = QVBoxLayout(usage_group)
 
         self.usage_label = QLabel("No usage data available")
-        self.usage_label.setStyleSheet("""
-            QLabel {
-                color: #605e5c;
+        self.usage_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 13px;
                 padding: 8px;
-            }
+            }}
         """)
         usage_layout.addWidget(self.usage_label)
 
         # Refresh usage button
         refresh_btn = QPushButton("Refresh Usage")
-        refresh_btn.setStyleSheet("""
-            QPushButton {
-                padding: 6px 12px;
-                background-color: #edebe9;
-                border: 1px solid #d2d0ce;
-                border-radius: 4px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #e1dfdd;
-            }
-        """)
         usage_layout.addWidget(refresh_btn, alignment=Qt.AlignRight)
 
         layout.addWidget(usage_group)
@@ -703,38 +433,10 @@ class AISettingsDialog(QDialog):
         button_layout.addStretch()
 
         cancel_btn = QPushButton("Cancel")
-        cancel_btn.setStyleSheet("""
-            QPushButton {
-                padding: 10px 20px;
-                background-color: white;
-                border: 1px solid #d2d0ce;
-                border-radius: 6px;
-                font-size: 13px;
-                font-weight: 600;
-                color: #605e5c;
-            }
-            QPushButton:hover {
-                background-color: #f3f2f1;
-            }
-        """)
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
 
-        save_btn = QPushButton("Save Settings")
-        save_btn.setStyleSheet("""
-            QPushButton {
-                padding: 10px 20px;
-                background-color: #0078d4;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        save_btn = create_primary_button("Save Settings")
         save_btn.clicked.connect(self.save_settings)
         button_layout.addWidget(save_btn)
 
@@ -914,12 +616,12 @@ class AIUsageDialog(QDialog):
 
         # Title
         title = QLabel("AI Usage Statistics")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 18px;
                 font-weight: 700;
-                color: #201f1e;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         layout.addWidget(title)
 
@@ -931,7 +633,7 @@ class AIUsageDialog(QDialog):
         requests_card = self.create_stat_card(
             "Total Requests",
             str(self.usage_data.get("total_requests", 0)),
-            "#0078d4"
+            Colors.ACCENT
         )
         cards_layout.addWidget(requests_card)
 
@@ -939,7 +641,7 @@ class AIUsageDialog(QDialog):
         tokens_card = self.create_stat_card(
             "Total Tokens",
             f"{self.usage_data.get('total_tokens', 0):,}",
-            "#8b5cf6"
+            Colors.WARNING_STRONG
         )
         cards_layout.addWidget(tokens_card)
 
@@ -947,7 +649,7 @@ class AIUsageDialog(QDialog):
         cost_card = self.create_stat_card(
             "Est. Cost",
             f"${self.usage_data.get('estimated_cost', 0):.4f}",
-            "#10b981"
+            Colors.SUCCESS
         )
         cards_layout.addWidget(cost_card)
 
@@ -962,12 +664,12 @@ class AIUsageDialog(QDialog):
             for provider, stats in by_provider.items():
                 label = QLabel(f"{provider}: {stats.get('requests', 0)} requests, "
                               f"{stats.get('tokens', 0):,} tokens")
-                label.setStyleSheet("""
-                    QLabel {
+                label.setStyleSheet(f"""
+                    QLabel {{
                         padding: 8px;
                         font-size: 13px;
-                        color: #605e5c;
-                    }
+                        color: {Colors.TEXT_SECONDARY};
+                    }}
                 """)
                 provider_layout.addWidget(label)
 
@@ -976,21 +678,7 @@ class AIUsageDialog(QDialog):
         layout.addStretch()
 
         # Close button
-        close_btn = QPushButton("Close")
-        close_btn.setStyleSheet("""
-            QPushButton {
-                padding: 10px 24px;
-                background-color: #0078d4;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        close_btn = create_primary_button("Close")
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn, alignment=Qt.AlignRight)
 
@@ -999,8 +687,8 @@ class AIUsageDialog(QDialog):
         card = QFrame()
         card.setStyleSheet(f"""
             QFrame {{
-                background-color: white;
-                border: 1px solid #e1dfdd;
+                background-color: {Colors.BG_PRIMARY};
+                border: 1px solid {Colors.BORDER};
                 border-radius: 8px;
                 padding: 16px;
             }}
@@ -1010,13 +698,13 @@ class AIUsageDialog(QDialog):
         layout.setContentsMargins(0, 0, 0, 0)
 
         label = QLabel(title)
-        label.setStyleSheet("""
-            QLabel {
+        label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 12px;
-                color: #605e5c;
+                color: {Colors.TEXT_SECONDARY};
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
-            }
+            }}
         """)
         layout.addWidget(label)
 

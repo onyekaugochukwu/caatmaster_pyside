@@ -15,8 +15,11 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFont
 
-from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector, StatusLabel
+from ..components.common_modals import (
+    BaseModal, PreviewTable, ColumnSelector, StatusLabel, create_primary_button, create_success_button
+)
 from ..components.common_modals import BenfordChart
+from ..theme import Colors
 
 
 class BenfordChartPopup(QDialog):
@@ -41,14 +44,14 @@ class BenfordChartPopup(QDialog):
         info_layout = QHBoxLayout()
 
         self.legend_label = QLabel()
-        self.legend_label.setStyleSheet("""
-            QLabel {
+        self.legend_label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 12px;
-                color: #333;
+                color: {Colors.TEXT_PRIMARY};
                 padding: 8px;
-                background-color: #f3f2f1;
+                background-color: {Colors.BG_SECONDARY};
                 border-radius: 4px;
-            }
+            }}
         """)
         info_layout.addWidget(self.legend_label)
 
@@ -56,18 +59,6 @@ class BenfordChartPopup(QDialog):
 
         # Close button
         close_btn = QPushButton("Close")
-        close_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #605e5c;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #5a6268;
-            }
-        """)
         close_btn.clicked.connect(self.accept)
         info_layout.addWidget(close_btn)
 
@@ -117,49 +108,25 @@ class BenfordDialog(BaseModal):
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                background-color: white;
+        # Scrollbar styling inherited from the app-wide QScrollBar rule in
+        # theme.py - only the transparent-ish background/border is specific here.
+        scroll_area.setStyleSheet(f"""
+            QScrollArea {{
+                background-color: {Colors.BG_PRIMARY};
                 border: none;
-            }
-            QScrollBar:vertical {
-                background-color: #edebe9;
-                width: 12px;
-                border-radius: 6px;
-            }
-            QScrollBar::handle:vertical {
-                background-color: #d2d0ce;
-                border-radius: 6px;
-                min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background-color: #8a8886;
-            }
+            }}
         """)
 
         # Content widget inside scroll area
         content_widget = QWidget()
-        content_widget.setStyleSheet("background-color: white;")
+        content_widget.setStyleSheet(f"background-color: {Colors.BG_PRIMARY};")
         layout = QVBoxLayout(content_widget)
         layout.setSpacing(15)
         layout.setContentsMargins(15, 15, 15, 15)
 
-        # Column selection
+        # Column selection - QGroupBox styling inherited from the app-wide
+        # rule in theme.py throughout this dialog.
         col_group = QGroupBox("Data Column")
-        col_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 1px solid #ccc;
-                border-radius: 6px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
         col_layout = QVBoxLayout(col_group)
 
         self.column_selector = ColumnSelector(self.original_df)
@@ -167,27 +134,13 @@ class BenfordDialog(BaseModal):
         col_layout.addWidget(self.column_selector)
 
         col_help = QLabel("Select a numeric column (transaction amounts, balances, etc.)")
-        col_help.setStyleSheet("color: #666; font-size: 11px;")
+        col_help.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
         col_layout.addWidget(col_help)
 
         layout.addWidget(col_group)
 
         # Analysis options
         options_group = QGroupBox("Analysis Options")
-        options_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 1px solid #ccc;
-                border-radius: 6px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
         options_layout = QGridLayout(options_group)
         options_layout.setColumnMinimumWidth(1, 200)
 
@@ -195,14 +148,7 @@ class BenfordDialog(BaseModal):
         options_layout.addWidget(QLabel("Leading Digits:"), 0, 0)
         self.digits_combo = QComboBox()
         self.digits_combo.addItems(["1 (First digit only)", "2 (First 2 digits)"])
-        self.digits_combo.setStyleSheet("""
-            QComboBox {
-                padding: 6px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                min-width: 180px;
-            }
-        """)
+        self.digits_combo.setStyleSheet("QComboBox { min-width: 180px; }")
         options_layout.addWidget(self.digits_combo, 0, 1)
 
         # Significant digits option
@@ -218,39 +164,26 @@ class BenfordDialog(BaseModal):
 
         # Left: Chart
         chart_group = QGroupBox("Distribution Chart")
-        chart_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 1px solid #ccc;
-                border-radius: 6px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
         chart_layout = QVBoxLayout(chart_group)
 
         self.benford_chart = BenfordChart()
         self.benford_chart.setMinimumHeight(180)
         chart_layout.addWidget(self.benford_chart)
 
-        # View larger chart button
+        # View larger chart button - an outline/ghost style: visible border
+        # but no fill, so it doesn't compete with the primary action below.
         view_chart_btn = QPushButton("View Larger Chart")
-        view_chart_btn.setStyleSheet("""
-            QPushButton {
+        view_chart_btn.setStyleSheet(f"""
+            QPushButton {{
                 padding: 6px 12px;
-                border: 1px solid #0078d4;
+                border: 1px solid {Colors.ACCENT};
                 border-radius: 4px;
-                color: #0078d4;
-                background-color: white;
-            }
-            QPushButton:hover {
-                background-color: #deecf9;
-            }
+                color: {Colors.ACCENT};
+                background-color: {Colors.BG_PRIMARY};
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.ACCENT_SOFT};
+            }}
         """)
         view_chart_btn.clicked.connect(self._show_chart_popup)
         chart_layout.addWidget(view_chart_btn)
@@ -259,20 +192,6 @@ class BenfordDialog(BaseModal):
 
         # Right: Statistics table
         stats_group = QGroupBox("Digit Statistics")
-        stats_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 1px solid #ccc;
-                border-radius: 6px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
         stats_layout = QVBoxLayout(stats_group)
 
         self.stats_table = QTableWidget()
@@ -287,14 +206,8 @@ class BenfordDialog(BaseModal):
         self.stats_table.setMaximumWidth(400)
         self.stats_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.stats_table.setAlternatingRowColors(True)
-        self.stats_table.setStyleSheet("""
-            QTableWidget {
-                gridline-color: #e1dfdd;
-            }
-            QTableWidget::item {
-                padding: 4px;
-            }
-        """)
+        # Gridline color/item padding inherited from the app-wide
+        # QTableWidget rule in theme.py.
         stats_layout.addWidget(self.stats_table)
 
         # Chi-square test result
@@ -309,77 +222,28 @@ class BenfordDialog(BaseModal):
 
         # Output options
         output_group = QGroupBox("Output Columns")
-        output_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 1px solid #ccc;
-                border-radius: 6px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
         output_layout = QGridLayout(output_group)
         output_layout.setColumnMinimumWidth(1, 200)
 
         output_layout.addWidget(QLabel("Leading Digit Column:"), 0, 0)
         self.digit_col_edit = QLineEdit("leading_digit")
         self.digit_col_edit.setMinimumWidth(180)
-        self.digit_col_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 6px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-            }
-        """)
         output_layout.addWidget(self.digit_col_edit, 0, 1)
 
         output_layout.addWidget(QLabel("Expected Column:"), 1, 0)
         self.expected_col_edit = QLineEdit("benford_expected")
         self.expected_col_edit.setMinimumWidth(180)
-        self.expected_col_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 6px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-            }
-        """)
         output_layout.addWidget(self.expected_col_edit, 1, 1)
 
         output_layout.addWidget(QLabel("Deviation Column:"), 2, 0)
         self.deviation_col_edit = QLineEdit("benford_deviation")
         self.deviation_col_edit.setMinimumWidth(180)
-        self.deviation_col_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 6px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-            }
-        """)
         output_layout.addWidget(self.deviation_col_edit, 2, 1)
 
         layout.addWidget(output_group)
 
         # Preview
         preview_group = QGroupBox("Preview (First 10 Rows with Analysis)")
-        preview_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: bold;
-                border: 1px solid #ccc;
-                border-radius: 6px;
-                margin-top: 10px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
         preview_layout = QVBoxLayout(preview_group)
 
         self.preview_table = PreviewTable(max_rows=10)
@@ -392,55 +256,18 @@ class BenfordDialog(BaseModal):
         btn_layout.addStretch()
 
         self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.setStyleSheet("""
-            QPushButton {
-                padding: 8px 20px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                background-color: #f3f2f1;
-            }
-            QPushButton:hover {
-                background-color: #e1dfdd;
-            }
-        """)
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.analyze_btn = QPushButton("Run Analysis")
-        self.analyze_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.analyze_btn = create_primary_button("Run Analysis")
         self.analyze_btn.clicked.connect(self._run_analysis)
         btn_layout.addWidget(self.analyze_btn)
 
-        self.apply_btn = QPushButton("Apply to Dataset")
+        self.apply_btn = create_success_button("Apply to Dataset")
         self.apply_btn.setToolTip(
             "Add the leading-digit, expected-frequency, and deviation columns\n"
             "to the dataset as a real, replayable Applied Step."
         )
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #107c10;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0b5c0b;
-            }
-        """)
         self.apply_btn.clicked.connect(self._on_apply_clicked)
         btn_layout.addWidget(self.apply_btn)
 

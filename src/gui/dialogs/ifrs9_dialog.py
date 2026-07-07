@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 import polars as pl
 
-from ..components.common_modals import BaseModal
+from ..components.common_modals import BaseModal, create_primary_button
+from ..theme import Colors
 
 class IFRS9Dialog(BaseModal):
     """Dialog for IFRS 9 Staging Analysis"""
@@ -121,7 +122,7 @@ class IFRS9Dialog(BaseModal):
             "• <i>ifrs9_status</i>: Performing, Underperforming, Non-Performing<br>"
             "• <i>ifrs9_ecl_amount</i>: EAD * PD * LGD (if mapped)"
         )
-        info_lbl.setStyleSheet("color: #555; margin-top: 20px;")
+        info_lbl.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; margin-top: 20px;")
         thresh_layout.addWidget(info_lbl)
         
         thresh_layout.addStretch()
@@ -136,8 +137,7 @@ class IFRS9Dialog(BaseModal):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(self.reject)
         
-        run_btn = QPushButton("Run Staging Analysis")
-        run_btn.setStyleSheet("background-color: #0078d4; color: white; font-weight: bold; padding: 8px 16px;")
+        run_btn = create_primary_button("Run Staging Analysis")
         run_btn.clicked.connect(self.accept_changes)
         
         btn_layout.addWidget(cancel_btn)

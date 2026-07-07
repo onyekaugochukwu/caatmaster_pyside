@@ -15,6 +15,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
 from core.data_processor import LegacyDataProcessor
+from gui.theme import Colors
+from gui.components.common_modals import create_success_button
 
 
 class FixedWidthImportDialog(QDialog):
@@ -46,7 +48,7 @@ class FixedWidthImportDialog(QDialog):
             "Review the parsed result below and adjust column widths/names if anything looks off."
         )
         info.setWordWrap(True)
-        info.setStyleSheet("color: #4b5563;")
+        info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")
         layout.addWidget(info)
 
         raw_group = QGroupBox("Raw File (first lines)")
@@ -104,12 +106,7 @@ class FixedWidthImportDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
 
-        self.import_btn = QPushButton("Import")
-        self.import_btn.setStyleSheet("""
-            QPushButton { padding: 10px 20px; background-color: #10b981; color: white;
-                          border: none; border-radius: 6px; font-weight: 600; }
-            QPushButton:hover { background-color: #059669; }
-        """)
+        self.import_btn = create_success_button("Import")
         self.import_btn.clicked.connect(self._on_import)
         btn_layout.addWidget(self.import_btn)
         layout.addLayout(btn_layout)

@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer
 
-from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector
+from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector, create_primary_button
+from ..theme import Colors
 
 
 class ReplaceValuesDialog(BaseModal):
@@ -120,7 +121,7 @@ class ReplaceValuesDialog(BaseModal):
 
         # Stats
         self.stats_label = QLabel()
-        self.stats_label.setStyleSheet("color: #666; font-style: italic;")
+        self.stats_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-style: italic;")
         preview_layout.addWidget(self.stats_label)
 
         scroll_layout.addWidget(preview_group)
@@ -141,20 +142,7 @@ class ReplaceValuesDialog(BaseModal):
         self.preview_btn.clicked.connect(self.preview)
         btn_layout.addWidget(self.preview_btn)
 
-        self.replace_btn = QPushButton("Replace All")
-        self.replace_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.replace_btn = create_primary_button("Replace All")
         self.replace_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.replace_btn)
 
@@ -205,7 +193,7 @@ class ReplaceValuesDialog(BaseModal):
         options_layout = QVBoxLayout(options_group)
 
         help_label = QLabel("Enter replacements in format: old_value,new_value (one per line)")
-        help_label.setStyleSheet("color: #666; font-size: 11px;")
+        help_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
         options_layout.addWidget(help_label)
 
         self.bulk_edit = QTextEdit()

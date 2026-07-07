@@ -17,7 +17,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, Slot
 
-from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector
+from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector, create_primary_button
+from ..theme import Colors
 
 
 class GroupSummaryDialog(BaseModal):
@@ -99,20 +100,7 @@ class GroupSummaryDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Generate Summary")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Generate Summary")
         self.apply_btn.clicked.connect(self._apply_summary)
         btn_layout.addWidget(self.apply_btn)
 
@@ -236,20 +224,7 @@ class TopBottomDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Generate")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Generate")
         self.apply_btn.clicked.connect(self._apply_ranking)
         btn_layout.addWidget(self.apply_btn)
 
@@ -353,20 +328,7 @@ class StratificationDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Generate Stratification")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Generate Stratification")
         self.apply_btn.clicked.connect(self._apply_stratification)
         btn_layout.addWidget(self.apply_btn)
 
@@ -510,20 +472,7 @@ class AgingAnalysisDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Generate Aging Report")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Generate Aging Report")
         self.apply_btn.clicked.connect(self._apply_aging)
         btn_layout.addWidget(self.apply_btn)
 
@@ -593,20 +542,7 @@ class FieldStatisticsDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Generate Field Statistics")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Generate Field Statistics")
         self.apply_btn.clicked.connect(self._apply_field_statistics)
         btn_layout.addWidget(self.apply_btn)
 
@@ -722,7 +658,7 @@ class SamplingDialog(BaseModal):
 
         # Info
         self.info_label = QLabel(f"Total rows: {len(self.original_df)}")
-        self.info_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.info_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
         layout.addWidget(self.info_label)
 
         # Button row
@@ -733,20 +669,7 @@ class SamplingDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Generate Sample")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Generate Sample")
         self.apply_btn.clicked.connect(self._apply_sampling)
         btn_layout.addWidget(self.apply_btn)
 
@@ -886,20 +809,7 @@ class CrossTabulationDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Generate Crosstab")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Generate Crosstab")
         self.apply_btn.clicked.connect(self._apply_crosstab)
         btn_layout.addWidget(self.apply_btn)
 
@@ -1055,20 +965,7 @@ class TrendAnalysisDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Generate Trend Analysis")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Generate Trend Analysis")
         self.apply_btn.clicked.connect(self._apply_trend)
         btn_layout.addWidget(self.apply_btn)
 

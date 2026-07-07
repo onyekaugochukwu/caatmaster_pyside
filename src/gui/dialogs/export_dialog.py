@@ -9,6 +9,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from pathlib import Path
 
+from gui.theme import Colors
+from gui.components.common_modals import create_primary_button
+
 
 class ExportDialog(QDialog):
     """Dialog for exporting data in various formats"""
@@ -88,25 +91,12 @@ class ExportDialog(QDialog):
         # Info
         if self.row_count:
             info_label = QLabel(f"Exporting {self.row_count:,} rows")
-            info_label.setStyleSheet("color: #666; font-style: italic; padding: 10px;")
+            info_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-style: italic; padding: 10px;")
             layout.addWidget(info_label)
 
         # Buttons
         buttons = QHBoxLayout()
-        export_btn = QPushButton("Export")
-        export_btn.setStyleSheet("""
-            QPushButton {
-                background: #0078d4;
-                color: white;
-                padding: 8px 16px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #106ebe;
-            }
-        """)
+        export_btn = create_primary_button("Export")
         export_btn.clicked.connect(self.validate_and_accept)
         buttons.addWidget(export_btn)
 

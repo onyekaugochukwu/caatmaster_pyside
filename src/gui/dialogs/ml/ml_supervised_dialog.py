@@ -8,6 +8,9 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal
 
+from ...theme import Colors
+from ...components.common_modals import create_primary_button
+
 
 class MLSupervisedDialog(QDialog):
     """Dialog for supervised ML operations (regression and classification)"""
@@ -106,11 +109,7 @@ class MLSupervisedDialog(QDialog):
     def setup_ui(self):
         self.setWindowTitle("Supervised Learning")
         self.setMinimumSize(650, 600)
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #f9fafb;
-            }
-        """)
+        # Dialog background inherited from the app-wide QDialog rule in theme.py.
 
         # Main layout
         main_layout = QVBoxLayout(self)
@@ -120,16 +119,16 @@ class MLSupervisedDialog(QDialog):
         # Scroll area
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
+        scroll_area.setStyleSheet(f"""
+            QScrollArea {{
                 border: none;
-                background-color: #f9fafb;
-            }
+                background-color: {Colors.BG_PRIMARY};
+            }}
         """)
 
         # Content widget
         content_widget = QWidget()
-        content_widget.setStyleSheet("background-color: #f9fafb;")
+        content_widget.setStyleSheet(f"background-color: {Colors.BG_PRIMARY};")
         layout = QVBoxLayout(content_widget)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
@@ -141,105 +140,55 @@ class MLSupervisedDialog(QDialog):
         title_layout.addWidget(title_icon)
 
         title = QLabel("Supervised Learning")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 18px;
                 font-weight: 700;
-                color: #1f2937;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         title_layout.addWidget(title)
         title_layout.addStretch()
         layout.addLayout(title_layout)
 
-        # Algorithm selection
+        # Algorithm selection - QGroupBox/QComboBox/QListWidget chrome
+        # inherited from the app-wide rules in theme.py.
         algo_group = QGroupBox("Algorithm")
-        algo_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
         algo_layout = QVBoxLayout(algo_group)
         algo_layout.setContentsMargins(16, 20, 16, 16)
 
         self.algo_combo = QComboBox()
-        self.algo_combo.setStyleSheet("""
-            QComboBox {
-                padding: 10px 12px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 14px;
-            }
-        """)
         for algo_name in self.ALGORITHMS.keys():
             self.algo_combo.addItem(algo_name)
         self.algo_combo.currentIndexChanged.connect(self._on_algo_changed)
         algo_layout.addWidget(self.algo_combo)
 
         self.algo_desc = QLabel("Predict continuous values using linear regression")
-        self.algo_desc.setStyleSheet("""
-            QLabel {
+        self.algo_desc.setStyleSheet(f"""
+            QLabel {{
                 font-size: 12px;
-                color: #6b7280;
+                color: {Colors.TEXT_SECONDARY};
                 margin-top: 4px;
-            }
+            }}
         """)
         algo_layout.addWidget(self.algo_desc)
         layout.addWidget(algo_group)
 
         # Parameters group
         params_group = QGroupBox("Parameters")
-        params_group.setStyleSheet("""
-            QGroupBox {
-                font-weight: 600;
-                color: #374151;
-                border: 1px solid #e5e7eb;
-                border-radius: 8px;
-                padding-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px;
-            }
-        """)
         params_layout = QFormLayout(params_group)
         params_layout.setContentsMargins(16, 20, 16, 16)
         params_layout.setSpacing(12)
 
         # Target column
         self.target_combo = QComboBox()
-        self.target_combo.setStyleSheet("""
-            QComboBox {
-                padding: 8px 12px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 13px;
-            }
-        """)
         for col in self.df.columns:
             self.target_combo.addItem(col)
         params_layout.addRow("Target Column:", self.target_combo)
 
         # Features list
         self.features_list = QListWidget()
-        self.features_list.setStyleSheet("""
-            QListWidget {
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 4px;
-                min-height: 80px;
-            }
-        """)
+        self.features_list.setStyleSheet("QListWidget { min-height: 80px; }")
         self.features_list.setSelectionMode(QListWidget.ExtendedSelection)
         for col in self.df.columns:
             self.features_list.addItem(col)
@@ -247,14 +196,6 @@ class MLSupervisedDialog(QDialog):
 
         # Output column
         self.output_edit = QLineEdit("prediction")
-        self.output_edit.setStyleSheet("""
-            QLineEdit {
-                padding: 8px 12px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                font-size: 13px;
-            }
-        """)
         params_layout.addRow("Output Column:", self.output_edit)
 
         # Algorithm-specific parameters (hyperparameters)
@@ -270,42 +211,23 @@ class MLSupervisedDialog(QDialog):
 
         # Button bar at bottom
         button_bar = QFrame()
-        button_bar.setStyleSheet("""
-            QFrame {
-                background-color: #f3f4f6;
-                border-top: 1px solid #e5e7eb;
+        button_bar.setStyleSheet(f"""
+            QFrame {{
+                background-color: {Colors.BG_SECONDARY};
+                border-top: 1px solid {Colors.BORDER};
                 padding: 10px;
-            }
+            }}
         """)
         button_layout = QHBoxLayout(button_bar)
         button_layout.setContentsMargins(20, 5, 20, 5)
 
         button_layout.addStretch()
 
-        self.apply_btn = QPushButton("Apply")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2563eb;
-                color: white;
-                padding: 10px 24px;
-                border-radius: 6px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #1d4ed8;
-            }
-        """)
+        self.apply_btn = create_primary_button("Apply")
         self.apply_btn.clicked.connect(self._on_apply)
         button_layout.addWidget(self.apply_btn)
 
         cancel_btn = QPushButton("Cancel")
-        cancel_btn.setStyleSheet("""
-            QPushButton {
-                padding: 10px 24px;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-            }
-        """)
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
 

@@ -171,11 +171,11 @@ class BackstageView(QFrame):
         # Right content area - Light mode
         right_container = QWidget()
         right_container.setObjectName("RightContainer")
-        right_container.setStyleSheet("""
-            QWidget#RightContainer {
-                background-color: #ffffff;
-                border-left: 1px solid #e1dfdd;
-            }
+        right_container.setStyleSheet(f"""
+            QWidget#RightContainer {{
+                background-color: {Colors.BG_PRIMARY};
+                border-left: 1px solid {Colors.BORDER};
+            }}
         """)
         right_layout = QVBoxLayout(right_container)
         right_layout.setContentsMargins(32, 32, 32, 32)
@@ -237,23 +237,23 @@ class BackstageView(QFrame):
 
         title = QLabel("Welcome to CaatMaster")
         title.setObjectName("SectionTitle")
-        title.setStyleSheet("""
-            QLabel#SectionTitle {
+        title.setStyleSheet(f"""
+            QLabel#SectionTitle {{
                 font-size: 28px;
-                color: #201f1e;
+                color: {Colors.TEXT_PRIMARY};
                 font-weight: 600;
                 text-transform: none;
                 letter-spacing: 0;
-            }
+            }}
         """)
         self.content_layout.addWidget(title)
 
         subtitle = QLabel("Professional Audit Analytics")
-        subtitle.setStyleSheet("""
-            QLabel {
-                color: #605e5c;
+        subtitle.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 14px;
-            }
+            }}
         """)
         self.content_layout.addWidget(subtitle)
 
@@ -311,18 +311,18 @@ class BackstageView(QFrame):
         self._clear_content()
 
         title = QLabel("New Project")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 24px;
-                color: #201f1e;
+                color: {Colors.TEXT_PRIMARY};
                 font-weight: 600;
                 margin-bottom: 8px;
-            }
+            }}
         """)
         self.content_layout.addWidget(title)
 
         info = QLabel("Create a new audit analytics project with all necessary settings.")
-        info.setStyleSheet("color: #605e5c; font-size: 14px; margin-bottom: 24px;")
+        info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 14px; margin-bottom: 24px;")
         self.content_layout.addWidget(info)
 
         # Feature highlights
@@ -378,18 +378,18 @@ class BackstageView(QFrame):
         self._clear_content()
 
         title = QLabel("Open Project")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 24px;
-                color: #201f1e;
+                color: {Colors.TEXT_PRIMARY};
                 font-weight: 600;
                 margin-bottom: 8px;
-            }
+            }}
         """)
         self.content_layout.addWidget(title)
 
         info = QLabel("Open an existing project from file or recent locations")
-        info.setStyleSheet("color: #605e5c; font-size: 14px; margin-bottom: 24px;")
+        info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 14px; margin-bottom: 24px;")
         self.content_layout.addWidget(info)
 
         # Browse button
@@ -416,13 +416,13 @@ class BackstageView(QFrame):
 
         # Recent projects section
         recent_label = QLabel("Recent Projects")
-        recent_label.setStyleSheet("""
-            QLabel {
+        recent_label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 16px;
-                color: #201f1e;
+                color: {Colors.TEXT_PRIMARY};
                 font-weight: 600;
                 margin-bottom: 12px;
-            }
+            }}
         """)
         self.content_layout.addWidget(recent_label)
 
@@ -497,28 +497,28 @@ class BackstageView(QFrame):
 
         title = QLabel("Save Project")
         title.setObjectName("SectionTitle")
-        title.setStyleSheet("""
-            QLabel#SectionTitle {
+        title.setStyleSheet(f"""
+            QLabel#SectionTitle {{
                 font-size: 24px;
-                color: #201f1e;
+                color: {Colors.TEXT_PRIMARY};
                 font-weight: 600;
                 text-transform: none;
                 letter-spacing: 0;
-            }
+            }}
         """)
         self.content_layout.addWidget(title)
 
         # Project info section - Light mode
         if self.current_project:
             info_frame = QFrame()
-            info_frame.setStyleSheet("""
-                QFrame {
-                    background-color: #edebe9;
-                    border: 1px solid #e1dfdd;
+            info_frame.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {Colors.BG_SECONDARY};
+                    border: 1px solid {Colors.BORDER};
                     border-radius: 8px;
                     padding: 16px;
                     margin: 16px 0px;
-                }
+                }}
             """)
             info_layout = QVBoxLayout(info_frame)
 
@@ -558,19 +558,19 @@ class BackstageView(QFrame):
 
         title = QLabel("Export Data")
         title.setObjectName("SectionTitle")
-        title.setStyleSheet("""
-            QLabel#SectionTitle {
+        title.setStyleSheet(f"""
+            QLabel#SectionTitle {{
                 font-size: 24px;
-                color: #201f1e;
+                color: {Colors.TEXT_PRIMARY};
                 font-weight: 600;
                 text-transform: none;
                 letter-spacing: 0;
-            }
+            }}
         """)
         self.content_layout.addWidget(title)
 
         info = QLabel("Export your data and analysis results")
-        info.setStyleSheet("color: #605e5c; font-size: 14px; margin-bottom: 24px;")
+        info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 14px; margin-bottom: 24px;")
         self.content_layout.addWidget(info)
 
         export_options = [
@@ -622,14 +622,14 @@ class BackstageView(QFrame):
 
         title = QLabel("Settings")
         title.setObjectName("SectionTitle")
-        title.setStyleSheet("""
-            QLabel#SectionTitle {
+        title.setStyleSheet(f"""
+            QLabel#SectionTitle {{
                 font-size: 24px;
-                color: #201f1e;
+                color: {Colors.TEXT_PRIMARY};
                 font-weight: 600;
                 text-transform: none;
                 letter-spacing: 0;
-            }
+            }}
         """)
         self.content_layout.addWidget(title)
 
@@ -682,19 +682,19 @@ class BackstageView(QFrame):
 
         title = QLabel("Help")
         title.setObjectName("SectionTitle")
-        title.setStyleSheet("""
-            QLabel#SectionTitle {
+        title.setStyleSheet(f"""
+            QLabel#SectionTitle {{
                 font-size: 24px;
-                color: #201f1e;
+                color: {Colors.TEXT_PRIMARY};
                 font-weight: 600;
                 text-transform: none;
                 letter-spacing: 0;
-            }
+            }}
         """)
         self.content_layout.addWidget(title)
 
         info = QLabel("Get assistance and learn how to use CaatMaster")
-        info.setStyleSheet("color: #605e5c; font-size: 14px; margin-bottom: 24px;")
+        info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 14px; margin-bottom: 24px;")
         self.content_layout.addWidget(info)
 
         help_options = [

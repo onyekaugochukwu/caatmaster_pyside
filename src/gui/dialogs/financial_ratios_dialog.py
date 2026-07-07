@@ -15,7 +15,8 @@ import re
 import json
 import asyncio
 
-from ..components.common_modals import BaseModal
+from ..components.common_modals import BaseModal, create_primary_button, create_success_button
+from ..theme import Colors
 
 
 @dataclass
@@ -73,10 +74,12 @@ class FinancialRatiosDialog(BaseModal):
             parent: Parent widget
             available_datasets: Dict of {dataset_name: DataFrame} for other saved datasets
         """
-        super().__init__("Financial Ratios Analysis", dataframe, parent)
-        self.resize(950, 750)
-
-        # Store available datasets
+        # These must be set before super().__init__() - BaseModal's own
+        # __init__ calls self._setup_ui() internally, and _setup_ui() below
+        # reads self.dataset_map (via len(self.dataset_map) > 1) - setting
+        # it afterward meant this dialog crashed with an AttributeError on
+        # every single instantiation. Same ordering already used correctly
+        # elsewhere in this codebase (e.g. SplitColumnDialog).
         self.available_datasets = available_datasets or {}
         # Add primary dataset as default option
         self.dataset_map = {"Current Dataset": dataframe}
@@ -89,6 +92,9 @@ class FinancialRatiosDialog(BaseModal):
         # Track column combos for each concept
         self.column_combos = {}  # {concept_key: QComboBox}
         self.statement_combos = {}  # {statement_type: QComboBox}
+
+        super().__init__("Financial Ratios Analysis", dataframe, parent)
+        self.resize(950, 750)
 
     def _setup_ui(self):
         """Setup the UI components"""
@@ -127,7 +133,7 @@ class FinancialRatiosDialog(BaseModal):
         for stmt_type in FINANCIAL_CONCEPTS.keys():
             # Statement type label
             label = QLabel(f"{stmt_type}:")
-            label.setStyleSheet("font-weight: bold; color: #444;")
+            label.setStyleSheet(f"font-weight: bold; color: {Colors.TEXT_SECONDARY};")
             mapping_layout.addWidget(label, row, 0)
 
             # Dataset selector combo
@@ -143,7 +149,7 @@ class FinancialRatiosDialog(BaseModal):
             # Auto-detect button for this statement
             auto_btn = QPushButton(f"Auto-Detect {stmt_type.split()[0]}")
             auto_btn.setToolTip(f"Auto-detect columns for {stmt_type}")
-            auto_btn.setStyleSheet("background-color: #28a745; color: white;")
+            auto_btn.setObjectName("SuccessButton")
             auto_btn.clicked.connect(
                 lambda checked, st=stmt_type: self._auto_detect_for_statement(st)
             )
@@ -155,7 +161,7 @@ class FinancialRatiosDialog(BaseModal):
         ai_btn_layout = QHBoxLayout()
         self.ai_detect_btn = QPushButton("AI Auto-Detect All Statements")
         self.ai_detect_btn.setToolTip("Use AI to detect columns across all datasets")
-        self.ai_detect_btn.setStyleSheet("background-color: #6f42c1; color: white; font-weight: bold;")
+        self.ai_detect_btn.setObjectName("PrimaryButton")
         self.ai_detect_btn.clicked.connect(self._ai_detect_columns)
         ai_btn_layout.addWidget(self.ai_detect_btn)
 
@@ -173,7 +179,7 @@ class FinancialRatiosDialog(BaseModal):
         for stmt_type, concepts in FINANCIAL_CONCEPTS.items():
             # Section header
             header = QLabel(f"\n--- {stmt_type} ---")
-            header.setStyleSheet("font-weight: bold; color: #0078d4; margin-top: 15px;")
+            header.setStyleSheet(f"font-weight: bold; color: {Colors.ACCENT}; margin-top: 15px;")
             mapping_layout.addWidget(header, row, 0, 1, 3)
             row += 1
 
@@ -263,6 +269,12 @@ class FinancialRatiosDialog(BaseModal):
         v_base_layout = QHBoxLayout()
         v_base_layout.addWidget(QLabel("Base:"))
         self.v_base_combo = QComboBox()
+        # numeric_cols was referenced here but never defined - this dialog
+        # crashed with a NameError on every single instantiation. Same
+        # numeric-column filter already used elsewhere in this file
+        # (_calculate_ratios below).
+        numeric_cols = [col for col in self.original_df.columns
+                        if self.original_df[col].dtype in (pl.Float64, pl.Float32, pl.Int64, pl.Int32)]
         self.v_base_combo.addItems(numeric_cols)
         # Try to guess base (Total Assets or Revenue)
         for i in range(self.v_base_combo.count()):
@@ -299,8 +311,7 @@ class FinancialRatiosDialog(BaseModal):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(self.reject)
         
-        calc_btn = QPushButton("Calculate Ratios")
-        calc_btn.setStyleSheet("background-color: #0078d4; color: white; font-weight: bold; padding: 6px 12px;")
+        calc_btn = create_primary_button("Calculate Ratios")
         calc_btn.clicked.connect(self.accept_changes)
         
         btn_layout.addWidget(cancel_btn)

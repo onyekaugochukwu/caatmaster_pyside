@@ -16,6 +16,8 @@ from pathlib import Path
 
 from core.project_manager import Project, Dataset, ProjectExporter
 from core.caat_format import load_caat, is_caat_file, CaatFormatError
+from gui.theme import Colors
+from gui.components.common_modals import create_primary_button
 
 
 class NewProjectDialog(QDialog):
@@ -33,90 +35,39 @@ class NewProjectDialog(QDialog):
         self.setMinimumHeight(500)  # Reduced since it's now scrollable
         self.setModal(True)
 
-        # Apply dark text stylesheet
-        self.setStyleSheet("""
-            QDialog {
-                background-color: white;
-            }
-            QLabel {
-                color: #111827;
-            }
-            QLineEdit {
-                color: #111827;
-                background-color: white;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 10px;
-                selection-background-color: #dbeafe;
-                font-size: 14px;
-                min-height: 24px;
-            }
-            QLineEdit:focus {
-                border-color: #3b82f6;
-            }
-            QTextEdit {
-                color: #111827;
-                background-color: white;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 10px;
-                font-size: 14px;
-            }
-            QTextEdit:focus {
-                border-color: #3b82f6;
-            }
-            QComboBox {
-                color: #111827;
-                background-color: white;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 10px;
-                font-size: 14px;
-                min-height: 24px;
-            }
-            QComboBox:focus {
-                border-color: #3b82f6;
-            }
-            QSpinBox {
-                color: #111827;
-                background-color: white;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px;
-                font-size: 14px;
-            }
-            QSpinBox:focus {
-                border-color: #3b82f6;
-            }
-            QSlider::groove:horizontal {
-                border: 1px solid #d1d5db;
-                background: #f3f4f6;
+        # QDialog/QLabel/QLineEdit/QTextEdit/QComboBox/QSpinBox chrome
+        # inherited from the app-wide rules in theme.py. QSlider has no
+        # global rule (genuinely custom here), so it's kept and tokenized.
+        self.setStyleSheet(f"""
+            QSlider::groove:horizontal {{
+                border: 1px solid {Colors.BORDER_STRONG};
+                background: {Colors.BG_SECONDARY};
                 height: 6px;
                 border-radius: 3px;
-            }
-            QSlider::sub-page:horizontal {
-                background: #3b82f6;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {Colors.ACCENT};
                 border-radius: 3px;
-            }
-            QSlider::handle:horizontal {
-                background: #1d4ed8;
-                border: 2px solid white;
+            }}
+            QSlider::handle:horizontal {{
+                background: {Colors.ACCENT_PRESSED};
+                border: 2px solid {Colors.BG_PRIMARY};
                 width: 18px;
                 height: 18px;
                 margin: -7px 0;
                 border-radius: 9px;
-            }
-            QSlider::handle:horizontal:hover {
-                background: #2563eb;
+            }}
+            QSlider::handle:horizontal:hover {{
+                background: {Colors.ACCENT_HOVER};
                 width: 20px;
                 height: 20px;
                 margin: -8px 0;
-            }
-            QFormLayout QLabel {
-                color: #374151;
+            }}
+            QFormLayout QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-weight: 500;
                 font-size: 13px;
-            }
+            }}
         """)
 
         layout = QVBoxLayout(self)
@@ -127,24 +78,13 @@ class NewProjectDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setStyleSheet("""
-            QScrollArea {
+        # Scrollbar styling inherited from the app-wide QScrollBar rule in
+        # theme.py - only the background is specific here.
+        scroll.setStyleSheet(f"""
+            QScrollArea {{
                 border: none;
-                background-color: white;
-            }
-            QScrollBar:vertical {
-                background-color: #f3f4f6;
-                width: 12px;
-                border-radius: 6px;
-            }
-            QScrollBar::handle:vertical {
-                background-color: #d1d5db;
-                border-radius: 6px;
-                min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background-color: #9ca3af;
-            }
+                background-color: {Colors.BG_PRIMARY};
+            }}
         """)
 
         # Create scroll content widget
@@ -154,22 +94,22 @@ class NewProjectDialog(QDialog):
 
         # Basic Information Section
         basic_label = QLabel("Basic Information")
-        basic_label.setStyleSheet("""
-            QLabel {
+        basic_label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 14px;
                 font-weight: 600;
-                color: #111827;
-            }
+                color: {Colors.ACCENT};
+            }}
         """)
         scroll_layout.addWidget(basic_label)
 
         basic_frame = QFrame()
-        basic_frame.setStyleSheet("""
-            QFrame {
-                background-color: #f9fafb;
-                border: 1px solid #e5e7eb;
+        basic_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {Colors.BG_SECONDARY};
+                border: 1px solid {Colors.BORDER};
                 border-radius: 8px;
-            }
+            }}
         """)
         basic_layout = QFormLayout(basic_frame)
         basic_layout.setContentsMargins(20, 20, 20, 20)
@@ -209,13 +149,13 @@ class NewProjectDialog(QDialog):
         self.risk_slider.setValue(5)
         self.risk_slider.setFixedWidth(300)
         self.risk_label = QLabel("5")
-        self.risk_label.setStyleSheet("""
-            QLabel {
-                color: #111827;
+        self.risk_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_PRIMARY};
                 font-size: 14px;
                 font-weight: 700;
                 min-width: 24px;
-            }
+            }}
         """)
         self.risk_slider.valueChanged.connect(lambda v: self.risk_label.setText(str(v)))
         risk_layout.addWidget(self.risk_slider)
@@ -231,22 +171,22 @@ class NewProjectDialog(QDialog):
 
         # Description Section
         desc_label = QLabel("Description & Scope")
-        desc_label.setStyleSheet("""
-            QLabel {
+        desc_label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 14px;
                 font-weight: 600;
-                color: #111827;
-            }
+                color: {Colors.ACCENT};
+            }}
         """)
         scroll_layout.addWidget(desc_label)
 
         desc_frame = QFrame()
-        desc_frame.setStyleSheet("""
-            QFrame {
-                background-color: #f9fafb;
-                border: 1px solid #e5e7eb;
+        desc_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {Colors.BG_SECONDARY};
+                border: 1px solid {Colors.BORDER};
                 border-radius: 8px;
-            }
+            }}
         """)
         desc_layout = QFormLayout(desc_frame)
         desc_layout.setContentsMargins(20, 20, 20, 20)
@@ -268,22 +208,22 @@ class NewProjectDialog(QDialog):
 
         # Project Phase Section
         phase_label = QLabel("Project Phase")
-        phase_label.setStyleSheet("""
-            QLabel {
+        phase_label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 14px;
                 font-weight: 600;
-                color: #111827;
-            }
+                color: {Colors.ACCENT};
+            }}
         """)
         scroll_layout.addWidget(phase_label)
 
         phase_frame = QFrame()
-        phase_frame.setStyleSheet("""
-            QFrame {
-                background-color: #f9fafb;
-                border: 1px solid #e5e7eb;
+        phase_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {Colors.BG_SECONDARY};
+                border: 1px solid {Colors.BORDER};
                 border-radius: 8px;
-            }
+            }}
         """)
         phase_layout = QFormLayout(phase_frame)
         phase_layout.setContentsMargins(20, 20, 20, 20)
@@ -322,21 +262,10 @@ class NewProjectDialog(QDialog):
         buttons.accepted.connect(self.validate_and_accept)
         buttons.rejected.connect(self.reject)
 
-        # Style the OK button
+        # Style the OK button - reuses the app-wide #PrimaryButton rule.
         ok_button = buttons.button(QDialogButtonBox.Ok)
-        ok_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 8px 24px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
-        """)
+        ok_button.setObjectName("PrimaryButton")
+        ok_button.setStyleSheet("QPushButton#PrimaryButton { padding: 8px 24px; }")
 
         layout.addWidget(buttons)
 

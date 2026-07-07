@@ -17,7 +17,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QFont
 
-from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector
+from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector, create_primary_button
+from ..theme import Colors
 
 
 class SplitSheetDialog(BaseModal):
@@ -71,12 +72,12 @@ class SplitSheetDialog(BaseModal):
 
         # Info label
         self.info_label = QLabel("Select a column to see unique values")
-        self.info_label.setStyleSheet("""
-            QLabel {
-                color: #605e5c;
+        self.info_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 12px;
                 padding: 8px;
-            }
+            }}
         """)
         layout.addWidget(self.info_label)
 
@@ -88,20 +89,7 @@ class SplitSheetDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Split Sheet")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Split Sheet")
         self.apply_btn.clicked.connect(self._apply_split)
         btn_layout.addWidget(self.apply_btn)
 
@@ -255,20 +243,7 @@ class TransposeDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Transpose")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Transpose")
         self.apply_btn.clicked.connect(self._apply_transpose)
         btn_layout.addWidget(self.apply_btn)
 
@@ -343,23 +318,12 @@ class JoinDatasetsDialog(BaseModal):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        # Scrollbar styling inherited from the app-wide QScrollBar rule in
+        # theme.py - only the transparent background is specific here.
         scroll.setStyleSheet("""
             QScrollArea {
                 background-color: transparent;
                 border: none;
-            }
-            QScrollBar:vertical {
-                background-color: #e1dfdd;
-                width: 12px;
-                border-radius: 6px;
-            }
-            QScrollBar::handle:vertical {
-                background-color: #8a8886;
-                border-radius: 5px;
-                min-height: 20px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background-color: #605e5c;
             }
         """)
 
@@ -473,20 +437,7 @@ class JoinDatasetsDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Join Datasets")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Join Datasets")
         self.apply_btn.clicked.connect(self._apply_join)
         btn_layout.addWidget(self.apply_btn)
 
@@ -589,20 +540,7 @@ class CompareDatasetsDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Compare Datasets")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Compare Datasets")
         self.apply_btn.clicked.connect(self._apply_compare)
         btn_layout.addWidget(self.apply_btn)
 
@@ -710,7 +648,7 @@ class FuzzyMatchDatasetsDialog(BaseModal):
             "so it may take a while on very large datasets."
         )
         note.setWordWrap(True)
-        note.setStyleSheet("color: #666; font-size: 11px;")
+        note.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
         layout.addWidget(note)
 
         btn_layout = QHBoxLayout()
@@ -720,20 +658,7 @@ class FuzzyMatchDatasetsDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Find Matches")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Find Matches")
         self.apply_btn.clicked.connect(self._apply_fuzzy_match)
         btn_layout.addWidget(self.apply_btn)
 
@@ -787,23 +712,12 @@ class AppendDatasetsDialog(BaseModal):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        # Scrollbar styling inherited from the app-wide QScrollBar rule in
+        # theme.py - only the transparent background is specific here.
         scroll.setStyleSheet("""
             QScrollArea {
                 background-color: transparent;
                 border: none;
-            }
-            QScrollBar:vertical {
-                background-color: #e1dfdd;
-                width: 12px;
-                border-radius: 6px;
-            }
-            QScrollBar::handle:vertical {
-                background-color: #8a8886;
-                border-radius: 5px;
-                min-height: 20px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background-color: #605e5c;
             }
         """)
 
@@ -819,21 +733,21 @@ class AppendDatasetsDialog(BaseModal):
         info_layout = QVBoxLayout(info_group)
 
         self.source_label = QLabel(f"{self.source_dataset_name}: {len(self.original_df)} rows, {len(self.original_df.columns)} columns")
-        self.source_label.setStyleSheet("""
-            QLabel {
-                background-color: #deecf9;
+        self.source_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {Colors.ACCENT_SOFT};
                 padding: 12px;
                 border-radius: 4px;
                 font-weight: bold;
-                border: 1px solid #0078d4;
-            }
+                border: 1px solid {Colors.ACCENT};
+            }}
         """)
         info_layout.addWidget(self.source_label)
 
         source_cols = self.original_df.columns
         self.source_columns_label = QLabel(f"Columns ({len(source_cols)}): {', '.join(source_cols[:10])}" +
                                            ("..." if len(source_cols) > 10 else ""))
-        self.source_columns_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.source_columns_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
         self.source_columns_label.setWordWrap(True)
         info_layout.addWidget(self.source_columns_label)
 
@@ -863,7 +777,7 @@ class AppendDatasetsDialog(BaseModal):
             self.datasets_list.setMinimumHeight(60)
             append_layout.addWidget(self.datasets_list)
             self.no_datasets_label = QLabel("No other datasets available in the project")
-            self.no_datasets_label.setStyleSheet("color: #666; font-size: 11px;")
+            self.no_datasets_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
             append_layout.addWidget(self.no_datasets_label)
 
         layout.addWidget(append_group)
@@ -873,17 +787,17 @@ class AppendDatasetsDialog(BaseModal):
         schema_layout = QVBoxLayout(schema_group)
 
         self.schema_info_label = QLabel("Select datasets to see schema comparison")
-        self.schema_info_label.setStyleSheet("color: #666; font-size: 12px;")
+        self.schema_info_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 12px;")
         self.schema_info_label.setWordWrap(True)
         schema_layout.addWidget(self.schema_info_label)
 
         self.common_cols_label = QLabel("")
-        self.common_cols_label.setStyleSheet("color: #059669; font-size: 11px;")
+        self.common_cols_label.setStyleSheet(f"color: {Colors.SUCCESS}; font-size: 11px;")
         self.common_cols_label.setWordWrap(True)
         schema_layout.addWidget(self.common_cols_label)
 
         self.unique_cols_label = QLabel("")
-        self.unique_cols_label.setStyleSheet("color: #f59e0b; font-size: 11px;")
+        self.unique_cols_label.setStyleSheet(f"color: {Colors.WARNING_STRONG}; font-size: 11px;")
         self.unique_cols_label.setWordWrap(True)
         schema_layout.addWidget(self.unique_cols_label)
 
@@ -902,14 +816,14 @@ class AppendDatasetsDialog(BaseModal):
         self.behavior_label = QLabel(
             "Missing columns will be filled with null values."
         )
-        self.behavior_label.setStyleSheet("""
-            QLabel {
-                color: #0078d4;
+        self.behavior_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.ACCENT};
                 font-size: 11px;
                 padding: 8px;
-                background-color: #deecf9;
+                background-color: {Colors.ACCENT_SOFT};
                 border-radius: 4px;
-            }
+            }}
         """)
         self.behavior_label.setWordWrap(True)
         options_layout.addWidget(self.behavior_label)
@@ -921,13 +835,13 @@ class AppendDatasetsDialog(BaseModal):
         result_layout = QVBoxLayout(result_group)
 
         self.result_preview = QLabel("Select datasets to see preview")
-        self.result_preview.setStyleSheet("""
-            QLabel {
-                background-color: #f3f2f1;
+        self.result_preview.setStyleSheet(f"""
+            QLabel {{
+                background-color: {Colors.BG_SECONDARY};
                 padding: 10px;
                 border-radius: 4px;
                 font-size: 12px;
-            }
+            }}
         """)
         self.result_preview.setWordWrap(True)
         result_layout.addWidget(self.result_preview)
@@ -946,20 +860,7 @@ class AppendDatasetsDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Append Datasets")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Append Datasets")
         self.apply_btn.clicked.connect(self._apply_append)
         btn_layout.addWidget(self.apply_btn)
 
@@ -1110,7 +1011,7 @@ class CombineSheetsDialog(BaseModal):
         source_layout.addWidget(self.datasets_edit)
 
         help_label = QLabel("Enter the names of datasets in your project to combine")
-        help_label.setStyleSheet("color: #666; font-size: 11px;")
+        help_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
         source_layout.addWidget(help_label)
 
         layout.addWidget(source_group)
@@ -1133,12 +1034,12 @@ class CombineSheetsDialog(BaseModal):
         preview_layout = QVBoxLayout(preview_group)
 
         self.preview_label = QLabel(f"Current dataset: {len(self.original_df)} rows, {len(self.original_df.columns)} columns")
-        self.preview_label.setStyleSheet("""
-            QLabel {
-                background-color: #f3f2f1;
+        self.preview_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {Colors.BG_SECONDARY};
                 padding: 10px;
                 border-radius: 4px;
-            }
+            }}
         """)
         preview_layout.addWidget(self.preview_label)
 
@@ -1152,20 +1053,7 @@ class CombineSheetsDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Combine")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Combine")
         self.apply_btn.clicked.connect(self._apply_combine)
         btn_layout.addWidget(self.apply_btn)
 
@@ -1285,20 +1173,7 @@ class QuerySheetDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Apply Query")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Apply Query")
         self.apply_btn.clicked.connect(self._apply_query)
         btn_layout.addWidget(self.apply_btn)
 
@@ -1468,7 +1343,7 @@ class SelectNRowsDialog(BaseModal):
 
         # Info
         self.info_label = QLabel(f"Total rows: {len(self.original_df)}")
-        self.info_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.info_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
         layout.addWidget(self.info_label)
 
         # Button row
@@ -1479,20 +1354,7 @@ class SelectNRowsDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Select Rows")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Select Rows")
         self.apply_btn.clicked.connect(self._apply_selection)
         btn_layout.addWidget(self.apply_btn)
 

@@ -1974,6 +1974,67 @@ OPERATION_REGISTRY = {
     },
 
     # -------------------------------------------------------------------------
+    # FINANCIAL DATA IMPORT - forward fill / debit-credit / hierarchy
+    # -------------------------------------------------------------------------
+    "forward_fill_column": {
+        "display_name": "Forward Fill Column",
+        "type": TransformationStepType.CALCULATE,
+        "category": "table",
+        "description": "Carries the last non-null value in a column forward to fill subsequent nulls - "
+                       "fixes GL/JE exports where header fields (entry number, date, preparer) are "
+                       "printed only on the first line of a multi-line entry.",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column To Fill"},
+        },
+        "creates_columns": False
+    },
+    "combine_debit_credit": {
+        "display_name": "Combine Debit/Credit",
+        "type": TransformationStepType.CALCULATE,
+        "category": "table",
+        "description": "Collapses a Debit/Credit column pair into one signed amount column (debit "
+                       "positive, credit negative) - the standard GL layout, needed before any "
+                       "amount-based test (Benford, outliers, sampling) can run.",
+        "parameter_schema": {
+            "debit_column": {"type": "column", "required": True, "label": "Debit Column"},
+            "credit_column": {"type": "column", "required": True, "label": "Credit Column"},
+            "output_column": {"type": "string", "required": False, "default": "amount", "label": "Output Column"},
+            "drop_source": {"type": "bool", "required": False, "default": True, "label": "Drop Source Columns"},
+        },
+        "creates_columns": ["{output_column}"]
+    },
+    "extract_hierarchy_level": {
+        "display_name": "Extract Hierarchy Level",
+        "type": TransformationStepType.CALCULATE,
+        "category": "table",
+        "description": "Extracts the leading-whitespace depth of an account/line-item column into a new "
+                       "integer level column - the standard way trial balances, financial statements, and "
+                       "charts of accounts encode a rollup hierarchy via indentation.",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Account/Line-Item Column"},
+            "level_column": {"type": "string", "required": False, "default": "level", "label": "Level Column Name"},
+            "strip_indent": {"type": "bool", "required": False, "default": True, "label": "Strip Indentation From Name"},
+            "indent_size": {"type": "int", "required": False, "label": "Characters Per Level (blank = auto-detect)"},
+        },
+        "creates_columns": ["{level_column}"]
+    },
+    "map_column_values": {
+        "display_name": "Map Column Values",
+        "type": TransformationStepType.CALCULATE,
+        "category": "table",
+        "description": "Maps every value in a column through an explicit dictionary - e.g. an account "
+                       "name to its financial-statement category. The mapping itself is a real, "
+                       "inspectable parameter of this step, not a black box.",
+        "parameter_schema": {
+            "column": {"type": "column", "required": True, "label": "Column To Map"},
+            "mapping": {"type": "dict", "required": True, "label": "Value Mapping"},
+            "output_column": {"type": "string", "required": False, "label": "Output Column (blank = overwrite)"},
+            "default": {"type": "string", "required": False, "label": "Default For Unmapped Values"},
+        },
+        "creates_columns": ["{output_column}"]
+    },
+
+    # -------------------------------------------------------------------------
     # SPLIT SHEET
     # -------------------------------------------------------------------------
     "split_sheet": {

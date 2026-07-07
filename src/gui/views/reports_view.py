@@ -10,6 +10,9 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from pathlib import Path
 
+from gui.theme import Colors
+from gui.components.common_modals import create_primary_button, create_secondary_button, EmptyStateOverlay
+
 
 class ReportsView(QWidget):
     """Report generation view"""
@@ -45,69 +48,23 @@ class ReportsView(QWidget):
             "that can be opened in any web browser or printed to PDF."
         )
         info_text.setWordWrap(True)
-        info_text.setStyleSheet("color: #666; padding: 10px;")
+        info_text.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; padding: 10px;")
         info_layout.addWidget(info_text)
 
-        # Report options
+        # Report options - one primary action plus two equally-valid
+        # secondary ones, not three different colors implying a priority
+        # (green/blue/gray) these three actions don't actually have.
         options_layout = QVBoxLayout()
 
-        # Quick report button
-        self.quick_report_btn = QPushButton("🚀 Generate Quick Report")
-        self.quick_report_btn.setStyleSheet("""
-            QPushButton {
-                background: #28a745;
-                color: white;
-                padding: 15px;
-                border: none;
-                border-radius: 6px;
-                font-size: 14px;
-                font-weight: bold;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background: #218838;
-            }
-        """)
+        self.quick_report_btn = create_primary_button("🚀  Generate Quick Report")
         self.quick_report_btn.clicked.connect(self.generate_quick_report)
         options_layout.addWidget(self.quick_report_btn)
 
-        # Custom report button
-        self.custom_report_btn = QPushButton("📊 Build Custom Report")
-        self.custom_report_btn.setStyleSheet("""
-            QPushButton {
-                background: #0078d4;
-                color: white;
-                padding: 15px;
-                border: none;
-                border-radius: 6px;
-                font-size: 14px;
-                font-weight: bold;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background: #106ebe;
-            }
-        """)
+        self.custom_report_btn = create_secondary_button("📊  Build Custom Report")
         self.custom_report_btn.clicked.connect(self.build_custom_report)
         options_layout.addWidget(self.custom_report_btn)
 
-        # Export report button
-        self.export_btn = QPushButton("💾 Export Current Report")
-        self.export_btn.setStyleSheet("""
-            QPushButton {
-                background: #6c757d;
-                color: white;
-                padding: 15px;
-                border: none;
-                border-radius: 6px;
-                font-size: 14px;
-                font-weight: bold;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background: #5a6268;
-            }
-        """)
+        self.export_btn = create_secondary_button("💾  Export Current Report")
         self.export_btn.clicked.connect(self.export_report)
         self.export_btn.setEnabled(False)
         options_layout.addWidget(self.export_btn)
@@ -121,26 +78,12 @@ class ReportsView(QWidget):
         recent_layout = QVBoxLayout()
 
         self.recent_list = QListWidget()
-        self.recent_list.setStyleSheet("""
-            QListWidget {
-                border: 1px solid #e0e0e0;
-                border-radius: 4px;
-                padding: 5px;
-            }
-            QListWidget::item {
-                padding: 8px;
-                border-radius: 3px;
-            }
-            QListWidget::item:hover {
-                background: #f0f0f0;
-            }
-            QListWidget::item:selected {
-                background: #0078d4;
-                color: white;
-            }
-        """)
         self.recent_list.itemDoubleClicked.connect(self.open_report)
         recent_layout.addWidget(self.recent_list)
+        self._recent_empty_state = EmptyStateOverlay(
+            self.recent_list,
+            'No reports generated yet. Use "Generate Quick Report" above to create your first one.'
+        )
 
         # Recent reports controls
         recent_controls = QHBoxLayout()
@@ -165,7 +108,7 @@ class ReportsView(QWidget):
 
         # Status label
         self.status_label = QLabel("")
-        self.status_label.setStyleSheet("color: #666; font-size: 12px; padding: 5px;")
+        self.status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 12px; padding: 5px;")
         main_layout.addWidget(self.status_label)
 
         # Load recent reports
@@ -258,6 +201,8 @@ class ReportsView(QWidget):
             except Exception as e:
                 print(f"Error loading recent reports: {e}")
 
+        self._recent_empty_state.set_visible(self.recent_list.count() == 0)
+
     def add_recent_report(self, file_path: str):
         """Add a report to the recent list"""
         self.recent_reports_file = Path.home() / ".caatmaster_recent_reports.txt"
@@ -339,6 +284,7 @@ class ReportsView(QWidget):
 
                 # Remove from list
                 self.recent_list.takeItem(self.recent_list.row(current_item))
+                self._recent_empty_state.set_visible(self.recent_list.count() == 0)
 
             except Exception as e:
                 QMessageBox.critical(self, "Delete Error", f"Failed to delete report:\n{str(e)}")

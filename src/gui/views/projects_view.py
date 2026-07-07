@@ -15,6 +15,9 @@ import json
 from datetime import datetime
 import uuid
 
+from gui.theme import Colors, Spacing
+from gui.components.common_modals import create_primary_button, create_secondary_button
+
 
 class ProjectsView(QWidget):
     """Project management view using file-based projects"""
@@ -31,14 +34,19 @@ class ProjectsView(QWidget):
     def setup_ui(self):
         # Create a scroll area for the entire view
         scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(False)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        # False pinned content_widget to its own natural (~750px) size
+        # regardless of window width - on any wide window the right half
+        # was just dead space. True lets the scroll area actually resize
+        # content_widget to fill available width, only scrolling
+        # vertically once content genuinely exceeds it.
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                background-color: white;
+        scroll_area.setStyleSheet(f"""
+            QScrollArea {{
+                background-color: {Colors.BG_PRIMARY};
                 border: none;
-            }
+            }}
         """)
 
         # Create content widget
@@ -57,21 +65,21 @@ class ProjectsView(QWidget):
         left_layout.setSpacing(4)
 
         title = QLabel("Projects")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 28px;
                 font-weight: 700;
-                color: #111827;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         left_layout.addWidget(title)
 
         subtitle = QLabel("Manage your audit projects and datasets")
-        subtitle.setStyleSheet("""
-            QLabel {
+        subtitle.setStyleSheet(f"""
+            QLabel {{
                 font-size: 14px;
-                color: #374151;
-            }
+                color: {Colors.TEXT_SECONDARY};
+            }}
         """)
         left_layout.addWidget(subtitle)
 
@@ -82,98 +90,28 @@ class ProjectsView(QWidget):
         btn_layout.setSpacing(12)
 
         # New project button
-        self.new_project_btn = QPushButton("New")
-        self.new_project_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                padding: 8px 16px;
-                font-size: 14px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
-            QPushButton:pressed {
-                background-color: #1d4ed8;
-            }
-        """)
+        self.new_project_btn = create_primary_button("New")
         self.new_project_btn.setCursor(Qt.PointingHandCursor)
         self.new_project_btn.clicked.connect(self.new_project)
         btn_layout.addWidget(self.new_project_btn)
 
         # Refresh button
-        self.refresh_btn = QPushButton("Refresh")
-        self.refresh_btn.setStyleSheet("""
-            QPushButton {
-                background-color: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                border-radius: 8px;
-                padding: 8px 16px;
-                font-size: 14px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #f9fafb;
-                border-color: #9ca3af;
-            }
-        """)
+        self.refresh_btn = create_secondary_button("Refresh")
         self.refresh_btn.setCursor(Qt.PointingHandCursor)
         self.refresh_btn.clicked.connect(self.load_projects)
         btn_layout.addWidget(self.refresh_btn)
 
         # Edit button
-        self.edit_btn = QPushButton("✏️ Edit")
-        self.edit_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f9fafb;
-                color: #374151;
-                border: 1px solid #d1d5db;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 500;
-                min-width: 80px;
-            }
-            QPushButton:hover {
-                background-color: #f3f4f6;
-                border-color: #9ca3af;
-            }
-            QPushButton:disabled {
-                background-color: #f9fafb;
-                color: #d1d5db;
-                border-color: #e5e7eb;
-            }
-        """)
+        self.edit_btn = create_secondary_button("✏️ Edit")
         self.edit_btn.clicked.connect(self.edit_project)
         self.edit_btn.setEnabled(False)
         btn_layout.addWidget(self.edit_btn)
 
-        # Delete button
+        # Delete button - the app-wide #DangerButton rule (unambiguously
+        # red, theme.py) replaces a pale-pink style that read as neither
+        # clearly "disabled" nor clearly "danger".
         self.delete_btn = QPushButton("🗑️ Delete")
-        self.delete_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #fef2f2;
-                color: #dc2626;
-                border: 1px solid #fecaca;
-                border-radius: 6px;
-                padding: 8px 16px;
-                font-size: 13px;
-                font-weight: 500;
-                min-width: 80px;
-            }
-            QPushButton:hover {
-                background-color: #fee2e2;
-            }
-            QPushButton:disabled {
-                background-color: #fef2f2;
-                color: #fca5a5;
-                border-color: #fecdd3;
-            }
-        """)
+        self.delete_btn.setObjectName("DangerButton")
         self.delete_btn.clicked.connect(self.delete_project)
         self.delete_btn.setEnabled(False)
         btn_layout.addWidget(self.delete_btn)
@@ -184,16 +122,17 @@ class ProjectsView(QWidget):
 
         # Projects section
         projects_label = QLabel("Your Projects")
-        projects_label.setStyleSheet("""
-            QLabel {
+        projects_label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 18px;
                 font-weight: 700;
-                color: #111827;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         main_layout.addWidget(projects_label)
 
-        # Projects table
+        # Projects table - relies on the app-wide QTableWidget/QHeaderView
+        # rule in theme.py for colors, only overriding what's specific here.
         self.projects_table = QTableWidget()
         self.projects_table.setColumnCount(5)
         self.projects_table.setHorizontalHeaderLabels([
@@ -206,32 +145,14 @@ class ProjectsView(QWidget):
         self.projects_table.cellDoubleClicked.connect(self.on_project_double_clicked)
         self.projects_table.setAlternatingRowColors(True)
         self.projects_table.setMinimumHeight(300)
-        self.projects_table.setStyleSheet("""
-            QTableWidget {
-                border: 1px solid #e5e7eb;
+        self.projects_table.setStyleSheet(f"""
+            QTableWidget {{
+                border: 1px solid {Colors.BORDER};
                 border-radius: 6px;
-                background-color: white;
-                gridline-color: #f3f4f6;
-            }
-            QTableWidget::item {
+            }}
+            QTableWidget::item {{
                 padding: 10px 8px;
-                color: #111827;
-                font-size: 13px;
-            }
-            QTableWidget::item:selected {
-                background-color: #dbeafe;
-                color: #111827;
-            }
-            QHeaderView::section {
-                background-color: #f9fafb;
-                color: #374151;
-                font-weight: 600;
-                font-size: 12px;
-                border: none;
-                border-bottom: 1px solid #e5e7eb;
-                border-right: 1px solid #f3f4f6;
-                padding: 10px 8px;
-            }
+            }}
         """)
         self.projects_table.verticalHeader().setVisible(False)
         self.projects_table.verticalHeader().setDefaultSectionSize(40)
@@ -239,53 +160,37 @@ class ProjectsView(QWidget):
 
         # Project details section
         details_label = QLabel("Project Details")
-        details_label.setStyleSheet("""
-            QLabel {
+        details_label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 18px;
                 font-weight: 700;
-                color: #111827;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         main_layout.addWidget(details_label)
 
         self.details_text = QTextEdit()
         self.details_text.setReadOnly(True)
         self.details_text.setMaximumHeight(150)
-        self.details_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #f9fafb;
-                border: 1px solid #e5e7eb;
+        # QTextEdit has native placeholder support - shows automatically
+        # whenever the widget is empty, replacing what used to be a blank
+        # box with no explanation for why nothing was there.
+        self.details_text.setPlaceholderText("Select a project above to see its details here.")
+        self.details_text.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {Colors.BG_SECONDARY};
+                border: 1px solid {Colors.BORDER};
                 border-radius: 6px;
                 padding: 12px;
-                color: #111827;
                 font-size: 13px;
-            }
+            }}
         """)
         main_layout.addWidget(self.details_text)
 
         # Actions
         actions_layout = QHBoxLayout()
 
-        self.open_btn = QPushButton("📂 Open Project")
-        self.open_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3b82f6;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 12px 20px;
-                font-size: 13px;
-                font-weight: 600;
-                min-width: 120px;
-            }
-            QPushButton:hover {
-                background-color: #2563eb;
-            }
-            QPushButton:disabled {
-                background-color: #dbeafe;
-                color: #93c5fd;
-            }
-        """)
+        self.open_btn = create_primary_button("📂 Open Project")
         self.open_btn.clicked.connect(self.open_project)
         self.open_btn.setEnabled(False)
         actions_layout.addWidget(self.open_btn)

@@ -12,16 +12,22 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from ..theme import Colors
 
-def _stat_card(title: str, value: str, color: str = "#1f2937") -> QWidget:
+
+def _stat_card(title: str, value: str, color: str = None) -> QWidget:
+    color = color or Colors.TEXT_PRIMARY
     card = QFrame()
-    card.setStyleSheet("QFrame { background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; }")
+    card.setStyleSheet(
+        f"QFrame {{ background-color: {Colors.BG_SECONDARY}; border: 1px solid {Colors.BORDER}; "
+        f"border-radius: 8px; padding: 10px; }}"
+    )
     layout = QVBoxLayout(card)
     layout.setSpacing(2)
     value_label = QLabel(value)
     value_label.setStyleSheet(f"font-size: 22px; font-weight: 700; color: {color};")
     title_label = QLabel(title)
-    title_label.setStyleSheet("font-size: 11px; color: #6b7280;")
+    title_label.setStyleSheet(f"font-size: 11px; color: {Colors.TEXT_SECONDARY};")
     layout.addWidget(value_label)
     layout.addWidget(title_label)
     return card
@@ -53,10 +59,10 @@ class DatasetProfileDialog(QDialog):
         cards_row = QHBoxLayout()
         cards_row.addWidget(_stat_card("Rows", f"{profile['n_rows']:,}"))
         cards_row.addWidget(_stat_card("Columns", f"{profile['n_columns']:,}"))
-        dup_color = "#dc2626" if profile["duplicate_rows"] > 0 else "#1f2937"
+        dup_color = Colors.DANGER if profile["duplicate_rows"] > 0 else Colors.TEXT_PRIMARY
         cards_row.addWidget(_stat_card("Duplicate Rows", f"{profile['duplicate_rows']:,} ({profile['duplicate_pct']}%)", dup_color))
         cards_row.addWidget(_stat_card("Benford Flags", str(len(profile["benford_findings"])),
-                                        "#dc2626" if profile["benford_findings"] else "#1f2937"))
+                                        Colors.DANGER if profile["benford_findings"] else Colors.TEXT_PRIMARY))
         layout.addLayout(cards_row)
 
         # Column profile table

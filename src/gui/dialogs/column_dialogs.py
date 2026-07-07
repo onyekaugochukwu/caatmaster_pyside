@@ -15,7 +15,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QFont
 
-from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector
+from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector, create_primary_button
+from ..theme import Colors
 
 
 class RenameColumnsDialog(BaseModal):
@@ -137,7 +138,7 @@ class RenameColumnsDialog(BaseModal):
 
         # Info label
         self.info_label = QLabel("Edit individual names above or use bulk operations")
-        self.info_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.info_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
         layout.addWidget(self.info_label)
 
     def _setup_buttons(self):
@@ -148,20 +149,7 @@ class RenameColumnsDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Apply Renames")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Apply Renames")
         self.apply_btn.clicked.connect(self._apply_renames)
         btn_layout.addWidget(self.apply_btn)
 
@@ -371,13 +359,13 @@ class ChooseColumnsDialog(BaseModal):
         preview_layout = QVBoxLayout(preview_group)
 
         self.preview_label = QLabel("No columns selected")
-        self.preview_label.setStyleSheet("""
-            QLabel {
-                background-color: #f5f5f5;
+        self.preview_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {Colors.BG_SECONDARY};
                 padding: 10px;
                 border-radius: 4px;
                 font-family: monospace;
-            }
+            }}
         """)
         preview_layout.addWidget(self.preview_label)
 
@@ -391,20 +379,7 @@ class ChooseColumnsDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Apply")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Apply")
         self.apply_btn.clicked.connect(self._apply_selection)
         btn_layout.addWidget(self.apply_btn)
 
@@ -573,7 +548,7 @@ class ChangeDataTypeDialog(BaseModal):
 
         # Current type display
         self.current_type_label = QLabel("Current type: -")
-        self.current_type_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.current_type_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
         col_layout.addWidget(self.current_type_label)
 
         layout.addWidget(col_group)
@@ -634,14 +609,14 @@ class ChangeDataTypeDialog(BaseModal):
         preview_layout = QVBoxLayout(preview_group)
 
         self.preview_label = QLabel("Select a column to preview")
-        self.preview_label.setStyleSheet("""
-            QLabel {
-                background-color: #f5f5f5;
+        self.preview_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {Colors.BG_SECONDARY};
                 padding: 10px;
                 border-radius: 4px;
                 font-family: monospace;
                 min-height: 60px;
-            }
+            }}
         """)
         preview_layout.addWidget(self.preview_label)
 
@@ -655,20 +630,7 @@ class ChangeDataTypeDialog(BaseModal):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
-        self.apply_btn = QPushButton("Convert Type")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Convert Type")
         self.apply_btn.clicked.connect(self._apply_conversion)
         btn_layout.addWidget(self.apply_btn)
 

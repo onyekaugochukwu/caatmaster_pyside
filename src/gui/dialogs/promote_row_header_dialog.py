@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 import polars as pl
 
-from ..components.common_modals import BaseModal, PreviewTable
+from ..components.common_modals import BaseModal, PreviewTable, create_primary_button
 
 
 class PromoteRowHeaderDialog(BaseModal):
@@ -84,8 +84,7 @@ class PromoteRowHeaderDialog(BaseModal):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(self.reject)
 
-        apply_btn = QPushButton("Promote Row as Headers")
-        apply_btn.setStyleSheet("background-color: #0078d4; color: white; font-weight: bold; padding: 6px 12px;")
+        apply_btn = create_primary_button("Promote Row as Headers")
         apply_btn.clicked.connect(self.accept_changes)
 
         btn_layout.addWidget(cancel_btn)

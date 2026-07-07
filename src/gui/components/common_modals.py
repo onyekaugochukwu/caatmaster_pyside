@@ -12,8 +12,82 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QLineEdit, QTextEdit, QSlider,
     QProgressBar, QMessageBox, QFrame, QSplitter, QWidget, QToolTip
 )
-from PySide6.QtCore import Qt, Signal, QTimer, QSize
+from PySide6.QtCore import Qt, Signal, QTimer, QSize, QEvent, QObject
 from PySide6.QtGui import QFont, QIcon, QColor, QPalette
+
+from ..theme import Colors
+
+
+def create_primary_button(text: str) -> QPushButton:
+    """A button styled via the app-wide QSS #PrimaryButton rule (theme.py)
+    instead of a hand-rolled stylesheet - the ~20 dialogs that currently
+    each hardcode their own near-identical "blue Apply button" block can
+    switch to this instead, and pick up any future palette change for
+    free rather than needing their own edit."""
+    button = QPushButton(text)
+    button.setObjectName("PrimaryButton")
+    return button
+
+
+def create_secondary_button(text: str) -> QPushButton:
+    """A plain button styled entirely from the app-wide QSS default
+    QPushButton rule - exists alongside create_primary_button() so a
+    dialog's button row can be built from one consistent helper pair."""
+    return QPushButton(text)
+
+
+def create_success_button(text: str) -> QPushButton:
+    """For a "commit/apply to dataset" action that needs to read as
+    distinct from a primary "run/preview" action in the same button row
+    (e.g. Benford's "Run Analysis" vs "Apply to Dataset")."""
+    button = QPushButton(text)
+    button.setObjectName("SuccessButton")
+    return button
+
+
+class EmptyStateOverlay(QObject):
+    """Attach a centered, muted "nothing here yet" message to any
+    QAbstractScrollArea-based widget (QListWidget, QTableWidget, ...) -
+    same fix as PreviewTable's built-in empty state, generalized for
+    widgets that don't have one central "data loaded" method to hook
+    (QListWidget's clear()/addItem() aren't as easy to intercept as
+    PreviewTable.load_dataframe() was), so the caller explicitly toggles
+    visibility after populating/clearing the underlying widget instead.
+
+    Usage:
+        self._recent_empty = EmptyStateOverlay(self.recent_list, "No reports yet.")
+        ...
+        self._recent_empty.set_visible(self.recent_list.count() == 0)
+    """
+
+    def __init__(self, view, message: str):
+        super().__init__(view)
+        self.view = view
+        self.label = QLabel(message, view.viewport())
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setWordWrap(True)
+        self.label.setStyleSheet(
+            f"color: {Colors.TEXT_TERTIARY}; font-size: 12px; padding: 24px; background: transparent;"
+        )
+        view.viewport().installEventFilter(self)
+        self.set_visible(True)
+
+    def eventFilter(self, obj, event):
+        # At interpreter shutdown the underlying C++ QListWidget/QTableWidget
+        # can already be destroyed while a queued event still reaches this
+        # filter - self.view.viewport() would then raise RuntimeError rather
+        # than return a stale-but-harmless value, so guard the whole check.
+        try:
+            if obj is self.view.viewport() and event.type() == QEvent.Resize and self.label.isVisible():
+                self.label.setGeometry(self.view.viewport().rect())
+        except RuntimeError:
+            pass
+        return False
+
+    def set_visible(self, visible: bool):
+        self.label.setVisible(visible)
+        if visible:
+            self.label.setGeometry(self.view.viewport().rect())
 
 
 class BaseModal(QDialog):
@@ -181,6 +255,14 @@ class MultiColumnSelector(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
+        # Optional title label, hidden until set_label() is called - kept
+        # invisible-by-default rather than an empty visible QLabel, so
+        # callers that don't need a title (e.g. UnpivotDialog) don't get
+        # a blank line above the search box.
+        self.title_label = QLabel()
+        self.title_label.setVisible(False)
+        layout.addWidget(self.title_label)
+
         # Search/filter
         search_layout = QHBoxLayout()
         search_layout.addWidget(QLabel("Search:"))
@@ -205,6 +287,13 @@ class MultiColumnSelector(QWidget):
         self.list_widget = QListWidget()
         self.list_widget.setSelectionMode(QListWidget.NoSelection)
         layout.addWidget(self.list_widget)
+
+    def set_label(self, text: str):
+        """Set an optional title above the search box - mirrors
+        ColumnSelector.set_label() so both selector widgets share the
+        same API."""
+        self.title_label.setText(text)
+        self.title_label.setVisible(bool(text))
 
     def set_dataframe(self, df: pl.DataFrame):
         """Set the dataframe and populate column list"""
@@ -260,22 +349,81 @@ class PreviewTable(QTableWidget):
     """
     Table widget for displaying preview of transformation results
     Shows first N rows of a dataframe
+
+    Defaults to a real empty state ("no preview yet") rather than a blank
+    rectangle - found several dialogs (GroupSummaryDialog, TopBottomDialog,
+    StratificationDialog, TrendAnalysisDialog) that build a PreviewTable
+    but never actually call load_dataframe() on it, which meant the
+    "Preview" panel just rendered as an indistinguishable-from-broken
+    empty box. Defaulting the empty state here fixes all of them at once,
+    without needing to touch each dialog's own logic.
     """
 
-    def __init__(self, max_rows: int = 5, parent=None):
+    def __init__(self, max_rows: int = 5, parent=None,
+                 empty_message: str = "Nothing to preview yet."):
         super().__init__(parent)
         self.max_rows = max_rows
         self.setAlternatingRowColors(True)
         self.setEditTriggers(QTableWidget.NoEditTriggers)
         self.horizontalHeader().setStretchLastSection(True)
-        self.setStyleSheet("""
-            QTableWidget {
-                gridline-color: #e0e0e0;
-            }
-            QTableWidget::item {
+        self.setStyleSheet(f"""
+            QTableWidget {{
+                gridline-color: {Colors.BORDER};
+            }}
+            QTableWidget::item {{
                 padding: 4px;
-            }
+            }}
         """)
+
+        # Parented to the viewport, not self - QTableWidget/QAbstractScrollArea
+        # paints its viewport as a child that sits above any widget parented
+        # directly to the table itself, so a label parented to `self` here
+        # renders invisibly, behind the (empty) grid.
+        self._empty_label = QLabel(empty_message, self.viewport())
+        self._empty_label.setAlignment(Qt.AlignCenter)
+        self._empty_label.setWordWrap(True)
+        self._empty_label.setStyleSheet(
+            f"color: {Colors.TEXT_TERTIARY}; font-size: 12px; padding: 24px; background: transparent;"
+        )
+        # The viewport can be resized by QAbstractScrollArea's own internal
+        # layout (e.g. a scrollbar appearing/disappearing) without the outer
+        # QTableWidget's own resizeEvent firing again - watching the
+        # viewport's own resize events directly is what actually keeps the
+        # label's geometry correct, not overriding resizeEvent() here.
+        self.viewport().installEventFilter(self)
+        self._show_empty_state(True)
+        # Belt-and-suspenders: when this table sits inside a dialog that's
+        # still laying out sibling group boxes above/below it, its final
+        # size isn't settled yet at construction time, and not every
+        # intermediate size change reliably reaches the event filter above
+        # before the dialog is first shown. Re-syncing once after the
+        # event loop actually settles catches that gap.
+        QTimer.singleShot(0, lambda: self._show_empty_state(self._empty_label.isVisible()))
+
+    def set_empty_message(self, message: str):
+        """Customize the empty-state text for a specific dialog, e.g.
+        "Configure options above, then click Generate to see a preview"."""
+        self._empty_label.setText(message)
+
+    def _show_empty_state(self, show: bool):
+        self._empty_label.setVisible(show)
+        if show:
+            self._empty_label.setGeometry(self.viewport().rect())
+
+    def eventFilter(self, obj, event):
+        try:
+            if obj is self.viewport() and event.type() == QEvent.Resize and self._empty_label.isVisible():
+                self._empty_label.setGeometry(self.viewport().rect())
+        except RuntimeError:
+            pass
+        return super().eventFilter(obj, event)
+
+    def clear(self):
+        """A few dialogs call .clear() directly rather than going through
+        load_dataframe(None) - route it through the same empty-state
+        logic so it isn't a second way to end up with a blank box."""
+        super().clear()
+        self._show_empty_state(True)
 
     def load_dataframe(self, df: pl.DataFrame):
         """Load preview data from dataframe"""
@@ -283,7 +431,10 @@ class PreviewTable(QTableWidget):
             self.clear()
             self.setRowCount(0)
             self.setColumnCount(0)
+            self._show_empty_state(True)
             return
+
+        self._show_empty_state(False)
 
         preview = df.head(self.max_rows)
 
@@ -405,11 +556,11 @@ class StatusLabel(QLabel):
     def setStatus(self, status: str):
         """Set status and update color"""
         colors = {
-            "normal": ("#333333", "#f0f0f0"),
-            "success": ("#155724", "#d4edda"),
-            "warning": ("#856404", "#fff3cd"),
-            "error": ("#721c24", "#f8d7da"),
-            "info": ("#0c5460", "#d1ecf1"),
+            "normal": (Colors.TEXT_PRIMARY, Colors.BG_SECONDARY),
+            "success": (Colors.SUCCESS, Colors.SUCCESS_SOFT),
+            "warning": (Colors.WARNING_STRONG, Colors.WARNING_SOFT),
+            "error": (Colors.DANGER, Colors.DANGER_SOFT),
+            "info": (Colors.ACCENT, Colors.ACCENT_SOFT),
         }
         fg_color, bg_color = colors.get(status, colors["normal"])
         self.setStyleSheet(f"""
@@ -474,36 +625,39 @@ class InfoToolButton(QPushButton):
         super().__init__(parent)
         self.setText("ⓘ")
         self.setToolTipDuration(0)  # Show until dismissed
-        self.setStyleSheet("""
-            QPushButton {
+        self.setStyleSheet(f"""
+            QPushButton {{
                 border: none;
                 background: transparent;
-                color: #0078d4;
+                color: {Colors.ACCENT};
                 font: bold 14px;
                 max-width: 24px;
                 max-height: 24px;
-            }
-            QPushButton:hover {
-                color: #106ebe;
-            }
+            }}
+            QPushButton:hover {{
+                color: {Colors.ACCENT_HOVER};
+            }}
         """)
 
         class TooltipWidget(QFrame):
             def __init__(self, text):
                 super().__init__()
+                # Same inverted (dark-on-light-bg / light-on-dark-bg)
+                # convention as the app-wide QToolTip rule in theme.py -
+                # one tooltip visual language, not two.
                 self.setStyleSheet(
-                    "QFrame {"
-                    "background: #333;"
-                    "color: white;"
-                    "padding: 12px;"
-                    "border-radius: 6px;"
-                    "max-width: 300px;"
-                    "}"
+                    f"QFrame {{"
+                    f"background: {Colors.TEXT_PRIMARY};"
+                    f"color: {Colors.BG_PRIMARY};"
+                    f"padding: 12px;"
+                    f"border-radius: 6px;"
+                    f"max-width: 300px;"
+                    f"}}"
                 )
                 layout = QVBoxLayout(self)
                 label = QLabel(text)
                 label.setWordWrap(True)
-                label.setStyleSheet("color: white;")
+                label.setStyleSheet(f"color: {Colors.BG_PRIMARY};")
                 layout.addWidget(label)
 
         self.tooltip_widget = TooltipWidget(info_text)

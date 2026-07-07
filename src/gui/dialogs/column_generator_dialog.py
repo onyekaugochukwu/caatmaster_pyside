@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QSize
 from PySide6.QtGui import QFont
 
+from gui.theme import Colors
+
 
 class ColumnGeneratorDialog(QDialog):
     """Dialog for generating new columns using AI"""
@@ -109,10 +111,10 @@ class ColumnGeneratorDialog(QDialog):
     def setup_ui(self):
         self.setWindowTitle("AI Column Generator")
         self.setMinimumSize(700, 550)
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #f3f2f1;
-            }
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {Colors.BG_SECONDARY};
+            }}
         """)
 
         layout = QVBoxLayout(self)
@@ -126,12 +128,12 @@ class ColumnGeneratorDialog(QDialog):
         title_layout.addWidget(title_icon)
 
         title = QLabel("Generate Column with AI")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 18px;
                 font-weight: 700;
-                color: #201f1e;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         title_layout.addWidget(title)
         title_layout.addStretch()
@@ -142,19 +144,19 @@ class ColumnGeneratorDialog(QDialog):
 
         # Dataset selector
         dataset_group = QGroupBox("Dataset")
-        dataset_group.setStyleSheet("""
-            QGroupBox {
+        dataset_group.setStyleSheet(f"""
+            QGroupBox {{
                 font-weight: 600;
-                color: #605e5c;
-                border: 1px solid #e1dfdd;
+                color: {Colors.TEXT_SECONDARY};
+                border: 1px solid {Colors.BORDER};
                 border-radius: 8px;
                 padding-top: 10px;
-            }
-            QGroupBox::title {
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
                 left: 10px;
                 padding: 0 5px;
-            }
+            }}
         """)
         dataset_layout = QHBoxLayout(dataset_group)
         dataset_layout.setContentsMargins(16, 20, 16, 16)
@@ -167,14 +169,14 @@ class ColumnGeneratorDialog(QDialog):
             self._key_for_dataframe[id(df_obj)] = key
 
         self.dataset_combo = QComboBox()
-        self.dataset_combo.setStyleSheet("""
-            QComboBox {
+        self.dataset_combo.setStyleSheet(f"""
+            QComboBox {{
                 padding: 8px 12px;
-                border: 1px solid #d2d0ce;
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 6px;
                 font-size: 13px;
                 min-width: 200px;
-            }
+            }}
         """)
         for key in self.dataframes.keys():
             self.dataset_combo.addItem(key, key)
@@ -188,14 +190,14 @@ class ColumnGeneratorDialog(QDialog):
 
         # Add dataset info label
         self.dataset_info_label = QLabel(f"Rows: {len(self.df):,} | Columns: {len(self.df.columns)}")
-        self.dataset_info_label.setStyleSheet("""
-            QLabel {
+        self.dataset_info_label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 12px;
-                color: #605e5c;
+                color: {Colors.TEXT_SECONDARY};
                 padding: 4px 8px;
-                background-color: #edebe9;
+                background-color: {Colors.BG_SECONDARY};
                 border-radius: 4px;
-            }
+            }}
         """)
         dataset_layout.addWidget(self.dataset_info_label)
         dataset_layout.addStretch()
@@ -211,19 +213,19 @@ class ColumnGeneratorDialog(QDialog):
 
         # Instruction input
         instruction_group = QGroupBox("What should the column contain?")
-        instruction_group.setStyleSheet("""
-            QGroupBox {
+        instruction_group.setStyleSheet(f"""
+            QGroupBox {{
                 font-weight: 600;
-                color: #605e5c;
-                border: 1px solid #e1dfdd;
+                color: {Colors.TEXT_SECONDARY};
+                border: 1px solid {Colors.BORDER};
                 border-radius: 8px;
                 padding-top: 10px;
-            }
-            QGroupBox::title {
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
                 left: 10px;
                 padding: 0 5px;
-            }
+            }}
         """)
 
         instruction_layout = QVBoxLayout(instruction_group)
@@ -238,28 +240,28 @@ class ColumnGeneratorDialog(QDialog):
             "• 'Extract the first name from the full name'"
         )
         self.instruction_edit.setMaximumHeight(120)
-        self.instruction_edit.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #d2d0ce;
+        self.instruction_edit.setStyleSheet(f"""
+            QTextEdit {{
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 6px;
                 padding: 10px;
                 font-size: 13px;
-                background-color: white;
-            }
-            QTextEdit:focus {
-                border-color: #0078d4;
-            }
+                background-color: {Colors.BG_PRIMARY};
+            }}
+            QTextEdit:focus {{
+                border-color: {Colors.ACCENT};
+            }}
         """)
         instruction_layout.addWidget(self.instruction_edit)
 
         # Quick suggestions
         suggestions_label = QLabel("Quick Suggestions:")
-        suggestions_label.setStyleSheet("""
-            QLabel {
+        suggestions_label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 12px;
-                color: #605e5c;
+                color: {Colors.TEXT_SECONDARY};
                 font-weight: 600;
-            }
+            }}
         """)
         instruction_layout.addWidget(suggestions_label)
 
@@ -275,18 +277,18 @@ class ColumnGeneratorDialog(QDialog):
 
         for icon_text, instruction in suggestion_buttons:
             btn = QPushButton(icon_text)
-            btn.setStyleSheet("""
-                QPushButton {
+            btn.setStyleSheet(f"""
+                QPushButton {{
                     padding: 6px 10px;
-                    background-color: #deecf9;
-                    border: 1px solid #c7e0f4;
+                    background-color: {Colors.ACCENT_SOFT};
+                    border: 1px solid {Colors.ACCENT};
                     border-radius: 4px;
                     font-size: 11px;
-                    color: #005a9e;
-                }
-                QPushButton:hover {
-                    background-color: #deecf9;
-                }
+                    color: {Colors.ACCENT};
+                }}
+                QPushButton:hover {{
+                    background-color: {Colors.ACCENT_SOFT};
+                }}
             """)
             btn.clicked.connect(lambda checked, inst=instruction: self.instruction_edit.setText(inst))
             suggestions_layout.addWidget(btn)
@@ -297,78 +299,78 @@ class ColumnGeneratorDialog(QDialog):
         # Column name input
         name_layout = QHBoxLayout()
         name_label = QLabel("New Column Name:")
-        name_label.setStyleSheet("""
-            QLabel {
+        name_label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 13px;
                 font-weight: 600;
-                color: #605e5c;
-            }
+                color: {Colors.TEXT_SECONDARY};
+            }}
         """)
         name_layout.addWidget(name_label)
 
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("e.g., email_domain, age, risk_level")
-        self.name_edit.setStyleSheet("""
-            QLineEdit {
+        self.name_edit.setStyleSheet(f"""
+            QLineEdit {{
                 padding: 8px 12px;
-                border: 1px solid #d2d0ce;
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 6px;
                 font-size: 13px;
-                background-color: white;
-            }
-            QLineEdit:focus {
-                border-color: #0078d4;
-            }
+                background-color: {Colors.BG_PRIMARY};
+            }}
+            QLineEdit:focus {{
+                border-color: {Colors.ACCENT};
+            }}
         """)
         name_layout.addWidget(self.name_edit)
         left_panel.addLayout(name_layout)
 
         # Generate button
         self.generate_btn = QPushButton("✨ Generate Column")
-        self.generate_btn.setStyleSheet("""
-            QPushButton {
+        self.generate_btn.setStyleSheet(f"""
+            QPushButton {{
                 padding: 12px 20px;
-                background-color: #0078d4;
-                color: white;
+                background-color: {Colors.ACCENT};
+                color: {Colors.TEXT_ON_ACCENT};
                 border: none;
                 border-radius: 6px;
                 font-size: 14px;
                 font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-            QPushButton:disabled {
-                background-color: #8a8886;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.ACCENT_HOVER};
+            }}
+            QPushButton:disabled {{
+                background-color: {Colors.TEXT_TERTIARY};
+            }}
         """)
         self.generate_btn.clicked.connect(self.generate_column)
         left_panel.addWidget(self.generate_btn)
 
         # Progress indicator
         self.progress_bar = QProgressBar()
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{
                 border: none;
                 background-color: transparent;
-            }
-            QProgressBar::chunk {
-                background-color: #0078d4;
-            }
+            }}
+            QProgressBar::chunk {{
+                background-color: {Colors.ACCENT};
+            }}
         """)
         self.progress_bar.setVisible(False)
         left_panel.addWidget(self.progress_bar)
 
         # Status label
         self.status_label = QLabel()
-        self.status_label.setStyleSheet("""
-            QLabel {
+        self.status_label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 12px;
-                color: #605e5c;
+                color: {Colors.TEXT_SECONDARY};
                 padding: 8px;
                 border-radius: 4px;
-                background-color: #edebe9;
-            }
+                background-color: {Colors.BG_SECONDARY};
+            }}
         """)
         self.status_label.setVisible(False)
         left_panel.addWidget(self.status_label)
@@ -382,19 +384,19 @@ class ColumnGeneratorDialog(QDialog):
 
         # Code preview
         code_group = QGroupBox("Generated Code")
-        code_group.setStyleSheet("""
-            QGroupBox {
+        code_group.setStyleSheet(f"""
+            QGroupBox {{
                 font-weight: 600;
-                color: #605e5c;
-                border: 1px solid #e1dfdd;
+                color: {Colors.TEXT_SECONDARY};
+                border: 1px solid {Colors.BORDER};
                 border-radius: 8px;
                 padding-top: 10px;
-            }
-            QGroupBox::title {
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
                 left: 10px;
                 padding: 0 5px;
-            }
+            }}
         """)
 
         code_layout = QVBoxLayout(code_group)
@@ -402,30 +404,30 @@ class ColumnGeneratorDialog(QDialog):
         self.code_edit = QTextEdit()
         self.code_edit.setPlaceholderText("AI-generated code will appear here...")
         self.code_edit.setReadOnly(True)
-        self.code_edit.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #d2d0ce;
+        self.code_edit.setStyleSheet(f"""
+            QTextEdit {{
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 6px;
                 padding: 10px;
                 font-size: 12px;
                 font-family: 'Consolas', 'Monaco', monospace;
                 background-color: #201f1e;
                 color: #e1dfdd;
-            }
+            }}
         """)
         code_layout.addWidget(self.code_edit)
 
         # Explanation
         self.explanation_label = QLabel()
         self.explanation_label.setWordWrap(True)
-        self.explanation_label.setStyleSheet("""
-            QLabel {
+        self.explanation_label.setStyleSheet(f"""
+            QLabel {{
                 font-size: 12px;
-                color: #4b5563;
+                color: {Colors.TEXT_SECONDARY};
                 padding: 8px;
-                background-color: #edebe9;
+                background-color: {Colors.BG_SECONDARY};
                 border-radius: 4px;
-            }
+            }}
         """)
         code_layout.addWidget(self.explanation_label)
 
@@ -433,31 +435,31 @@ class ColumnGeneratorDialog(QDialog):
 
         # Example values preview
         examples_group = QGroupBox("Example Values")
-        examples_group.setStyleSheet("""
-            QGroupBox {
+        examples_group.setStyleSheet(f"""
+            QGroupBox {{
                 font-weight: 600;
-                color: #605e5c;
-                border: 1px solid #e1dfdd;
+                color: {Colors.TEXT_SECONDARY};
+                border: 1px solid {Colors.BORDER};
                 border-radius: 8px;
                 padding-top: 10px;
-            }
-            QGroupBox::title {
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
                 left: 10px;
                 padding: 0 5px;
-            }
+            }}
         """)
 
         examples_layout = QVBoxLayout(examples_group)
 
         self.examples_list = QListWidget()
-        self.examples_list.setStyleSheet("""
-            QListWidget {
-                border: 1px solid #d2d0ce;
+        self.examples_list.setStyleSheet(f"""
+            QListWidget {{
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 6px;
-                background-color: white;
+                background-color: {Colors.BG_PRIMARY};
                 padding: 8px;
-            }
+            }}
         """)
         examples_layout.addWidget(self.examples_list)
 
@@ -468,45 +470,45 @@ class ColumnGeneratorDialog(QDialog):
 
         self.apply_btn = QPushButton("✓ Apply Column")
         self.apply_btn.setEnabled(False)
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
+        self.apply_btn.setStyleSheet(f"""
+            QPushButton {{
                 padding: 10px 20px;
-                background-color: #10b981;
-                color: white;
+                background-color: {Colors.SUCCESS};
+                color: {Colors.TEXT_ON_ACCENT};
                 border: none;
                 border-radius: 6px;
                 font-size: 13px;
                 font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #059669;
-            }
-            QPushButton:disabled {
-                background-color: #8a8886;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.SUCCESS_HOVER};
+            }}
+            QPushButton:disabled {{
+                background-color: {Colors.TEXT_TERTIARY};
+            }}
         """)
         self.apply_btn.clicked.connect(self.apply_column)
         button_layout.addWidget(self.apply_btn)
 
         self.preview_btn = QPushButton("👁 Preview")
         self.preview_btn.setEnabled(False)
-        self.preview_btn.setStyleSheet("""
-            QPushButton {
+        self.preview_btn.setStyleSheet(f"""
+            QPushButton {{
                 padding: 10px 20px;
-                background-color: #edebe9;
-                border: 1px solid #d2d0ce;
+                background-color: {Colors.BG_SECONDARY};
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 6px;
                 font-size: 13px;
                 font-weight: 600;
-                color: #605e5c;
-            }
-            QPushButton:hover {
-                background-color: #e1dfdd;
-            }
-            QPushButton:disabled {
-                background-color: #edebe9;
-                color: #8a8886;
-            }
+                color: {Colors.TEXT_SECONDARY};
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.BORDER};
+            }}
+            QPushButton:disabled {{
+                background-color: {Colors.BG_SECONDARY};
+                color: {Colors.TEXT_TERTIARY};
+            }}
         """)
         self.preview_btn.clicked.connect(self.preview_column)
         button_layout.addWidget(self.preview_btn)
@@ -514,18 +516,18 @@ class ColumnGeneratorDialog(QDialog):
         button_layout.addStretch()
 
         close_btn = QPushButton("✕ Close")
-        close_btn.setStyleSheet("""
-            QPushButton {
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
                 padding: 10px 20px;
-                background-color: white;
-                border: 1px solid #d2d0ce;
+                background-color: {Colors.BG_PRIMARY};
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 6px;
                 font-size: 13px;
-                color: #605e5c;
-            }
-            QPushButton:hover {
-                background-color: #f3f2f1;
-            }
+                color: {Colors.TEXT_SECONDARY};
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.BG_SECONDARY};
+            }}
         """)
         close_btn.clicked.connect(self.reject)
         button_layout.addWidget(close_btn)

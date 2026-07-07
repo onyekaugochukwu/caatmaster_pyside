@@ -10,18 +10,20 @@ from PySide6.QtCore import Qt, QSize, Signal, Slot
 from PySide6.QtGui import QFont, QColor, QPainter, QLinearGradient
 
 from gui.views.visualizations_view import ChartCanvas
+from gui.theme import Colors
 
 
 class MetricCard(QFrame):
     """Card widget for displaying metrics"""
-    def __init__(self, title, value, subtitle="", icon="", trend=None, parent=None):
+    def __init__(self, title, value, subtitle="", icon="", trend=None, parent=None, icon_bg=None):
         super().__init__(parent)
-        self.setStyleSheet("""
-            QFrame {
-                background-color: white;
+        icon_bg = icon_bg or Colors.ACCENT_SOFT
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: {Colors.BG_PRIMARY};
                 border-radius: 12px;
                 border: none;
-            }
+            }}
         """)
 
         # Add shadow effect
@@ -41,13 +43,13 @@ class MetricCard(QFrame):
 
         if icon:
             icon_label = QLabel(icon)
-            icon_label.setStyleSheet("""
-                QLabel {
+            icon_label.setStyleSheet(f"""
+                QLabel {{
                     font-size: 28px;
                     padding: 8px;
-                    background-color: #deecf9;
+                    background-color: {icon_bg};
                     border-radius: 8px;
-                }
+                }}
             """)
             icon_label.setFixedSize(52, 52)
             icon_label.setAlignment(Qt.AlignCenter)
@@ -58,14 +60,16 @@ class MetricCard(QFrame):
         # Trend indicator
         if trend:
             trend_label = QLabel(trend)
-            trend_color = "#10b981" if "↑" in trend else "#ef4444"
+            is_up = "↑" in trend
+            trend_color = Colors.SUCCESS if is_up else Colors.DANGER
+            trend_bg = Colors.SUCCESS_SOFT if is_up else Colors.DANGER_SOFT
             trend_label.setStyleSheet(f"""
                 QLabel {{
                     color: {trend_color};
                     font-size: 14px;
                     font-weight: 600;
                     padding: 4px 8px;
-                    background-color: {"#d1fae5" if "↑" in trend else "#fee2e2"};
+                    background-color: {trend_bg};
                     border-radius: 6px;
                 }}
             """)
@@ -75,23 +79,23 @@ class MetricCard(QFrame):
 
         # Title
         title_label = QLabel(title)
-        title_label.setStyleSheet("""
-            QLabel {
-                color: #605e5c;
+        title_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 13px;
                 font-weight: 500;
-            }
+            }}
         """)
         layout.addWidget(title_label)
 
         # Value
         value_label = QLabel(value)
-        value_label.setStyleSheet("""
-            QLabel {
-                color: #201f1e;
+        value_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_PRIMARY};
                 font-size: 32px;
                 font-weight: 700;
-            }
+            }}
         """)
         layout.addWidget(value_label)
         self.value_label = value_label  # Direct reference — no need to guess which QLabel is the value later
@@ -99,11 +103,11 @@ class MetricCard(QFrame):
         # Subtitle
         if subtitle:
             subtitle_label = QLabel(subtitle)
-            subtitle_label.setStyleSheet("""
-                QLabel {
-                    color: #605e5c;
+            subtitle_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {Colors.TEXT_SECONDARY};
                     font-size: 12px;
-                }
+                }}
             """)
             layout.addWidget(subtitle_label)
 
@@ -118,15 +122,15 @@ class DatasetCard(QFrame):
         super().__init__(parent)
         self._dataset_info = dataset_info
         self.setCursor(Qt.PointingHandCursor)
-        self.setStyleSheet("""
-            QFrame {
-                background-color: white;
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: {Colors.BG_PRIMARY};
                 border-radius: 10px;
                 border: none;
-            }
-            QFrame:hover {
-                background-color: #f3f2f1;
-            }
+            }}
+            QFrame:hover {{
+                background-color: {Colors.BG_SECONDARY};
+            }}
         """)
 
         # Extract values from dataset_info
@@ -146,12 +150,12 @@ class DatasetCard(QFrame):
         name_layout.addWidget(icon_label)
 
         name_label = QLabel(dataset_name)
-        name_label.setStyleSheet("""
-            QLabel {
-                color: #201f1e;
+        name_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_PRIMARY};
                 font-size: 15px;
                 font-weight: 600;
-            }
+            }}
         """)
         name_layout.addWidget(name_label, 1)
         layout.addLayout(name_layout)
@@ -160,26 +164,26 @@ class DatasetCard(QFrame):
         stats_layout = QHBoxLayout()
 
         rows_label = QLabel(f"{row_count:,} rows")
-        rows_label.setStyleSheet("""
-            QLabel {
-                color: #605e5c;
+        rows_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 12px;
-                background-color: #edebe9;
+                background-color: {Colors.BG_SECONDARY};
                 padding: 4px 10px;
                 border-radius: 6px;
-            }
+            }}
         """)
         stats_layout.addWidget(rows_label)
 
         cols_label = QLabel(f"{col_count} cols")
-        cols_label.setStyleSheet("""
-            QLabel {
-                color: #605e5c;
+        cols_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 12px;
-                background-color: #edebe9;
+                background-color: {Colors.BG_SECONDARY};
                 padding: 4px 10px;
                 border-radius: 6px;
-            }
+            }}
         """)
         stats_layout.addWidget(cols_label)
 
@@ -188,11 +192,11 @@ class DatasetCard(QFrame):
 
         # Last modified
         modified_label = QLabel(f"Modified {last_modified}")
-        modified_label.setStyleSheet("""
-            QLabel {
-                color: #605e5c;
+        modified_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 11px;
-            }
+            }}
         """)
         layout.addWidget(modified_label)
 
@@ -215,12 +219,12 @@ class ActivityItem(QFrame):
     """Widget for displaying recent activity"""
     def __init__(self, action, dataset, time, user="You", icon="📁", parent=None):
         super().__init__(parent)
-        self.setStyleSheet("""
-            QFrame {
+        self.setStyleSheet(f"""
+            QFrame {{
                 background-color: transparent;
                 border: none;
-                border-bottom: 1px solid #edebe9;
-            }
+                border-bottom: 1px solid {Colors.BG_SECONDARY};
+            }}
         """)
 
         layout = QHBoxLayout(self)
@@ -231,12 +235,12 @@ class ActivityItem(QFrame):
         icon_label = QLabel(icon)
         icon_label.setFixedSize(36, 36)
         icon_label.setAlignment(Qt.AlignCenter)
-        icon_label.setStyleSheet("""
-            QLabel {
-                background-color: #deecf9;
+        icon_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {Colors.ACCENT_SOFT};
                 border-radius: 18px;
                 font-size: 16px;
-            }
+            }}
         """)
         layout.addWidget(icon_label)
 
@@ -245,20 +249,20 @@ class ActivityItem(QFrame):
         details_layout.setSpacing(4)
 
         action_label = QLabel(f"<b>{action}</b>")
-        action_label.setStyleSheet("""
-            QLabel {
-                color: #201f1e;
+        action_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_PRIMARY};
                 font-size: 13px;
-            }
+            }}
         """)
         details_layout.addWidget(action_label)
 
         dataset_label = QLabel(dataset)
-        dataset_label.setStyleSheet("""
-            QLabel {
-                color: #605e5c;
+        dataset_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 12px;
-            }
+            }}
         """)
         details_layout.addWidget(dataset_label)
 
@@ -266,18 +270,18 @@ class ActivityItem(QFrame):
 
         # Time
         time_label = QLabel(time)
-        time_label.setStyleSheet("""
-            QLabel {
-                color: #8a8886;
+        time_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_TERTIARY};
                 font-size: 11px;
-            }
+            }}
         """)
         layout.addWidget(time_label)
 
 
 class ProgressBar(QWidget):
     """Custom progress bar widget"""
-    def __init__(self, value, max_value, label, color="#0078d4", parent=None):
+    def __init__(self, value, max_value, label, color=Colors.ACCENT, parent=None):
         super().__init__(parent)
         self.value = value
         self.max_value = max_value
@@ -290,7 +294,7 @@ class ProgressBar(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
 
         # Draw label
-        painter.setPen(QColor("#605e5c"))
+        painter.setPen(QColor(Colors.TEXT_SECONDARY))
         font = QFont()
         font.setPixelSize(13)
         font.setWeight(QFont.Medium)
@@ -299,7 +303,7 @@ class ProgressBar(QWidget):
 
         # Draw value
         percentage = int((self.value / self.max_value) * 100) if self.max_value > 0 else 0
-        painter.setPen(QColor("#201f1e"))
+        painter.setPen(QColor(Colors.TEXT_PRIMARY))
         font.setPixelSize(13)
         font.setWeight(QFont.Bold)
         painter.setFont(font)
@@ -309,7 +313,7 @@ class ProgressBar(QWidget):
         bar_y = 24
         bar_height = 8
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#edebe9"))
+        painter.setBrush(QColor(Colors.BG_SECONDARY))
         painter.drawRoundedRect(0, bar_y, self.width(), bar_height, 4, 4)
 
         # Draw progress bar
@@ -414,6 +418,13 @@ class DashboardView(QWidget):
                 "time": "Just now",
                 "icon": "🚀"
             }]
+
+        # Without this, self.activities gets recalculated correctly but
+        # the Recent Activity panel keeps showing whatever it displayed
+        # before (or its initial all-hidden state) - a project's actual
+        # logged activity history never reached the UI, only ad-hoc
+        # add_activity() calls made during the current session did.
+        self._refresh_activities_display()
 
     def _refresh_metrics(self):
         """Calculate and update all metrics"""
@@ -548,22 +559,28 @@ class DashboardView(QWidget):
 
     def _refresh_datasets(self):
         """Refresh the datasets section with current datasets"""
-        # Clear existing dataset cards
-        for i in range(self.datasets_layout.count()):
-            item = self.datasets_layout.itemAt(i)
+        # Clear existing dataset cards - itemAt() only peeks, it doesn't
+        # detach the item from the layout, so the old widgets stayed fully
+        # attached (just pending eventual deletion) while new ones were
+        # added right after - if this ran twice in quick succession before
+        # Qt processed the deferred deleteLater(), both old and new cards
+        # briefly rendered at once. takeAt() actually removes the item
+        # from the layout immediately.
+        while self.datasets_layout.count():
+            item = self.datasets_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
         if not self.datasets:
             # Empty state
             empty_label = QLabel("No datasets yet\nImport data to get started")
-            empty_label.setStyleSheet("""
-                QLabel {
-                    color: #605e5c;
+            empty_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {Colors.TEXT_SECONDARY};
                     font-size: 13px;
                     padding: 24px;
                     text-align: center;
-                }
+                }}
             """)
             empty_label.setAlignment(Qt.AlignCenter)
             self.datasets_layout.addWidget(empty_label)
@@ -586,10 +603,15 @@ class DashboardView(QWidget):
         if not self.current_project:
             return
 
-        # Clear existing progress bars
-        for i in range(self.progress_layout.count()):
-            item = self.progress_layout.itemAt(i)
-            if item.widget() and isinstance(item.widget(), ProgressBar):
+        # Clear existing progress bars - same itemAt()-doesn't-detach issue
+        # as _refresh_datasets() above; this is what caused "Data
+        # Collection"/"Data Validation" etc. to briefly render twice with
+        # different percentages when this ran more than once in quick
+        # succession (e.g. set_project() immediately followed by
+        # showEvent()'s refresh()).
+        while self.progress_layout.count():
+            item = self.progress_layout.takeAt(0)
+            if item.widget():
                 item.widget().deleteLater()
 
         # Calculate progress based on project status
@@ -598,10 +620,10 @@ class DashboardView(QWidget):
         if project_status == "completed":
             # All phases complete
             progress_items = [
-                ("Data Collection", 100, 100, "#10b981"),
-                ("Data Validation", 100, 100, "#10b981"),
-                ("Analysis Complete", 100, 100, "#10b981"),
-                ("Reports Generated", 100, 100, "#10b981"),
+                ("Data Collection", 100, 100, Colors.SUCCESS),
+                ("Data Validation", 100, 100, Colors.SUCCESS),
+                ("Analysis Complete", 100, 100, Colors.SUCCESS),
+                ("Reports Generated", 100, 100, Colors.SUCCESS),
             ]
         else:
             # Calculate progress based on datasets
@@ -615,10 +637,10 @@ class DashboardView(QWidget):
             reports_pct = 0  # Only when audit is completed
 
             progress_items = [
-                ("Data Collection", collection_pct, 100, "#0078d4"),
-                ("Data Validation", validation_pct, 100, "#f59e0b"),
-                ("Analysis Complete", analysis_pct, 100, "#8b5cf6"),
-                ("Reports Generated", reports_pct, 100, "#605e5c"),
+                ("Data Collection", collection_pct, 100, Colors.ACCENT),
+                ("Data Validation", validation_pct, 100, Colors.WARNING_STRONG),
+                ("Analysis Complete", analysis_pct, 100, Colors.SUCCESS),
+                ("Reports Generated", reports_pct, 100, Colors.TEXT_SECONDARY),
             ]
 
         for label, value, max_value, color in progress_items:
@@ -640,25 +662,25 @@ class DashboardView(QWidget):
 
     def _update_status_button_styles(self, status):
         """Update the visual style of status buttons"""
-        active_style = """
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
+        active_style = f"""
+            QPushButton {{
+                background-color: {Colors.ACCENT};
+                color: {Colors.TEXT_ON_ACCENT};
                 border: none;
                 border-radius: 6px;
                 padding: 8px 16px;
                 font-weight: 600;
-            }
+            }}
         """
-        inactive_style = """
-            QPushButton {
-                background-color: #edebe9;
-                color: #605e5c;
-                border: 1px solid #e1dfdd;
+        inactive_style = f"""
+            QPushButton {{
+                background-color: {Colors.BG_SECONDARY};
+                color: {Colors.TEXT_SECONDARY};
+                border: 1px solid {Colors.BORDER};
                 border-radius: 6px;
                 padding: 8px 16px;
                 font-weight: 500;
-            }
+            }}
         """
 
         if status == "completed":
@@ -743,21 +765,21 @@ class DashboardView(QWidget):
         left_layout.setSpacing(4)
 
         self.header_title = QLabel("Dashboard")
-        self.header_title.setStyleSheet("""
-            QLabel {
+        self.header_title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 28px;
                 font-weight: 700;
-                color: #201f1e;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         left_layout.addWidget(self.header_title)
 
         self.header_subtitle = QLabel("Overview")
-        self.header_subtitle.setStyleSheet("""
-            QLabel {
+        self.header_subtitle.setStyleSheet(f"""
+            QLabel {{
                 font-size: 14px;
-                color: #605e5c;
-            }
+                color: {Colors.TEXT_SECONDARY};
+            }}
         """)
         left_layout.addWidget(self.header_subtitle)
 
@@ -769,36 +791,36 @@ class DashboardView(QWidget):
 
         # Audit status toggle
         status_label = QLabel("Audit Status:")
-        status_label.setStyleSheet("color: #605e5c; font-size: 13px; font-weight: 500;")
+        status_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 13px; font-weight: 500;")
         right_layout.addWidget(status_label)
 
         self.status_active = QPushButton("In Progress")
         self.status_active.setCheckable(True)
         self.status_active.setChecked(True)
-        self.status_active.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
+        self.status_active.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.ACCENT};
+                color: {Colors.TEXT_ON_ACCENT};
                 border: none;
                 border-radius: 6px;
                 padding: 8px 16px;
                 font-weight: 600;
-            }
+            }}
         """)
         self.status_active.clicked.connect(lambda: self._toggle_audit_status("active"))
         right_layout.addWidget(self.status_active)
 
         self.status_completed = QPushButton("Completed")
         self.status_completed.setCheckable(True)
-        self.status_completed.setStyleSheet("""
-            QPushButton {
-                background-color: #edebe9;
-                color: #605e5c;
-                border: 1px solid #e1dfdd;
+        self.status_completed.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.BG_SECONDARY};
+                color: {Colors.TEXT_SECONDARY};
+                border: 1px solid {Colors.BORDER};
                 border-radius: 6px;
                 padding: 8px 16px;
                 font-weight: 500;
-            }
+            }}
         """)
         self.status_completed.clicked.connect(lambda: self._toggle_audit_status("completed"))
         right_layout.addWidget(self.status_completed)
@@ -807,22 +829,22 @@ class DashboardView(QWidget):
 
         # New Dataset button
         new_dataset_btn = QPushButton("+ New Dataset")
-        new_dataset_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
+        new_dataset_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.ACCENT};
+                color: {Colors.TEXT_ON_ACCENT};
                 border: none;
                 border-radius: 8px;
                 padding: 12px 24px;
                 font-size: 14px;
                 font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-            QPushButton:pressed {
-                background-color: #1d4ed8;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.ACCENT_HOVER};
+            }}
+            QPushButton:pressed {{
+                background-color: {Colors.ACCENT_PRESSED};
+            }}
         """)
         new_dataset_btn.setCursor(Qt.PointingHandCursor)
         new_dataset_btn.clicked.connect(self.uploadRequested.emit)
@@ -830,20 +852,20 @@ class DashboardView(QWidget):
 
         # View Projects button (replaces "Open Workspace")
         projects_btn = QPushButton("View Projects →")
-        projects_btn.setStyleSheet("""
-            QPushButton {
-                background-color: white;
-                color: #605e5c;
-                border: 1px solid #d2d0ce;
+        projects_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.BG_PRIMARY};
+                color: {Colors.TEXT_SECONDARY};
+                border: 1px solid {Colors.BORDER_STRONG};
                 border-radius: 8px;
                 padding: 12px 24px;
                 font-size: 14px;
                 font-weight: 600;
-            }
-            QPushButton:hover {
-                background-color: #f3f2f1;
-                border-color: #8a8886;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.BG_SECONDARY};
+                border-color: {Colors.TEXT_TERTIARY};
+            }}
         """)
         projects_btn.setCursor(Qt.PointingHandCursor)
         projects_btn.clicked.connect(self.viewProjectsRequested.emit)
@@ -862,10 +884,10 @@ class DashboardView(QWidget):
 
         # Create metric cards with initial values
         metrics = [
-            MetricCard("Total Datasets", "0", "Active in workspace", "📊"),
-            MetricCard("Total Records", "0", "Across all datasets", "📈"),
-            MetricCard("Data Quality", "0%", "Completion rate", "✓"),
-            MetricCard("Last Audit", "Never", "", "📅"),
+            MetricCard("Total Datasets", "0", "Active in workspace", "📊", icon_bg=Colors.ACCENT_SOFT),
+            MetricCard("Total Records", "0", "Across all datasets", "📈", icon_bg=Colors.ACCENT_SOFT),
+            MetricCard("Data Quality", "0%", "Completion rate", "✓", icon_bg=Colors.SUCCESS_SOFT),
+            MetricCard("Last Audit", "Never", "", "📅", icon_bg=Colors.BG_TERTIARY),
         ]
 
         # Store references to value labels for updates
@@ -904,18 +926,18 @@ class DashboardView(QWidget):
         header_layout = QHBoxLayout()
 
         title = QLabel("Recent Datasets")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 18px;
                 font-weight: 700;
-                color: #201f1e;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         header_layout.addWidget(title)
 
         header_layout.addStretch()
 
-        view_all = QLabel("<a href='#' style='color: #0078d4; text-decoration: none;'>View all →</a>")
+        view_all = QLabel(f"<a href='#' style='color: {Colors.ACCENT}; text-decoration: none;'>View all →</a>")
         view_all.setStyleSheet("font-size: 13px; font-weight: 600;")
         view_all.setOpenExternalLinks(False)
         view_all.setCursor(Qt.PointingHandCursor)
@@ -930,13 +952,13 @@ class DashboardView(QWidget):
 
         # Initial empty state
         empty_label = QLabel("No datasets yet\nImport data to get started")
-        empty_label.setStyleSheet("""
-            QLabel {
-                color: #605e5c;
+        empty_label.setStyleSheet(f"""
+            QLabel {{
+                color: {Colors.TEXT_SECONDARY};
                 font-size: 13px;
                 padding: 24px;
                 text-align: center;
-            }
+            }}
         """)
         empty_label.setAlignment(Qt.AlignCenter)
         self.datasets_layout.addWidget(empty_label)
@@ -967,12 +989,12 @@ class DashboardView(QWidget):
         layout.setSpacing(16)
 
         title = QLabel("Datasets at a Glance")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 18px;
                 font-weight: 700;
-                color: #201f1e;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         layout.addWidget(title)
 
@@ -1033,13 +1055,13 @@ class DashboardView(QWidget):
 
         # Section header
         title = QLabel("Recent Activity")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 18px;
                 font-weight: 700;
-                color: #201f1e;
+                color: {Colors.TEXT_PRIMARY};
                 padding-bottom: 16px;
-            }
+            }}
         """)
         layout.addWidget(title)
 
@@ -1086,12 +1108,12 @@ class DashboardView(QWidget):
 
         # Section header
         title = QLabel("Audit Progress")
-        title.setStyleSheet("""
-            QLabel {
+        title.setStyleSheet(f"""
+            QLabel {{
                 font-size: 18px;
                 font-weight: 700;
-                color: #201f1e;
-            }
+                color: {Colors.TEXT_PRIMARY};
+            }}
         """)
         layout.addWidget(title)
 
@@ -1102,7 +1124,7 @@ class DashboardView(QWidget):
 
         # Initial empty progress bars
         for label in ["Data Collection", "Data Validation", "Analysis Complete", "Reports Generated"]:
-            progress = ProgressBar(0, 100, label, "#0078d4")
+            progress = ProgressBar(0, 100, label, Colors.ACCENT)
             self.progress_layout.addWidget(progress)
 
         return container

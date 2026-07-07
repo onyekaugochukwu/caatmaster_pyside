@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 import polars as pl
 
-from ..components.common_modals import BaseModal
+from ..components.common_modals import BaseModal, create_primary_button
 
 class SoxSodDialog(BaseModal):
     """Dialog for SOX Segregation of Duties Analysis"""
@@ -103,8 +103,7 @@ class SoxSodDialog(BaseModal):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(self.reject)
         
-        run_btn = QPushButton("Scan for Conflicts")
-        run_btn.setStyleSheet("background-color: #d32f2f; color: white; font-weight: bold; padding: 8px 16px;")
+        run_btn = create_primary_button("Scan for Conflicts")
         run_btn.clicked.connect(self.accept_changes)
         
         btn_layout.addWidget(cancel_btn)

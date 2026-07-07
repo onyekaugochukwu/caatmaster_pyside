@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 
-from ..components.common_modals import BaseModal, PreviewTable
+from ..components.common_modals import BaseModal, PreviewTable, create_primary_button
+from ..theme import Colors
 
 
 # Operator definitions
@@ -105,17 +106,21 @@ class FilterConditionWidget(QWidget):
         # Remove button
         self.remove_btn = QPushButton("×")
         self.remove_btn.setFixedSize(24, 24)
-        self.remove_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #f8d7da;
-                color: #721c24;
-                border: 1px solid #f5c6cb;
+        self.remove_btn.setToolTip("Remove this condition")
+        self.remove_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {Colors.DANGER_SOFT};
+                color: {Colors.DANGER};
+                border: 1px solid {Colors.DANGER_SOFT};
                 border-radius: 4px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #f5c6cb;
-            }
+                font-size: 14px;
+                padding: 0px;
+            }}
+            QPushButton:hover {{
+                background-color: {Colors.DANGER};
+                color: {Colors.TEXT_ON_ACCENT};
+            }}
         """)
         self.remove_btn.clicked.connect(self.removed.emit)
         layout.addWidget(self.remove_btn)
@@ -250,7 +255,7 @@ class FilterDialog(BaseModal):
 
         # Row count
         self.row_info = QLabel()
-        self.row_info.setStyleSheet("color: #666; font-style: italic;")
+        self.row_info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-style: italic;")
         preview_layout.addWidget(self.row_info)
 
         layout.addWidget(preview_group)
@@ -271,20 +276,7 @@ class FilterDialog(BaseModal):
         self.preview_btn.clicked.connect(self.preview)
         btn_layout.addWidget(self.preview_btn)
 
-        self.filter_btn = QPushButton("Apply Filter")
-        self.filter_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.filter_btn = create_primary_button("Apply Filter")
         self.filter_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.filter_btn)
 

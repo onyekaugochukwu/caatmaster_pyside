@@ -11,6 +11,8 @@ from PySide6.QtCore import Qt, Signal, QThreadPool
 from PySide6.QtGui import QFont
 
 from services.sql_query_service import is_safe_readonly_select
+from gui.theme import Colors
+from gui.components.common_modals import create_primary_button, create_success_button
 
 
 class AISQLGeneratorDialog(QDialog):
@@ -66,7 +68,7 @@ class AISQLGeneratorDialog(QDialog):
             "Tables available: " + (", ".join(self.table_schemas.keys()) or "(none registered)")
         )
         tables_label.setWordWrap(True)
-        tables_label.setStyleSheet("color: #605e5c; font-size: 12px;")
+        tables_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 12px;")
         layout.addWidget(tables_label)
 
         self.instruction_edit = QTextEdit()
@@ -76,13 +78,7 @@ class AISQLGeneratorDialog(QDialog):
         self.instruction_edit.setMaximumHeight(80)
         layout.addWidget(self.instruction_edit)
 
-        self.generate_btn = QPushButton("✨ Generate SQL")
-        self.generate_btn.setStyleSheet("""
-            QPushButton { padding: 10px 18px; background-color: #0078d4; color: white;
-                          border: none; border-radius: 6px; font-weight: 600; }
-            QPushButton:hover { background-color: #106ebe; }
-            QPushButton:disabled { background-color: #8a8886; }
-        """)
+        self.generate_btn = create_primary_button("✨ Generate SQL")
         self.generate_btn.clicked.connect(self.generate_sql)
         layout.addWidget(self.generate_btn)
 
@@ -93,7 +89,7 @@ class AISQLGeneratorDialog(QDialog):
         self.explanation_label = QLabel()
         self.explanation_label.setWordWrap(True)
         self.explanation_label.setStyleSheet(
-            "color: #4b5563; padding: 8px; background-color: #edebe9; border-radius: 4px;"
+            f"color: {Colors.TEXT_SECONDARY}; padding: 8px; background-color: {Colors.BG_SECONDARY}; border-radius: 4px;"
         )
         self.explanation_label.setVisible(False)
         layout.addWidget(self.explanation_label)
@@ -102,28 +98,26 @@ class AISQLGeneratorDialog(QDialog):
         self.sql_edit.setReadOnly(True)
         self.sql_edit.setPlaceholderText("Generated SQL will appear here for review...")
         self.sql_edit.setFont(QFont("Consolas", 10))
+        # Deliberately dark, code-editor-style regardless of the app's
+        # light theme (same convention as VS Code/GitHub code blocks) -
+        # not a semantic status color, so kept as a direct pair rather
+        # than a Colors token.
         self.sql_edit.setStyleSheet(
-            "background-color: #201f1e; color: #e1dfdd; border-radius: 6px; padding: 10px;"
+            f"background-color: {Colors.TEXT_PRIMARY}; color: {Colors.BG_PRIMARY}; border-radius: 6px; padding: 10px;"
         )
         layout.addWidget(self.sql_edit, 1)
 
         self.warning_label = QLabel()
         self.warning_label.setWordWrap(True)
         self.warning_label.setStyleSheet(
-            "color: #7a1f1f; background-color: #fde8e8; padding: 8px; border-radius: 4px;"
+            f"color: {Colors.DANGER}; background-color: {Colors.DANGER_SOFT}; padding: 8px; border-radius: 4px;"
         )
         self.warning_label.setVisible(False)
         layout.addWidget(self.warning_label)
 
         button_layout = QHBoxLayout()
-        self.insert_btn = QPushButton("Insert into Editor")
+        self.insert_btn = create_success_button("Insert into Editor")
         self.insert_btn.setEnabled(False)
-        self.insert_btn.setStyleSheet("""
-            QPushButton { padding: 10px 18px; background-color: #10b981; color: white;
-                          border: none; border-radius: 6px; font-weight: 600; }
-            QPushButton:hover { background-color: #059669; }
-            QPushButton:disabled { background-color: #8a8886; }
-        """)
         self.insert_btn.clicked.connect(self._on_insert)
         button_layout.addWidget(self.insert_btn)
         button_layout.addStretch()

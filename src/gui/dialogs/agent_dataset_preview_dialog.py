@@ -9,6 +9,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
+from gui.theme import Colors
+from gui.components.common_modals import create_success_button
+
 
 class AgentDatasetPreviewDialog(QDialog):
     """Preview an AI-proposed query result before deciding whether to
@@ -46,7 +49,7 @@ class AgentDatasetPreviewDialog(QDialog):
             reason_label = QLabel(reason)
             reason_label.setWordWrap(True)
             reason_label.setStyleSheet(
-                "color: #4b5563; padding: 8px; background-color: #edebe9; border-radius: 4px;"
+                f"color: {Colors.TEXT_SECONDARY}; padding: 8px; background-color: {Colors.BG_SECONDARY}; border-radius: 4px;"
             )
             layout.addWidget(reason_label)
 
@@ -87,12 +90,7 @@ class AgentDatasetPreviewDialog(QDialog):
         sql_editor_btn.clicked.connect(self._on_open_in_sql_editor)
         button_row.addWidget(sql_editor_btn)
 
-        create_btn = QPushButton("Create Dataset")
-        create_btn.setStyleSheet("""
-            QPushButton { padding: 10px 20px; background-color: #10b981; color: white;
-                          border: none; border-radius: 6px; font-weight: 600; }
-            QPushButton:hover { background-color: #059669; }
-        """)
+        create_btn = create_success_button("Create Dataset")
         create_btn.clicked.connect(self._on_create_dataset)
         button_row.addWidget(create_btn)
         layout.addLayout(button_row)

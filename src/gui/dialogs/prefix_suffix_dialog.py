@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer
 
-from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector
+from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector, create_primary_button
+from ..theme import Colors
 
 
 class PrefixSuffixDialog(BaseModal):
@@ -102,7 +103,7 @@ class PrefixSuffixDialog(BaseModal):
 
         # Sample results
         self.sample_label = QLabel()
-        self.sample_label.setStyleSheet("color: #666; font-style: italic;")
+        self.sample_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-style: italic;")
         preview_layout.addWidget(self.sample_label)
 
         scroll_layout.addWidget(preview_group)
@@ -123,20 +124,7 @@ class PrefixSuffixDialog(BaseModal):
         self.preview_btn.clicked.connect(self.preview)
         btn_layout.addWidget(self.preview_btn)
 
-        self.apply_btn = QPushButton("Apply")
-        self.apply_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.apply_btn = create_primary_button("Apply")
         self.apply_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.apply_btn)
 

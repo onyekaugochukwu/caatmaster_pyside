@@ -547,6 +547,14 @@ class DataProcessor:
             return self._call_mapped_method(self.compare_datasets, df, params)
         elif operation_id == 'fuzzy_match_datasets':
             return self._call_mapped_method(self.fuzzy_match_datasets, df, params)
+        elif operation_id == 'forward_fill_column':
+            return self._call_mapped_method(self.forward_fill_column, df, params)
+        elif operation_id == 'combine_debit_credit':
+            return self._call_mapped_method(self.combine_debit_credit, df, params)
+        elif operation_id == 'extract_hierarchy_level':
+            return self._call_mapped_method(self.extract_hierarchy_level, df, params)
+        elif operation_id == 'map_column_values':
+            return self._call_mapped_method(self.map_column_values, df, params)
         elif operation_id == 'select_n_rows':
             return self._call_mapped_method(self.select_n_rows, df, params)
         elif operation_id == 'query_sheet':
@@ -3165,6 +3173,67 @@ class DataProcessor:
         right_part = right_df[right_indices].rename(right_renamed_cols)
         result = pl.concat([left_part, right_part], how="horizontal")
         return result.with_columns(pl.Series("match_score", scores)).sort("match_score", descending=True)
+
+    def forward_fill_column(self, df: pl.DataFrame, column: str) -> pl.DataFrame:
+        """Carries the last non-null value in `column` forward to fill
+        subsequent nulls - the standard fix for a GL/JE export where
+        header fields (entry number, date, description, preparer) are
+        printed only on the first line of a multi-line entry and left
+        blank on continuation lines, rather than repeated."""
+        return df.with_columns(pl.col(column).fill_null(strategy="forward"))
+
+    def combine_debit_credit(self, df: pl.DataFrame, debit_column: str, credit_column: str,
+                             output_column: str = "amount", drop_source: bool = True) -> pl.DataFrame:
+        """Collapses a Debit/Credit column pair into one signed amount
+        column (debit positive, credit negative) - the standard GL
+        layout, and what every amount-based test (Benford, outliers,
+        sampling) needs to run against a single numeric column. Casts
+        both columns to numeric first (strict=False) since a fresh raw
+        import - or anything that's been through promote_row_header,
+        which casts every column to String - never arrives already
+        numeric-typed."""
+        debit_numeric = pl.col(debit_column).cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False)
+        credit_numeric = pl.col(credit_column).cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False)
+        result = df.with_columns(
+            (debit_numeric.fill_null(0) - credit_numeric.fill_null(0)).alias(output_column)
+        )
+        if drop_source:
+            result = result.drop([debit_column, credit_column])
+        return result
+
+    def extract_hierarchy_level(self, df: pl.DataFrame, column: str, level_column: str = "level",
+                                strip_indent: bool = True, indent_size: int = None) -> pl.DataFrame:
+        """Extracts the leading-whitespace depth of `column`'s values into
+        a new integer column - the standard way an account/line-item
+        hierarchy (trial balance, financial statement, chart of accounts)
+        is encoded via indentation rather than an explicit level field.
+        If indent_size isn't given, it's inferred as the smallest
+        non-zero indent actually seen (assumed to be one hierarchy
+        level)."""
+        values = df[column].to_list()
+        raw_indents = [len(v) - len(v.lstrip(' ')) if v is not None else 0 for v in values]
+        nonzero_indents = [i for i in raw_indents if i > 0]
+        effective_indent_size = indent_size or (min(nonzero_indents) if nonzero_indents else 1)
+        levels = [i // effective_indent_size for i in raw_indents]
+
+        result = df.with_columns(pl.Series(name=level_column, values=levels))
+        if strip_indent:
+            stripped = [v.lstrip(' ') if v is not None else v for v in values]
+            result = result.with_columns(pl.Series(name=column, values=stripped))
+        return result
+
+    def map_column_values(self, df: pl.DataFrame, column: str, mapping: Dict[str, str],
+                          output_column: str = None, default: str = None) -> pl.DataFrame:
+        """Maps every value in `column` through an explicit dict - e.g. an
+        account name to its financial-statement category ("Prepaid
+        Insurance" -> "Current Assets"). Used to turn an AI-suggested
+        classification into a real, inspectable Applied Step: the actual
+        mapping dict is the params of this step, not a black box, exactly
+        like every other AI-assisted step in this app."""
+        output_column = output_column or column
+        return df.with_columns(
+            pl.col(column).cast(pl.Utf8).replace_strict(mapping, default=default).alias(output_column)
+        )
 
     def split_sheet(self, df: pl.DataFrame, column: str) -> List[tuple]:
         """

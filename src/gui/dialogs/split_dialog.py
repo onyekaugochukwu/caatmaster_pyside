@@ -12,9 +12,9 @@ from PySide6.QtWidgets import (
     QMessageBox, QLineEdit, QRadioButton, QButtonGroup, QTabWidget, QWidget,
     QScrollArea
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
-from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector
+from ..components.common_modals import BaseModal, PreviewTable, ColumnSelector, create_primary_button
 
 
 class SplitColumnDialog(BaseModal):
@@ -112,20 +112,7 @@ class SplitColumnDialog(BaseModal):
         self.preview_btn.clicked.connect(self.preview)
         btn_layout.addWidget(self.preview_btn)
 
-        self.split_btn = QPushButton("Split Column")
-        self.split_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                padding: 8px 20px;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-        """)
+        self.split_btn = create_primary_button("Split Column")
         self.split_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.split_btn)
 
