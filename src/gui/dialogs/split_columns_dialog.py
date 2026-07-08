@@ -22,7 +22,6 @@ class SplitColumnsDialog(BaseModal):
     def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None):
         # Initialize with just QDialog to avoid BaseModal's _setup_ui being called
         super(BaseModal, self).__init__(parent if parent else None)
-        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.setWindowTitle("Split Columns by Delimiter")
         self.setModal(True)
         self.dataframe = dataframe

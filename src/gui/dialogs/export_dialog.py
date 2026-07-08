@@ -18,7 +18,6 @@ class ExportDialog(QDialog):
 
     def __init__(self, row_count: int = None, parent=None):
         super().__init__(parent if parent else None)
-        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.row_count = row_count
         self.export_settings = {}
         self.setup_ui()

@@ -93,7 +93,7 @@ class FinancialImportWizardDialog(QDialog):
 
         intro = QLabel(
             "What kind of financial document is this? Knowing the type lets each detector be aggressive "
-            "and confident instead of guessing - the same reason ActiveData/IDEA/ACL don't attempt this "
+            "and confident instead of guessing - other audit tools don't attempt this "
             "kind of structural cleanup with zero context about what the file represents."
         )
         intro.setWordWrap(True)

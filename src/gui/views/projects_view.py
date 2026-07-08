@@ -23,6 +23,7 @@ class ProjectsView(QWidget):
     """Project management view using file-based projects"""
 
     project_open_requested = Signal(object)  # Signal when project should be opened (emits Project object)
+    close_requested = Signal()  # Signal when user wants to leave the Projects page
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -115,6 +116,12 @@ class ProjectsView(QWidget):
         self.delete_btn.clicked.connect(self.delete_project)
         self.delete_btn.setEnabled(False)
         btn_layout.addWidget(self.delete_btn)
+
+        # Close - leaves the Projects page for the Dashboard.
+        self.close_btn = create_secondary_button("Close")
+        self.close_btn.setCursor(Qt.PointingHandCursor)
+        self.close_btn.clicked.connect(self.close_requested.emit)
+        btn_layout.addWidget(self.close_btn)
 
         header_layout.addLayout(btn_layout)
 

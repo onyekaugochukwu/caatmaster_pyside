@@ -406,8 +406,7 @@ class StratificationDialog(BaseModal):
 
 class AgingAnalysisDialog(BaseModal):
     """Dialog for the classic AR/AP aging report - buckets a date column by
-    age in days as of a reference date and summarizes per bucket, mirroring
-    ActiveData for Excel's Age... function."""
+    age in days as of a reference date and summarizes per bucket."""
 
     def __init__(self, dataframe: pl.DataFrame, parent=None):
         self.original_df = dataframe
@@ -512,8 +511,7 @@ class AgingAnalysisDialog(BaseModal):
 
 
 class FieldStatisticsDialog(BaseModal):
-    """Dialog for the comprehensive per-field statistics report - mirrors
-    CaseWare IDEA's Field Statistics."""
+    """Dialog for the comprehensive per-field statistics report."""
 
     def __init__(self, dataframe: pl.DataFrame, parent=None):
         self.original_df = dataframe

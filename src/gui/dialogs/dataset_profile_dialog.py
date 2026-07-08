@@ -1,6 +1,6 @@
 """Dataset Profile Dialog - shows the automatic "what's interesting about
-this data" summary computed by services/dataset_profiler.py, mirroring
-CaseWare IDEA's Discover feature. Read-only: never modifies the dataset,
+this data" summary computed by services/dataset_profiler.py.
+Read-only: never modifies the dataset,
 just surfaces real, already-computed findings (duplicates, per-column
 completeness/outliers, Benford's Law deviation, correlated column pairs)
 so opening a dataset gives an immediate, grounded starting point."""

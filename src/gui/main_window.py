@@ -6,7 +6,7 @@ import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -128,15 +128,38 @@ class MainWindow(QMainWindow):
             print(f"Warning: Could not load AI credentials: {e}")
 
     def _update_ai_panel_provider(self):
-        """Update the AI panel with current provider info"""
-        if not hasattr(self, 'ai_panel') or not self.ai_panel:
-            return
-        if self.ai_manager and self.ai_manager.default_provider:
+        """Update the AI panel, and the Settings page's AI/ML tab, with
+        current provider info. Both used to only refresh from
+        _on_ai_settings_changed() (fired when the AI Settings dialog
+        saves a change), so a provider loaded from stored credentials at
+        startup never reached either of them until something happened to
+        call this - the Settings page kept showing "Not configured" even
+        with a provider actively loaded and in use."""
+        if hasattr(self, 'ai_panel') and self.ai_panel and self.ai_manager and self.ai_manager.default_provider:
             provider = self.ai_manager.get_provider(self.ai_manager.default_provider)
             if provider:
                 display_name = provider.provider_name.title()
                 model_name = provider.model or "Unknown"
                 self.ai_panel.set_provider(display_name, model_name)
+
+        settings_view = getattr(self, 'views', {}).get('settings')
+        if settings_view and hasattr(settings_view, 'refresh_ai_info'):
+            settings_view.refresh_ai_info()
+
+    def _refresh_ai_panel_datasets(self):
+        """Populate the AI panel's Quick Actions dataset checklist from
+        the current project, so Analyze/Compliance Check reason across
+        whichever datasets are actually checked instead of always
+        defaulting to the active one."""
+        if not hasattr(self, 'ai_panel') or not self.ai_panel:
+            return
+        names = []
+        if self.current_project and hasattr(self.current_project, 'datasets'):
+            names = [ds.name for ds in self.current_project.datasets.values()]
+        elif self.current_dataset:
+            names = [self.current_dataset.name]
+        active = self.current_dataset.name if self.current_dataset else None
+        self.ai_panel.set_available_datasets(names, active=active)
 
     def _save_ai_credentials(self):
         """Save AI credentials to secure storage"""
@@ -261,6 +284,7 @@ class MainWindow(QMainWindow):
         self.ai_panel.generateColumn.connect(self._on_ai_generate_column)
         self.ai_panel.complianceCheck.connect(self._on_ai_compliance_check)
         self.ai_panel.showSettings.connect(self._on_ai_show_settings)
+        self.ai_panel.datasetsPanelOpened.connect(self._refresh_ai_panel_datasets)
         self.ai_panel.actionProposed.connect(self._on_ai_action_proposed)
         self.ai_panel.datasetProposed.connect(self._on_ai_dataset_proposed)
         middle_layout.addWidget(self.ai_panel)
@@ -279,6 +303,12 @@ class MainWindow(QMainWindow):
         # Command palette: search every transformation/report/nav action
         palette_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
         palette_shortcut.activated.connect(self.show_command_palette)
+
+        # The app now launches fullscreen (no title bar), so this is the
+        # only way to get back to a normal window - toggle_fullscreen()
+        # existed but wasn't wired to anything before.
+        fullscreen_shortcut = QShortcut(QKeySequence("F11"), self)
+        fullscreen_shortcut.activated.connect(self.toggle_fullscreen)
 
     def setup_backstage(self):
         """Setup the backstage view overlay"""
@@ -623,12 +653,44 @@ class MainWindow(QMainWindow):
         self.ai_panel._responseReady.emit("Request cancelled.")
         self.statusBar().showMessage("AI request cancelled")
 
+    def _resolve_selected_dataframes(self, selected_names: List[str]) -> Dict[str, Any]:
+        """Map the AI panel's checked dataset names back to real
+        dataframes. Falls back to just the active dataset if nothing is
+        checked (e.g. Quick Actions was never opened) - preserving
+        today's single-dataset default for anyone who never touches the
+        selector."""
+        if not selected_names:
+            if self.current_dataset:
+                return {self.current_dataset.name: self.current_dataset.get_current_dataframe()}
+            return {}
+
+        by_name = {}
+        if self.current_project and hasattr(self.current_project, 'datasets'):
+            by_name = {ds.name: ds for ds in self.current_project.datasets.values()}
+
+        dataframes = {}
+        for name in selected_names:
+            ds = by_name.get(name)
+            if ds:
+                dataframes[name] = ds.get_current_dataframe()
+        return dataframes
+
     @Slot()
     def _on_ai_analyze_dataset(self):
-        """Handle analyze dataset request"""
-        if not self._check_data_loaded():
-            return
+        """Handle analyze dataset request - reasons across whichever
+        dataset(s) are checked in the AI panel's Quick Actions selector.
+        Deliberately does NOT gate on _check_data_loaded() (which only
+        checks self.current_dataset) - a dataset can be selected entirely
+        through the AI panel's checklist without current_dataset ever
+        being set, and that check_data_loaded() call used to block every
+        quick action in that case even though real data was available.
+        The dataframe-resolution check right below is the real gate."""
         if not self._check_ai_available():
+            return
+
+        dataframes = self._resolve_selected_dataframes(self.ai_panel.get_selected_datasets())
+        if not dataframes:
+            QMessageBox.warning(self, "No Data", "No dataset available to analyze.")
             return
 
         def run_async():
@@ -637,37 +699,43 @@ class MainWindow(QMainWindow):
 
             async def analyze():
                 try:
-                    self.statusBar().showMessage("Analyzing dataset with AI...")
-                    df = self.current_dataset.get_current_dataframe()
+                    multi = len(dataframes) > 1
+                    names_desc = ", ".join(dataframes.keys())
+                    total_rows = sum(len(df) for df in dataframes.values())
+                    self.statusBar().showMessage(f"Analyzing {names_desc} with AI...")
 
                     # Get project context if available
                     context = ""
                     if self.current_project:
                         context = f"Project: {self.current_project.name}\nClient: {self.current_project.client_name or 'N/A'}"
 
-                    summary = await self.ai_interpreter.analyze_dataset(df, context)
-                    stats = summary.data_quality.get('computed_stats', {})
+                    summary = await self.ai_interpreter.analyze_datasets(dataframes, context)
+                    per_dataset_stats = summary.data_quality.get('computed_stats', {})
 
                     # Show results in AI panel (via signal for thread safety)
+                    header = f"## Dataset Analysis: {names_desc}" if multi else "## Dataset Analysis"
                     response = (
-                        f"## Dataset Analysis\n\n"
-                        f"*⚠ Data quality score, null%, and any outlier/duplicate figures below are computed "
-                        f"over all {len(df):,} rows of the complete dataset. The summary and insight "
-                        f"descriptions are AI-drafted prose interpreting those numbers — verify before "
-                        f"relying on this for audit conclusions.*\n\n"
+                        f"{header}\n\n"
+                        f"*⚠ Data quality scores, null%, and any outlier/duplicate figures below are "
+                        f"computed over all {total_rows:,} rows across {len(dataframes)} dataset(s). "
+                        f"The summary and insight descriptions are AI-drafted prose interpreting those "
+                        f"numbers — verify before relying on this for audit conclusions.*\n\n"
                     )
                     response += f"**Executive Summary:**\n{summary.executive_summary}\n\n"
-                    response += f"**Data Quality Score:** {summary.data_quality.get('overall_score', 'N/A')}/100\n\n"
-                    if stats:
+                    score_suffix = " (average across datasets)" if multi else ""
+                    response += f"**Data Quality Score:** {summary.data_quality.get('overall_score', 'N/A')}/100{score_suffix}\n\n"
+                    for name, stats in per_dataset_stats.items():
+                        label = f"**{name}:**" if multi else "**Computed facts:**"
                         response += (
-                            f"**Computed facts:** {stats.get('duplicate_row_count', 0)} duplicate rows "
+                            f"{label} {stats.get('duplicate_row_count', 0)} duplicate rows "
                             f"({stats.get('duplicate_row_pct', 0)}%), "
                             f"{stats.get('total_null_cells', 0)} null cells overall ({stats.get('overall_null_pct', 0)}%)\n\n"
                         )
                     response += f"**Key Fields:** {', '.join(summary.key_fields)}\n\n"
                     response += "**Audit Insights:**\n"
-                    for insight in summary.audit_insights[:5]:
-                        response += f"- **{insight.get('title', 'Unknown')}** ({insight.get('severity', 'unknown')} risk)\n"
+                    for insight in summary.audit_insights[:8 if multi else 5]:
+                        ds_tag = f" [{insight['dataset']}]" if multi and insight.get('dataset') else ""
+                        response += f"- **{insight.get('title', 'Unknown')}**{ds_tag} ({insight.get('severity', 'unknown')} risk)\n"
                         response += f"  {insight.get('description', '')}\n\n"
 
                     self.ai_panel._responseReady.emit(response)
@@ -697,10 +765,12 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_ai_generate_column(self):
-        """Open AI column generator dialog"""
-        if not self._check_data_loaded():
-            return
-
+        """Open AI column generator dialog. Deliberately does NOT gate on
+        _check_data_loaded() - it only checks self.current_dataset, but
+        this method already builds its own dataframes dict from every
+        project dataset below and has its own "no data" check; gating on
+        current_dataset too used to block this even when the project
+        clearly had data, just because current_dataset hadn't been set."""
         # Get all datasets from current project
         dataframes = {}
         if self.current_project and hasattr(self.current_project, 'datasets'):
@@ -729,9 +799,19 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_ai_compliance_check(self):
-        """Open AI compliance check dialog"""
-        if not self._check_data_loaded():
-            return
+        """Open AI compliance check dialog. Every project dataset is made
+        available to pick from, but whichever one(s) were checked in the
+        AI panel's Quick Actions selector start pre-checked in the
+        dialog's own selector, so Policy Check/Rule Detection can run
+        across them together instead of one at a time.
+
+        Deliberately does NOT gate on _check_data_loaded() - it only
+        checks self.current_dataset, but this method already builds its
+        own dataframes dict from every project dataset below and has its
+        own "no data" check; gating on current_dataset too used to block
+        this even with valid project data, just because current_dataset
+        hadn't been set (a real possibility now that datasets can be
+        selected entirely through the AI panel's checklist)."""
         if not self._check_ai_available():
             return
 
@@ -748,16 +828,111 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Data", "No data available for compliance check.")
             return
 
-        # Determine selected key
-        selected_key = self.current_dataset.name if self.current_dataset else None
+        selected_names = [n for n in self.ai_panel.get_selected_datasets() if n in dataframes]
+        if not selected_names:
+            selected_names = [self.current_dataset.name] if self.current_dataset else []
 
         dialog = ComplianceReportDialog(
             dataframes,
             self.ai_compliance,
             self,
-            selected_key=selected_key
+            selected_keys=selected_names
         )
+        dialog.createDatasetFromFindingRequested.connect(self._on_compliance_create_dataset)
+        dialog.addColumnFromFindingRequested.connect(self._on_compliance_add_column)
         dialog.exec()
+
+    def _find_project_dataset(self, name: str):
+        """Look up a project dataset by name (datasets is keyed by id,
+        not name)."""
+        if not self.current_project or not hasattr(self.current_project, 'datasets'):
+            return None
+        for ds in self.current_project.datasets.values():
+            if ds.name == name:
+                return ds
+        return None
+
+    def _on_compliance_create_dataset(self, source_dataset_name: str, finding):
+        """Materialize a compliance finding's flagged rows as a new
+        project dataset - e.g. just the transactions that failed a
+        materiality rule, as their own dataset."""
+        if not self.current_project:
+            QMessageBox.warning(self, "No Project", "Open a project first.")
+            return
+        if finding.matched_df is None or finding.matched_df.height == 0:
+            QMessageBox.warning(self, "No Rows", "This finding has no matching rows to create a dataset from.")
+            return
+
+        from PySide6.QtWidgets import QInputDialog
+        suggested = f"{source_dataset_name}_{finding.title}_flagged".replace(" ", "_")
+        name, ok = QInputDialog.getText(self, "Create Dataset", "New dataset name:", text=suggested)
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+
+        new_dataset = Dataset(name=name, dataframe=finding.matched_df, source_dataset_ids=[
+            ds.id for ds in [self._find_project_dataset(source_dataset_name)] if ds
+        ])
+        self.current_project.add_dataset(new_dataset)
+        self._on_dataset_added(new_dataset)
+        QMessageBox.information(
+            self, "Dataset Created",
+            f"'{name}' created with {finding.matched_df.height:,} flagged row(s)."
+        )
+
+    def _on_compliance_add_column(self, source_dataset_name: str, finding):
+        """Add a compliance finding's flag as a new column back onto the
+        ORIGINAL dataset it came from (e.g. 'High Severity' vs 'Not High
+        Severity'), rather than only extracting the flagged rows."""
+        if finding.mask is None:
+            QMessageBox.warning(self, "Not Available", "This finding doesn't have a column-ready result.")
+            return
+
+        target = self._find_project_dataset(source_dataset_name)
+        if target is None:
+            QMessageBox.warning(self, "Dataset Not Found", f"'{source_dataset_name}' is no longer in this project.")
+            return
+
+        current_df = target.get_current_dataframe()
+        if current_df.height != finding.mask.len():
+            QMessageBox.warning(
+                self, "Dataset Changed",
+                f"'{source_dataset_name}' has changed since this check ran (row count no longer matches) - "
+                "re-run the check before adding this column."
+            )
+            return
+
+        from PySide6.QtWidgets import QInputDialog
+        default_col_name = finding.title.replace(" ", "_")
+        col_name, ok = QInputDialog.getText(self, "Add Column", "New column name:", text=default_col_name)
+        if not ok or not col_name.strip():
+            return
+        col_name = col_name.strip()
+        if col_name in current_df.columns:
+            QMessageBox.warning(self, "Column Exists", f"'{col_name}' already exists in this dataset.")
+            return
+
+        severity_label = finding.severity.title() if finding.severity not in ("info", "") else "Flagged"
+        true_label, false_label = f"{severity_label} Severity", f"Not {severity_label} Severity"
+        labels = [true_label if v else false_label for v in finding.mask.to_list()]
+
+        import polars as pl
+        new_df = current_df.with_columns(pl.Series(col_name, labels))
+        target.original_dataframe = new_df
+
+        if target is self.current_dataset:
+            transform_view = self.views.get("transform")
+            if transform_view:
+                transform_view.set_dataframe(new_df, target.transformation_pipeline)
+        sql_view = self.views.get("sql")
+        if sql_view:
+            sql_view.refresh_dataset(target.name, new_df, dataset_id=target.id)
+        self.mark_project_dirty()
+        QMessageBox.information(
+            self, "Column Added",
+            f"'{col_name}' added to '{source_dataset_name}' ({sum(finding.mask.to_list())} of "
+            f"{len(labels)} rows marked '{true_label}')."
+        )
 
     @Slot()
     def _on_ai_show_settings(self):
@@ -1146,11 +1321,15 @@ class MainWindow(QMainWindow):
         dashboard_view.uploadRequested.connect(self.on_upload_requested)
         dashboard_view.viewProjectsRequested.connect(lambda: self.on_navigation_requested("projects"))
         dashboard_view.datasetSelected.connect(self.on_dataset_selected)
+        # Dashboard is the app's home view with no "further back" to go -
+        # closing it goes to the Data workspace instead.
+        dashboard_view.closeRequested.connect(lambda: self.on_navigation_requested("data"))
 
         # Connect ProjectsView signal
         projects_view = self.views["projects"]
         if hasattr(projects_view, 'project_open_requested'):
             projects_view.project_open_requested.connect(self.on_project_open_requested)
+        projects_view.close_requested.connect(lambda: self.on_navigation_requested("dashboard"))
 
         # Connect data view to other views that consume its data
         data_view = self.views["data"]
@@ -1185,6 +1364,7 @@ class MainWindow(QMainWindow):
         settings_view = self.views["settings"]
         settings_view.set_auth_service(self.auth_service)
         settings_view.logout_requested.connect(self.handle_logout)
+        settings_view.close_requested.connect(lambda: self.on_navigation_requested("dashboard"))
 
         for view in self.views.values():
             self.content_stack.addWidget(view)
@@ -1238,8 +1418,7 @@ class MainWindow(QMainWindow):
 
     def _show_project_lineage(self):
         """Show the project-wide graphical lineage map - how every
-        dataset was created and relates to the others, mirroring
-        CaseWare IDEA's Project Overview. Read-only."""
+        dataset was created and relates to the others. Read-only."""
         if not self.current_project:
             QMessageBox.warning(self, "No Project", "Please create or open a project first.")
             return
@@ -1560,32 +1739,51 @@ class MainWindow(QMainWindow):
                               "You need at least 2 datasets to perform a join.")
             return
 
+        # Build dataset columns map so the dialog's Left/Right dataset
+        # selectors can repopulate join-key lists for whichever dataset
+        # gets picked, not just the one active when this was opened.
+        dataset_columns = {}
+        for ds in self.current_project.list_datasets():
+            df = ds.get_current_dataframe()
+            if df is not None:
+                dataset_columns[ds.name] = list(df.columns)
+
         # Open the join dialog
         from gui.dialogs.table_dialogs import JoinDatasetsDialog
         dialog = JoinDatasetsDialog(
             current_df,
             self,
             available_datasets=dataset_names,
-            source_dataset_name=source_dataset.name
+            source_dataset_name=source_dataset.name,
+            dataset_columns=dataset_columns
         )
 
         if dialog.exec():
             params = dialog.get_parameters()
+            left_dataset_name = params["left_dataset"]
             right_dataset_name = params["right_dataset"]
 
-            # Find the right dataset
+            # Left is no longer necessarily the dataset this was opened
+            # from - resolve whichever was actually selected.
+            left_dataset = None
             right_dataset = None
             for ds in self.current_project.list_datasets():
+                if ds.name == left_dataset_name:
+                    left_dataset = ds
                 if ds.name == right_dataset_name:
                     right_dataset = ds
-                    break
 
+            if not left_dataset:
+                QMessageBox.warning(self, "Dataset Not Found",
+                                  f"Could not find dataset: {left_dataset_name}")
+                return
             if not right_dataset:
                 QMessageBox.warning(self, "Dataset Not Found",
                                   f"Could not find dataset: {right_dataset_name}")
                 return
 
             # Perform the join
+            left_df = left_dataset.get_current_dataframe()
             right_df = right_dataset.get_current_dataframe()
             join_type = params["join_type"]
             left_key = params["left_key"]
@@ -1597,19 +1795,19 @@ class MainWindow(QMainWindow):
                 processor = DataProcessor()
 
                 joined_df = processor.join_datasets(
-                    current_df, right_df, left_key, right_key, join_type, suffix
+                    left_df, right_df, left_key, right_key, join_type, suffix
                 )
 
                 # Create new dataset for the joined result
                 new_dataset = Dataset(
                     id=str(uuid.uuid4()),
-                    name=f"{source_dataset.name} + {right_dataset.name}",
+                    name=f"{left_dataset.name} + {right_dataset.name}",
                     dataframe=joined_df,
-                    source_dataset_ids=[source_dataset.id, right_dataset.id],
+                    source_dataset_ids=[left_dataset.id, right_dataset.id],
                     source_operation="join"
                 )
 
-                new_dataset.metadata = source_dataset.metadata.copy()
+                new_dataset.metadata = left_dataset.metadata.copy()
                 new_dataset.metadata["created_at"] = datetime.now().isoformat()
                 new_dataset.metadata["version"] = "1.0"
                 new_dataset.metadata["row_count"] = len(joined_df)
@@ -1633,7 +1831,7 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def on_compare_datasets_requested(self, source_dataset_id):
         """Handle compare datasets request from sidebar - a cell-by-cell
-        diff by key, mirroring ActiveData for Excel's Compare Sheets."""
+        diff by key."""
         if not self.current_project:
             return
 
@@ -1656,30 +1854,49 @@ class MainWindow(QMainWindow):
                               "You need at least 2 datasets to run a comparison.")
             return
 
+        # Build dataset columns map so the dialog's Left Dataset selector
+        # can repopulate key/compare column lists for whichever dataset
+        # gets picked, not just the one active when this was opened.
+        dataset_columns = {}
+        for ds in self.current_project.list_datasets():
+            df = ds.get_current_dataframe()
+            if df is not None:
+                dataset_columns[ds.name] = list(df.columns)
+
         from gui.dialogs.table_dialogs import CompareDatasetsDialog
         dialog = CompareDatasetsDialog(
             current_df,
             self,
             available_datasets=dataset_names,
-            source_dataset_name=source_dataset.name
+            source_dataset_name=source_dataset.name,
+            dataset_columns=dataset_columns
         )
 
         if not dialog.exec():
             return
 
         params = dialog.get_parameters()
+        left_dataset_name = params["left_dataset"]
         right_dataset_name = params["right_dataset"]
 
+        # Left is no longer necessarily the dataset this was opened from -
+        # resolve whichever was actually selected.
+        left_dataset = None
         right_dataset = None
         for ds in self.current_project.list_datasets():
+            if ds.name == left_dataset_name:
+                left_dataset = ds
             if ds.name == right_dataset_name:
                 right_dataset = ds
-                break
 
+        if not left_dataset:
+            QMessageBox.warning(self, "Dataset Not Found", f"Could not find dataset: {left_dataset_name}")
+            return
         if not right_dataset:
             QMessageBox.warning(self, "Dataset Not Found", f"Could not find dataset: {right_dataset_name}")
             return
 
+        left_df = left_dataset.get_current_dataframe()
         right_df = right_dataset.get_current_dataframe()
 
         try:
@@ -1688,12 +1905,12 @@ class MainWindow(QMainWindow):
             processor = DataProcessor()
 
             diff_df = processor.compare_datasets(
-                current_df, right_df, params["key_columns"], params.get("compare_columns")
+                left_df, right_df, params["key_columns"], params.get("compare_columns")
             )
 
             new_dataset = self._create_dataset_from_dataframe(
-                f"{source_dataset.name} vs {right_dataset.name}", diff_df,
-                source_dataset_ids=[source_dataset.id, right_dataset.id],
+                f"{left_dataset.name} vs {right_dataset.name}", diff_df,
+                source_dataset_ids=[left_dataset.id, right_dataset.id],
                 source_operation="compare"
             )
             if new_dataset is None:
@@ -1703,7 +1920,7 @@ class MainWindow(QMainWindow):
             only_right = diff_df.filter(pl.col("_diff_status") == "only_in_right").height
             different = diff_df.filter(pl.col("_diff_status") == "matched_different").height
             self.statusBar().showMessage(
-                f"Compared datasets: {only_left:,} only in {source_dataset.name}, "
+                f"Compared datasets: {only_left:,} only in {left_dataset.name}, "
                 f"{only_right:,} only in {right_dataset.name}, {different:,} differ"
             )
 
@@ -1713,8 +1930,7 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def on_fuzzy_match_datasets_requested(self, source_dataset_id):
         """Handle fuzzy match datasets request from sidebar - approximate
-        text matching (e.g. employee-to-vendor address matches), mirroring
-        ActiveData for Excel's Approximate Column Match."""
+        text matching (e.g. employee-to-vendor address matches)."""
         if not self.current_project:
             return
 
@@ -1789,8 +2005,8 @@ class MainWindow(QMainWindow):
     def on_profile_dataset_requested(self, source_dataset_id):
         """Handle profile dataset request from sidebar - an automatic
         "what's interesting about this data" summary (duplicates, per-
-        column completeness/outliers, Benford's Law, correlations),
-        mirroring CaseWare IDEA's Discover feature. Entirely read-only."""
+        column completeness/outliers, Benford's Law, correlations).
+        Entirely read-only."""
         if not self.current_project:
             return
 
@@ -1820,8 +2036,7 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def on_verify_data_requested(self, source_dataset_id):
         """Handle verify data request from sidebar - build and run a
-        checklist of data-integrity expectations, mirroring ACL's VERIFY
-        command. Entirely read-only."""
+        checklist of data-integrity expectations. Entirely read-only."""
         if not self.current_project:
             return
 
@@ -1845,8 +2060,7 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def on_cvs_dialog_requested(self, source_dataset_id):
         """Handle Classical Variables Sampling request from sidebar -
-        sample size planning and sample result evaluation/projection,
-        mirroring ACL's SIZE/EVALUATE/CVSEVALUATE commands. The size
+        sample size planning and sample result evaluation/projection. The size
         calculator tab works standalone; the evaluate tab needs an
         active dataset with book/audited value columns."""
         df = None
@@ -1907,11 +2121,24 @@ class MainWindow(QMainWindow):
 
         if dialog.exec():
             params = dialog.get_parameters()
+            actual_source_name = params["source_dataset"]
             selected_datasets = params["source_datasets"]
 
+            # Source is no longer necessarily the dataset this was opened
+            # from - resolve whichever was actually selected.
+            actual_source = source_dataset
+            if actual_source_name != source_dataset.name:
+                for ds in self.current_project.list_datasets():
+                    if ds.name == actual_source_name:
+                        actual_source = ds
+                        break
+                else:
+                    QMessageBox.warning(self, "Dataset Not Found", f"Could not find dataset: {actual_source_name}")
+                    return
+
             # Collect all dataframes
-            dataframes = [current_df]
-            appended_dataset_ids = [source_dataset.id]
+            dataframes = [actual_source.get_current_dataframe()]
+            appended_dataset_ids = [actual_source.id]
 
             for ds_name in selected_datasets:
                 for ds in self.current_project.list_datasets():
@@ -1937,13 +2164,13 @@ class MainWindow(QMainWindow):
                 # Create new dataset for the appended result
                 new_dataset = Dataset(
                     id=str(uuid.uuid4()),
-                    name=f"{source_dataset.name} (Appended)",
+                    name=f"{actual_source.name} (Appended)",
                     dataframe=appended_df,
                     source_dataset_ids=appended_dataset_ids,
                     source_operation="append"
                 )
 
-                new_dataset.metadata = source_dataset.metadata.copy()
+                new_dataset.metadata = actual_source.metadata.copy()
                 new_dataset.metadata["created_at"] = datetime.now().isoformat()
                 new_dataset.metadata["version"] = "1.0"
                 new_dataset.metadata["row_count"] = len(appended_df)
@@ -2386,6 +2613,7 @@ class MainWindow(QMainWindow):
         sql_view = self.views.get("sql")
         if sql_view:
             sql_view.refresh_dataset(dataset.name, dataset.get_current_dataframe(), dataset_id=dataset.id)
+        self._refresh_ai_panel_datasets()
         self.mark_project_dirty()
         self.statusBar().showMessage(f"Dataset '{dataset.name}' added to project")
 
@@ -2572,6 +2800,7 @@ class MainWindow(QMainWindow):
             "stat_poisson": lambda: self._on_statistics("stat_poisson"),
 
             # View operations
+            "show_dashboard": lambda: self.on_navigation_requested("dashboard"),
             "query_settings": self._on_query_settings,
             "dependencies": self._on_dependencies,
             "col_quality": self._on_col_quality,
@@ -3706,12 +3935,28 @@ class MainWindow(QMainWindow):
 
     def show_login_dialog(self):
         """Show login dialog if user not authenticated"""
+        if not self.auth_service.is_auth_enabled():
+            # Auth is off (the default) - skip the login screen entirely
+            # and auto-login as whoever is running this OS session, so
+            # saved work still gets attributed to a name without
+            # requiring a password at all.
+            user = self.auth_service.login_as_system_user()
+            self._login_successful = True
+            self.statusBar().showMessage(f"Welcome, {user.full_name}!")
+            self.update_auth_ui()
+            self._resume_last_project()
+            return
+
         if self.auth_service.is_authenticated():
-            # User already logged in, show window maximized
+            # User already logged in, show window maximized. showMaximized()
+            # rather than setWindowState(Qt.WindowMaximized) - the latter
+            # only sets a flag and has no effect on a window that isn't
+            # shown yet, which is exactly the state this runs in during
+            # startup.
             user = self.auth_service.get_current_user()
             self.statusBar().showMessage(f"Welcome back, {user.full_name}!")
             self.update_auth_ui()
-            self.setWindowState(Qt.WindowMaximized)
+            self.showMaximized()
         else:
             from gui.dialogs.login_dialog import LoginDialog
 
@@ -3736,8 +3981,12 @@ class MainWindow(QMainWindow):
         self._login_successful = True
         self.statusBar().showMessage(f"Welcome, {user.full_name}!")
         self.update_auth_ui()
-        # Show window maximized after successful login
-        self.setWindowState(Qt.WindowMaximized)
+        # Actually showing the window maximized happens in main.py, after
+        # this whole __init__ chain returns - setWindowState() here had no
+        # effect since the window isn't shown yet at this point, and
+        # showMaximized() called this early (before the window has ever
+        # been mapped) is exactly what was making the window manager
+        # ignore the maximize request and show a small window instead.
         self._resume_last_project()
 
     def _resume_last_project(self):

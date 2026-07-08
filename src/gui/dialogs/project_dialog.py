@@ -25,7 +25,6 @@ class NewProjectDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent if parent else None)
-        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.project_data = {}
         self.setup_ui()
 
@@ -306,7 +305,6 @@ class OpenProjectDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent if parent else None)
-        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.setWindowTitle("Open Project")
         self.setMinimumWidth(600)
         self.setMinimumHeight(400)
@@ -427,7 +425,6 @@ class SaveProjectDialog(QDialog):
 
     def __init__(self, project: Project, parent=None):
         super().__init__(parent if parent else None)
-        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.project = project
         self.setWindowTitle("Save Project")
         self.setMinimumWidth(500)
@@ -537,7 +534,6 @@ class DatasetManagerDialog(QDialog):
 
     def __init__(self, project: Project, parent=None):
         super().__init__(parent if parent else None)
-        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.project = project
         self.setWindowTitle(f"Manage Datasets - {project.name}")
         self.setMinimumWidth(700)

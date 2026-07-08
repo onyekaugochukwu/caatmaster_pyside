@@ -1,6 +1,5 @@
 """Classical Variables Sampling Dialog - sample size planning and sample
-result evaluation/projection, mirroring ACL's SIZE/EVALUATE/CVSEVALUATE
-commands. Two tabs: plan a sample size before drawing one, and evaluate
+result evaluation/projection. Two tabs: plan a sample size before drawing one, and evaluate
 a drawn sample's audited-vs-book results by projecting them to the full
 population with a confidence interval."""
 import polars as pl
@@ -52,7 +51,7 @@ class ClassicalVariablesSamplingDialog(QDialog):
 
         info = QLabel(
             "How large a sample is needed to estimate the population value within a target "
-            "precision, at a given confidence level - mirrors ACL's SIZE command. Requires an "
+            "precision, at a given confidence level. Requires an "
             "estimate of the population's standard deviation (from a pilot sample, prior period "
             "data, or a reasonable judgment estimate)."
         )
@@ -131,8 +130,7 @@ class ClassicalVariablesSamplingDialog(QDialog):
 
         info = QLabel(
             "Given a drawn sample with both a recorded (book) value and a verified (audited) "
-            "value per item, project the sample's results to the full population - mirrors ACL's "
-            "EVALUATE/CVSEVALUATE commands."
+            "value per item, project the sample's results to the full population."
         )
         info.setWordWrap(True)
         info.setStyleSheet(f"color: {Colors.TEXT_SECONDARY};")

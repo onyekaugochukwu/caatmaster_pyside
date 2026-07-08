@@ -1,10 +1,11 @@
 """Dashboard View - Beautiful landing page design with accurate metrics"""
 from datetime import datetime
 import polars as pl
+import qtawesome as qta
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QGridLayout, QScrollArea, QGraphicsDropShadowEffect,
-    QButtonGroup, QRadioButton
+    QButtonGroup, QRadioButton, QToolButton
 )
 from PySide6.QtCore import Qt, QSize, Signal, Slot
 from PySide6.QtGui import QFont, QColor, QPainter, QLinearGradient
@@ -18,8 +19,15 @@ class MetricCard(QFrame):
     def __init__(self, title, value, subtitle="", icon="", trend=None, parent=None, icon_bg=None):
         super().__init__(parent)
         icon_bg = icon_bg or Colors.ACCENT_SOFT
+        self.setObjectName("MetricCard")
+        # Scoped to #MetricCard specifically - QLabel is itself a QFrame
+        # subclass in Qt, so a blanket "QFrame { border: none; ... }"
+        # selector here cascades down and draws that same (lack of)
+        # border/background around every QLabel nested inside the card
+        # too - which is what showed up as a stray outline around the
+        # title/value/subtitle text.
         self.setStyleSheet(f"""
-            QFrame {{
+            QFrame#MetricCard {{
                 background-color: {Colors.BG_PRIMARY};
                 border-radius: 12px;
                 border: none;
@@ -93,7 +101,7 @@ class MetricCard(QFrame):
         value_label.setStyleSheet(f"""
             QLabel {{
                 color: {Colors.TEXT_PRIMARY};
-                font-size: 32px;
+                font-size: 24px;
                 font-weight: 700;
             }}
         """)
@@ -122,13 +130,14 @@ class DatasetCard(QFrame):
         super().__init__(parent)
         self._dataset_info = dataset_info
         self.setCursor(Qt.PointingHandCursor)
+        self.setObjectName("DatasetCard")
         self.setStyleSheet(f"""
-            QFrame {{
+            QFrame#DatasetCard {{
                 background-color: {Colors.BG_PRIMARY};
                 border-radius: 10px;
                 border: none;
             }}
-            QFrame:hover {{
+            QFrame#DatasetCard:hover {{
                 background-color: {Colors.BG_SECONDARY};
             }}
         """)
@@ -219,8 +228,9 @@ class ActivityItem(QFrame):
     """Widget for displaying recent activity"""
     def __init__(self, action, dataset, time, user="You", icon="📁", parent=None):
         super().__init__(parent)
+        self.setObjectName("ActivityItem")
         self.setStyleSheet(f"""
-            QFrame {{
+            QFrame#ActivityItem {{
                 background-color: transparent;
                 border: none;
                 border-bottom: 1px solid {Colors.BG_SECONDARY};
@@ -231,52 +241,69 @@ class ActivityItem(QFrame):
         layout.setContentsMargins(0, 16, 0, 16)
         layout.setSpacing(16)
 
-        # Activity icon
-        icon_label = QLabel(icon)
-        icon_label.setFixedSize(36, 36)
-        icon_label.setAlignment(Qt.AlignCenter)
-        icon_label.setStyleSheet(f"""
+        # Activity icon - kept as a direct attribute (like the other 3
+        # labels below) so it can be updated unambiguously later. The
+        # previous approach re-found these via findChildren() and guessed
+        # which was which from their current text - the icon label's text
+        # could get misidentified as the dataset label (both are "some
+        # non-empty string that isn't rows/cols/Modified"), overwriting it
+        # with a dataset name; once that happened, the icon label's text
+        # no longer matched any known emoji, so it could never be
+        # recognized as "the icon" again and stayed stuck on whatever
+        # got written into it.
+        self.icon_label = QLabel(icon)
+        self.icon_label.setFixedSize(36, 36)
+        self.icon_label.setAlignment(Qt.AlignCenter)
+        self.icon_label.setStyleSheet(f"""
             QLabel {{
                 background-color: {Colors.ACCENT_SOFT};
                 border-radius: 18px;
                 font-size: 16px;
             }}
         """)
-        layout.addWidget(icon_label)
+        layout.addWidget(self.icon_label)
 
         # Activity details
         details_layout = QVBoxLayout()
         details_layout.setSpacing(4)
 
-        action_label = QLabel(f"<b>{action}</b>")
-        action_label.setStyleSheet(f"""
+        self.action_label = QLabel(f"<b>{action}</b>")
+        self.action_label.setStyleSheet(f"""
             QLabel {{
                 color: {Colors.TEXT_PRIMARY};
                 font-size: 13px;
             }}
         """)
-        details_layout.addWidget(action_label)
+        details_layout.addWidget(self.action_label)
 
-        dataset_label = QLabel(dataset)
-        dataset_label.setStyleSheet(f"""
+        self.dataset_label = QLabel(dataset)
+        self.dataset_label.setStyleSheet(f"""
             QLabel {{
                 color: {Colors.TEXT_SECONDARY};
                 font-size: 12px;
             }}
         """)
-        details_layout.addWidget(dataset_label)
+        details_layout.addWidget(self.dataset_label)
 
         layout.addLayout(details_layout, 1)
 
         # Time
-        time_label = QLabel(time)
-        time_label.setStyleSheet(f"""
+        self.time_label = QLabel(time)
+        self.time_label.setStyleSheet(f"""
             QLabel {{
                 color: {Colors.TEXT_TERTIARY};
                 font-size: 11px;
             }}
         """)
-        layout.addWidget(time_label)
+        layout.addWidget(self.time_label)
+
+    def set_activity(self, action: str, dataset: str, time: str, icon: str):
+        """Update this item's content directly via its own stored label
+        references - no need to guess which label is which."""
+        self.action_label.setText(f"<b>{action}</b>")
+        self.dataset_label.setText(dataset)
+        self.time_label.setText(time)
+        self.icon_label.setText(icon)
 
 
 class ProgressBar(QWidget):
@@ -333,6 +360,7 @@ class DashboardView(QWidget):
     uploadRequested = Signal()  # When user wants to upload/import data
     viewProjectsRequested = Signal()  # When user wants to view projects
     datasetSelected = Signal(str)  # When a dataset is selected (emits dataset_id)
+    closeRequested = Signal()  # When user wants to leave the dashboard
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -714,7 +742,13 @@ class DashboardView(QWidget):
         scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
 
         scroll_content = QWidget()
-        scroll_content.setStyleSheet("background-color: transparent;")
+        # Scoped to #DashboardScrollContent - a bare, no-selector
+        # "background-color: transparent;" cascades to every descendant
+        # regardless of type, the same class of bug as an unscoped
+        # "QWidget { ... }" rule (see table_dialogs.py for a concrete
+        # case where this corrupted a checkbox indicator's rendering).
+        scroll_content.setObjectName("DashboardScrollContent")
+        scroll_content.setStyleSheet("QWidget#DashboardScrollContent { background-color: transparent; }")
         scroll_layout = QVBoxLayout(scroll_content)
         scroll_layout.setSpacing(24)
         scroll_layout.setContentsMargins(0, 0, 0, 0)
@@ -871,6 +905,28 @@ class DashboardView(QWidget):
         projects_btn.clicked.connect(self.viewProjectsRequested.emit)
         right_layout.addWidget(projects_btn)
 
+        # Close - leaves the dashboard for the Data workspace, the app's
+        # main working view (Dashboard itself has no "further back" to go).
+        close_btn = QToolButton()
+        close_btn.setFixedSize(36, 36)
+        close_btn.setIcon(qta.icon("fa5s.times", color=Colors.TEXT_SECONDARY))
+        close_btn.setIconSize(QSize(14, 14))
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.setToolTip("Close Dashboard")
+        close_btn.setStyleSheet(f"""
+            QToolButton {{
+                background-color: transparent;
+                border: 1px solid {Colors.BORDER_STRONG};
+                border-radius: 8px;
+            }}
+            QToolButton:hover {{
+                background-color: {Colors.BG_SECONDARY};
+                border-color: {Colors.TEXT_TERTIARY};
+            }}
+        """)
+        close_btn.clicked.connect(self.closeRequested.emit)
+        right_layout.addWidget(close_btn)
+
         layout.addLayout(right_layout)
 
         return header
@@ -902,12 +958,13 @@ class DashboardView(QWidget):
     def create_datasets_section(self):
         """Create the datasets section"""
         container = QFrame()
-        container.setStyleSheet("""
-            QFrame {
-                background-color: white;
+        container.setObjectName("DashboardCard")
+        container.setStyleSheet(f"""
+            QFrame#DashboardCard {{
+                background-color: {Colors.BG_PRIMARY};
                 border-radius: 12px;
                 border: none;
-            }
+            }}
         """)
 
         # Add shadow
@@ -970,12 +1027,13 @@ class DashboardView(QWidget):
         visualizations are something you see by default rather than a
         separate page you have to remember to visit."""
         container = QFrame()
-        container.setStyleSheet("""
-            QFrame {
-                background-color: white;
+        container.setObjectName("DashboardCard")
+        container.setStyleSheet(f"""
+            QFrame#DashboardCard {{
+                background-color: {Colors.BG_PRIMARY};
                 border-radius: 12px;
                 border: none;
-            }
+            }}
         """)
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(20)
@@ -1033,12 +1091,13 @@ class DashboardView(QWidget):
     def create_activity_section(self):
         """Create the recent activity section"""
         container = QFrame()
-        container.setStyleSheet("""
-            QFrame {
-                background-color: white;
+        container.setObjectName("DashboardCard")
+        container.setStyleSheet(f"""
+            QFrame#DashboardCard {{
+                background-color: {Colors.BG_PRIMARY};
                 border-radius: 12px;
                 border: none;
-            }
+            }}
         """)
 
         # Add shadow
@@ -1086,12 +1145,13 @@ class DashboardView(QWidget):
     def create_progress_section(self):
         """Create the audit progress section"""
         container = QFrame()
-        container.setStyleSheet("""
-            QFrame {
-                background-color: white;
+        container.setObjectName("DashboardCard")
+        container.setStyleSheet(f"""
+            QFrame#DashboardCard {{
+                background-color: {Colors.BG_PRIMARY};
                 border-radius: 12px;
                 border: none;
-            }
+            }}
         """)
 
         # Add shadow
@@ -1159,25 +1219,12 @@ class DashboardView(QWidget):
         for i, activity in enumerate(self.activities[:4]):
             if i < len(self.activity_items):
                 item = self.activity_items[i]
-                # Update the item content
-                for child in item.findChildren(QLabel):
-                    text = child.text()
-                    if "<b>" in text:
-                        child.setText(f"<b>{activity.get('action', 'Unknown')}</b>")
-                    elif "rows" not in text and "cols" not in text and "Modified" not in text:
-                        if child.text() and not any(c in child.text() for c in ["Just now", "Never"]):
-                            # This is the dataset label
-                            child.setText(activity.get("dataset", ""))
-                        elif child.text() in ["Just now", "Never", ""] or ":" in child.text():
-                            # This is the time label
-                            child.setText(activity.get("time", ""))
-
-                # Update icon
-                for child in item.findChildren(QLabel):
-                    if child.text() in ["📁", "📊", "📈", "✅", "🚀", "📋"]:
-                        child.setText(activity.get("icon", "📁"))
-                        break
-
+                item.set_activity(
+                    action=activity.get("action", "Unknown"),
+                    dataset=activity.get("dataset", ""),
+                    time=activity.get("time", ""),
+                    icon=activity.get("icon", "📁"),
+                )
                 item.show()
 
     def refresh(self):

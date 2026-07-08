@@ -1,6 +1,5 @@
 """Classical Variables Sampling (CVS) - sample size planning and sample
-result evaluation/projection, mirroring ACL's SIZE/EVALUATE/CVSEVALUATE
-commands. This is the piece that comes before and after sample SELECTION
+result evaluation/projection. This is the piece that comes before and after sample SELECTION
 (already covered by DataProcessor.sampling(), including monetary unit
 sampling): given a target precision and confidence level, how large
 should the sample be; and given a drawn sample's audited-vs-book results,
@@ -35,8 +34,8 @@ def z_score_for_confidence(confidence_level: float) -> float:
 def calculate_sample_size(population_size: int, population_std_dev: float,
                            confidence_level: float, tolerable_precision: float,
                            apply_fpc: bool = True) -> Dict[str, Any]:
-    """Classical variables (mean-per-unit) sample size calculation -
-    mirrors ACL's SIZE command. Returns the sample size needed to
+    """Classical variables (mean-per-unit) sample size calculation.
+    Returns the sample size needed to
     estimate the population value within `tolerable_precision` (the
     auditor's allowance for sampling risk, in the same units as the
     population) at the given confidence level, given an estimate of the
@@ -74,8 +73,8 @@ def calculate_sample_size(population_size: int, population_std_dev: float,
 def evaluate_sample(df: pl.DataFrame, book_value_column: str, audited_value_column: str,
                      population_size: int, population_book_total: float,
                      confidence_level: float = 95.0, method: str = "mean_per_unit") -> Dict[str, Any]:
-    """Project a sample's audited-vs-book results to the full population -
-    mirrors ACL's EVALUATE/CVSEVALUATE commands. `df` is the drawn sample
+    """Project a sample's audited-vs-book results to the full population.
+    `df` is the drawn sample
     with both a recorded (book) value and a verified (audited) value per
     item. Returns the projected population value, projected total
     misstatement, and a confidence interval around it (precision) at the

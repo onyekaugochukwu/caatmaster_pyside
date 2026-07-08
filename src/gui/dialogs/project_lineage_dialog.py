@@ -1,6 +1,5 @@
 """Project Lineage Dialog - a graphical map of every dataset in the
-project and how they relate to each other, mirroring CaseWare IDEA's
-Project Overview. Each dataset's source_dataset_ids/source_operation
+project and how they relate to each other. Each dataset's source_dataset_ids/source_operation
 (already tracked on every Dataset) is laid out as a left-to-right graph:
 root datasets (file imports) on the left, derived datasets to the right
 of whatever they were built from, connected by labeled arrows."""

@@ -347,6 +347,75 @@ class AuthService:
 
             return admin
 
+    def is_auth_enabled(self) -> bool:
+        """Whether password-based login is required at startup. Off by
+        default - this is a single-user desktop app with no server and no
+        password-recovery flow, so login here is about attributing saved
+        work to a name (author=... on save_caat, etc.), not about keeping
+        anyone out. Device-level auth is assumed to already be the real
+        security boundary. Persisted via QSettings so the choice survives
+        restarts; changing it only takes effect on the next launch."""
+        from PySide6.QtCore import QSettings
+        settings = QSettings()
+        return settings.value("auth/enabled", False, type=bool)
+
+    def set_auth_enabled(self, enabled: bool):
+        """Persist whether password-based login is required. The caller
+        is responsible for telling the user this takes effect on next
+        launch, not the current session, and (when turning it on) that
+        there is no password-recovery flow."""
+        from PySide6.QtCore import QSettings
+        settings = QSettings()
+        settings.setValue("auth/enabled", enabled)
+
+    def login_as_system_user(self) -> User:
+        """Auto-login as a local user named after this OS account, for
+        when auth is disabled. Reuses the real User table/row (rather than
+        a parallel fake-user concept) so every existing consumer of
+        get_current_user()/current_user_id - project authorship, the
+        Settings page's user info, etc. - keeps working completely
+        unchanged. The row's password is a random value that's never
+        shown or stored in plaintext anywhere, so this account can never
+        actually be logged into through the normal username/password form
+        even if auth is later turned back on."""
+        import getpass
+        import secrets
+
+        username = getpass.getuser() or "local_user"
+
+        with get_db_context() as db:
+            user = db.query(User).filter(User.username == username).first()
+            if not user:
+                try:
+                    user = User(
+                        username=username,
+                        email=f"{username}@local",
+                        hashed_password=self.get_password_hash(secrets.token_hex(32)),
+                        full_name=username,
+                        is_active=True,
+                    )
+                    db.add(user)
+                    db.commit()
+                except Exception:
+                    # Extremely unlikely email collision with a manually
+                    # registered account - fall back to a guaranteed-unique
+                    # email rather than crash startup over it.
+                    db.rollback()
+                    user = User(
+                        username=username,
+                        email=f"{username}+{secrets.token_hex(4)}@local",
+                        hashed_password=self.get_password_hash(secrets.token_hex(32)),
+                        full_name=username,
+                        is_active=True,
+                    )
+                    db.add(user)
+                    db.commit()
+            user_id = user.id
+
+        self.current_user_id = user_id
+        self.session_token = None
+        return self.get_user_by_id(user_id)
+
     def save_session(self, file_path: str = None):
         """
         Save current session to file for auto-login

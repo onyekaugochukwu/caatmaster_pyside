@@ -165,6 +165,16 @@ class ComplianceFinding:
     total_count: int = 0
     affected_pct: float = 0.0
     computable: bool = True
+    # The actual rows that matched this rule's condition, computed by
+    # compute_rule_violation() - lets the UI offer "create a dataset from
+    # these rows" / "add a flag column back onto the original dataset"
+    # instead of only showing the finding as prose. None when not
+    # computable (nothing matched anything).
+    matched_df: Optional["pl.DataFrame"] = None
+    # Boolean Series aligned with the ORIGINAL dataframe's row order (not
+    # just the matched subset) - lets the UI add a flag column back onto
+    # the original dataset, not only extract the matching rows.
+    mask: Optional["pl.Series"] = None
 
 
 @dataclass
@@ -1102,6 +1112,23 @@ Never make up data or statistical values - calculate them from provided informat
         name = (name or self.default_provider).lower()
         return self.providers.get(name)
 
+    def get_max_tokens(self) -> int:
+        """Max output tokens per AI response - every provider's complete()
+        used to default to a hardcoded 4000 with no way to raise it, which
+        silently capped things like compliance report sections regardless
+        of how much the user actually wanted drafted (e.g. a thorough
+        multi-dataset writeup). Configurable in Settings > AI/ML; persisted
+        via QSettings so it survives restarts. Default of 4000 matches the
+        old hardcoded value, so nothing changes until the user raises it."""
+        from PySide6.QtCore import QSettings
+        settings = QSettings()
+        return settings.value("ai/max_tokens", 4000, type=int)
+
+    def set_max_tokens(self, value: int):
+        from PySide6.QtCore import QSettings
+        settings = QSettings()
+        settings.setValue("ai/max_tokens", int(value))
+
     async def complete(self, prompt: str,
                        provider: str = None,
                        task_type: str = "general",
@@ -1128,7 +1155,10 @@ Never make up data or statistical values - calculate them from provided informat
         if force_json:
             response_format = {"type": "json_object"}
 
-        response = await prov.complete(messages, temperature=temperature, response_format=response_format)
+        response = await prov.complete(
+            messages, temperature=temperature, response_format=response_format,
+            max_tokens=self.get_max_tokens()
+        )
 
         # Track usage
         self.usage_tracker.append({
@@ -1210,7 +1240,7 @@ Never make up data or statistical values - calculate them from provided informat
             {"role": "user", "content": prompt}
         ]
 
-        response = await prov.complete(messages, temperature=0.1)
+        response = await prov.complete(messages, temperature=0.1, max_tokens=self.get_max_tokens())
 
         # Track usage — complete() already does this; structured_complete()
         # calls the provider directly and was missing it, silently under-
@@ -1471,14 +1501,48 @@ class DatasetInterpreter:
     async def analyze_dataset(self, df: pl.DataFrame,
                                audit_context: str = "") -> DatasetSummary:
         """Generate a dataset analysis grounded entirely in statistics
-        computed over the full dataset — the LLM is only asked to
-        interpret and prioritize numbers it's given, not to detect
-        outliers/trends/anomalies itself from a handful of samples."""
+        computed over the full dataset. Thin wrapper around
+        analyze_datasets() for the single-dataset case."""
+        return await self.analyze_datasets({"dataset": df}, audit_context)
 
-        quality_stats = self.compute_data_quality_stats(df)
+    async def analyze_datasets(self, dataframes: Dict[str, pl.DataFrame],
+                                audit_context: str = "") -> DatasetSummary:
+        """Generate an analysis across one or more datasets, grounded
+        entirely in statistics computed over each COMPLETE dataframe — the
+        LLM is only asked to interpret and prioritize numbers it's given,
+        not to detect outliers/trends/anomalies itself from samples.
+
+        With more than one dataset, the model is explicitly asked to
+        reason about how they relate (comparable row counts/schemas,
+        likely join keys, discrepancies in data quality between them)
+        rather than just producing N independent single-dataset
+        summaries back to back - that comparative reasoning is the whole
+        point of selecting more than one dataset at once."""
+        per_dataset_stats = {name: self.compute_data_quality_stats(df) for name, df in dataframes.items()}
+        multi = len(per_dataset_stats) > 1
+
+        datasets_block = "\n\n".join(
+            f"Dataset: {name}\n{self._format_quality_stats(stats)}"
+            for name, stats in per_dataset_stats.items()
+        )
+
+        if multi:
+            comparison_instruction = (
+                "\nSince there are multiple datasets, your executive_summary must also "
+                "explicitly address how they relate to each other: comparable row "
+                "counts/schemas, columns that look like they could join the datasets "
+                "together, and any notable discrepancies in data quality between them. "
+                "Each audit_insight must set \"dataset\" to the exact name of the single "
+                "dataset it's about, or to \"cross-dataset\" for an observation that spans "
+                "more than one."
+            )
+            dataset_field_desc = "exact dataset name this insight is about, or \"cross-dataset\""
+        else:
+            comparison_instruction = ""
+            dataset_field_desc = "exact dataset name this insight is about"
 
         prompt = f"""
-Interpret these REAL, precomputed statistics from a dataset for an audit engagement.
+Interpret these REAL, precomputed statistics from {"a dataset" if not multi else f"{len(per_dataset_stats)} datasets"} for an audit engagement.
 Every number below was computed over the COMPLETE dataset (not a sample) — do not invent
 additional statistics, outliers, or findings beyond what is given here. If you reference an
 outlier or data quality issue, it must correspond to a column/number listed below.
@@ -1486,22 +1550,17 @@ outlier or data quality issue, it must correspond to a column/number listed belo
 Audit Context: {audit_context or "General audit review"}
 
 Computed Statistics:
-{self._format_quality_stats(quality_stats)}
+{datasets_block}
+{comparison_instruction}
 
 Provide your analysis as JSON:
 {{
-    "executive_summary": "2-3 paragraph summary of what this dataset contains and its overall data quality, based only on the statistics given",
-    "data_quality": {{
-        "overall_score": {quality_stats['quality_score']},
-        "null_percentage": {quality_stats['overall_null_pct']},
-        "issues": [
-            {{"column": "name (must be one of the columns listed above)", "issue": "description grounded in that column's actual computed numbers", "severity": "high/medium/low"}}
-        ]
-    }},
+    "executive_summary": "2-3 paragraph summary of what {'this dataset contains' if not multi else 'these datasets contain and how they relate to each other'} and overall data quality, based only on the statistics given",
     "key_fields": ["field1", "field2"],
     "audit_insights": [
         {{
-            "type": "outlier/duplicate/null_rate/pattern",
+            "type": "outlier/duplicate/null_rate/pattern/cross_dataset",
+            "dataset": "{dataset_field_desc}",
             "title": "Brief title",
             "description": "Description that cites the specific computed number(s) it is based on",
             "severity": "high/medium/low",
@@ -1522,14 +1581,18 @@ Only respond with valid JSON.
             response_format="json"
         )
 
-        # Force-override the numeric fields with the real computed values
-        # rather than trusting the LLM to have echoed them back correctly —
-        # the prompt asks it to, but nothing guarantees it will, and these
-        # two numbers exist specifically so they don't have to be trusted.
-        data_quality = dict(result.get("data_quality", {}))
-        data_quality["overall_score"] = quality_stats["quality_score"]
-        data_quality["null_percentage"] = quality_stats["overall_null_pct"]
-        data_quality["computed_stats"] = quality_stats
+        # Force-override with the real computed values rather than
+        # trusting the LLM to have echoed them back correctly - these
+        # exist specifically so they don't have to be trusted. overall
+        # score/null% are an unweighted average across datasets (equal to
+        # the single value when there's only one).
+        scores = [s["quality_score"] for s in per_dataset_stats.values()]
+        null_pcts = [s["overall_null_pct"] for s in per_dataset_stats.values()]
+        data_quality = {
+            "overall_score": round(sum(scores) / len(scores), 1),
+            "null_percentage": round(sum(null_pcts) / len(null_pcts), 2),
+            "computed_stats": per_dataset_stats,  # always keyed by dataset name
+        }
 
         return DatasetSummary(
             executive_summary=result.get("executive_summary", ""),
@@ -1598,6 +1661,12 @@ Requirements:
 - Handle null values appropriately
 - Use method chaining with .with_columns()
 - The code MUST create a column named "{column_name if column_name else 'your_suggested_name'}"
+- This code runs in a restricted sandbox: `pl` is already available as a name, but the code
+  itself must NOT contain any import statement, global statement, or nonlocal statement -
+  everything needed (regex, string parsing, date handling, etc.) must be done through Polars'
+  own expression API (e.g. pl.col(...).str.extract(...), .str.strptime(...)), never a separate
+  module like `re` or `datetime`. Code containing an import or global/nonlocal will be rejected
+  outright before it ever runs.
 - Return only valid JSON
 """
 
@@ -2381,12 +2450,19 @@ Only respond with valid JSON.
         return result.get("rules", [])
 
     @staticmethod
-    def _summarize_matched_rows(df: pl.DataFrame, matched: pl.DataFrame, rule_translation: Dict) -> Dict:
+    def _summarize_matched_rows(df: pl.DataFrame, matched: pl.DataFrame, rule_translation: Dict,
+                                 mask: Optional["pl.Series"] = None) -> Dict:
         """Shared tail end of both compute paths: given the full dataframe
         and the subset of rows that matched (by whatever means), compute
         the real count/pct/dollar-impact/evidence — identical logic
         whether the match came from a filter condition or a duplicate
         check."""
+        # Captured before with_row_index() below might reassign `matched`
+        # to a mutated copy - "create dataset"/"add column" actions should
+        # get the real matched rows back, not a copy with a synthetic
+        # evidence-only index column tacked on.
+        matched_df = matched
+
         affected_count = matched.height
         total_count = len(df)
 
@@ -2415,6 +2491,8 @@ Only respond with valid JSON.
             "affected_pct": round(affected_count / total_count * 100, 2) if total_count else 0.0,
             "affected_amount": affected_amount,
             "evidence": evidence,
+            "matched_df": matched_df,
+            "mask": mask,
         }
 
     def compute_rule_violation(self, df: pl.DataFrame, rule_translation: Dict) -> Dict:
@@ -2425,7 +2503,7 @@ Only respond with valid JSON.
         empty = {
             "computable": False, "reason": "Not computable from available columns.",
             "affected_count": 0, "total_count": len(df), "affected_pct": 0.0,
-            "affected_amount": 0.0, "evidence": [],
+            "affected_amount": 0.0, "evidence": [], "matched_df": None, "mask": None,
         }
         if not rule_translation.get("computable", False):
             empty["reason"] = rule_translation.get("reason_if_not_computable") or empty["reason"]
@@ -2437,9 +2515,9 @@ Only respond with valid JSON.
             if not cols or len(df) == 0:
                 empty["reason"] = "No valid columns available for duplicate check."
                 return empty
-            dup_flag = df.select(cols).is_duplicated()
-            matched = df.filter(dup_flag)
-            return self._summarize_matched_rows(df, matched, rule_translation)
+            mask = df.select(cols).is_duplicated()
+            matched = df.filter(mask)
+            return self._summarize_matched_rows(df, matched, rule_translation, mask=mask)
 
         from core.data_processor import DataProcessor
         dp = DataProcessor()
@@ -2451,8 +2529,12 @@ Only respond with valid JSON.
             empty["reason"] = "No valid conditions could be built from the translated rule."
             return empty
 
-        matched = df.filter(expr)
-        return self._summarize_matched_rows(df, matched, rule_translation)
+        # A boolean Series aligned with df's original row order (not just
+        # the filtered subset) - lets the caller add a flag column back
+        # onto the original dataset, not only extract the matching rows.
+        mask = df.select(expr).to_series().alias("_caat_flag")
+        matched = df.filter(mask)
+        return self._summarize_matched_rows(df, matched, rule_translation, mask=mask)
 
     async def extract_rules_from_policy(self, policy_text: str) -> List[Dict]:
         """Extract discrete, checkable rules from a free-text policy
@@ -2642,6 +2724,8 @@ Only respond with valid JSON.
                 total_count=r.get("total_count", 0),
                 affected_pct=r.get("affected_pct", 0.0),
                 computable=r["computable"],
+                matched_df=r.get("matched_df"),
+                mask=r.get("mask"),
             ))
 
         return violations
@@ -2668,7 +2752,14 @@ class ReportAssistant:
     async def draft_section(self, section: str,
                             audit_results: Dict,
                             tone: str = "professional") -> str:
-        """Draft a section of a post-audit report"""
+        """Draft a section of a post-audit report. Word target scales
+        with the configured max response length (Settings > AI/ML) -
+        this used to say "Maximum 300 words" unconditionally, which meant
+        raising max_tokens alone had no effect since the model was still
+        told to stop at 300 words regardless of how much budget it had.
+        A thorough multi-dataset writeup needs both raised together."""
+
+        target_words = int(self.ai.get_max_tokens() * 0.7)
 
         prompt = f"""
 Draft the {section} section of a post-audit management report.
@@ -2681,7 +2772,10 @@ Requirements:
 - Audience: Client management
 - Include specific data and evidence
 - Be factual and constructive
-- Maximum 300 words
+- Aim for up to approximately {target_words} words - be as thorough as the
+  material genuinely supports (especially where multiple datasets are
+  involved and there's more to say), but don't pad with filler just to
+  reach that length
 
 Draft this section now:
 """
@@ -2695,7 +2789,12 @@ Draft this section now:
         return response.content
 
     async def summarize_findings(self, findings: List[Dict]) -> str:
-        """Generate a summary of audit findings"""
+        """Generate a summary of audit findings. Word target scales with
+        the configured max response length, capped since this is meant to
+        stay a single executive-summary paragraph regardless of how high
+        that setting goes."""
+
+        target_words = min(500, int(self.ai.get_max_tokens() * 0.15))
 
         findings_text = "\n".join([
             f"- {f.get('title', 'Unknown')}: {f.get('description', '')} (Risk: {f.get('severity', 'unknown')})"
@@ -2708,7 +2807,7 @@ Summarize these audit findings for an executive summary:
 {findings_text}
 
 Provide:
-1. One paragraph summary (max 200 words)
+1. One paragraph summary (up to approximately {target_words} words)
 2. Key themes across findings
 3. Overall risk assessment
 

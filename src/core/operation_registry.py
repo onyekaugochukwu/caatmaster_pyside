@@ -864,8 +864,7 @@ OPERATION_REGISTRY = {
         "description": "Comprehensive per-field statistics report, one row per column - count, "
                        "missing, unique, and (for numeric fields) min/max/range/sum/mean/median/std/"
                        "variance/skewness/kurtosis/percentiles/coefficient of variation, plus the "
-                       "most and least frequent value for every field. Mirrors CaseWare IDEA's Field "
-                       "Statistics.",
+                       "most and least frequent value for every field.",
         "parameter_schema": {
             "columns": {"type": "list[column]", "required": False,
                        "label": "Columns (blank = every column)"}
@@ -1202,8 +1201,8 @@ OPERATION_REGISTRY = {
         "category": "audit",
         "description": "Flags records that break ascending/descending order relative to the row "
                        "before them, in the table's actual current row order - distinct from Gap "
-                       "Analysis, which looks for missing values rather than out-of-order ones. "
-                       "Mirrors ACL's SEQUENCE command (e.g. a check issued out of chronological order).",
+                       "Analysis, which looks for missing values rather than out-of-order ones "
+                       "(e.g. a check issued out of chronological order).",
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column To Check"},
             "ascending": {"type": "bool", "required": False, "default": True, "label": "Expected Ascending Order"},
@@ -1900,7 +1899,7 @@ OPERATION_REGISTRY = {
         "type": TransformationStepType.CALCULATE,
         "category": "table",
         "description": "Join two datasets using various join types (left, right, inner, outer, cross, "
-                       "semi, anti). Semi/anti mirror ActiveData for Excel's 'Match Sheets': keep only "
+                       "semi, anti). Semi/anti keep only "
                        "left rows that do (semi) or don't (anti) have a matching key on the right.",
         "parameter_schema": {
             "right_dataset": {"type": "string", "required": True, "label": "Right Dataset Name"},
@@ -1939,8 +1938,7 @@ OPERATION_REGISTRY = {
         "type": TransformationStepType.CALCULATE,
         "category": "table",
         "description": "Cell-by-cell comparison of two datasets by key - classifies every record as "
-                       "only-in-left, only-in-right, matched-identical, or matched-different. Mirrors "
-                       "ActiveData for Excel's Compare Sheets.",
+                       "only-in-left, only-in-right, matched-identical, or matched-different.",
         "parameter_schema": {
             "right_dataset": {"type": "string", "required": True, "label": "Right Dataset Name"},
             "key_columns": {"type": "list[string]", "required": True, "label": "Key Column(s)"},
@@ -1959,8 +1957,7 @@ OPERATION_REGISTRY = {
         "category": "table",
         "description": "Approximate text matching between two datasets by similarity score, not an "
                        "exact key - e.g. matching an employee's address against a vendor's to catch "
-                       "near-identical (but not exactly typed) matches. Mirrors ActiveData for Excel's "
-                       "Approximate Column Match.",
+                       "near-identical (but not exactly typed) matches.",
         "parameter_schema": {
             "right_dataset": {"type": "string", "required": True, "label": "Right Dataset Name"},
             "left_column": {"type": "column", "required": True, "label": "Left Text Column"},

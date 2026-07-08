@@ -24,7 +24,6 @@ class MLTrainingDialog(QDialog):
 
     def __init__(self, dataframe: pl.DataFrame, parent=None):
         super().__init__(parent if parent else None)
-        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.dataframe = dataframe
         self.model_id = None
         self.training_metrics = {}

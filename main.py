@@ -5,10 +5,11 @@ PySide 6 Desktop Application
 """
 import sys
 import os
+import signal
 import faulthandler
 from pathlib import Path
 from PySide6.QtWidgets import QApplication, QToolTip
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import Qt, QSettings, QTimer
 from PySide6.QtGui import QIcon, QPalette, QColor
 
 # Add src directory to path
@@ -95,7 +96,43 @@ def main():
     # Check if login was successful
     # If login was cancelled, _login_successful will be False
     if getattr(window, '_login_successful', False):
-        window.showMaximized()
+        # Maximized, not true fullscreen - fills the screen but keeps the
+        # title bar and minimize/restore/close buttons. True fullscreen
+        # (Qt.WindowFullScreen) hides all window chrome, which left no way
+        # to close or minimize the app at all - available via F11
+        # (toggle_fullscreen) for anyone who wants it deliberately.
+        #
+        # Deferred by one event-loop turn rather than called inline: on
+        # some Linux window managers, showMaximized() called on a window
+        # that has never been mapped/shown yet gets silently ignored (the
+        # WM has no valid geometry to maximize against) - the window ends
+        # up shown at its small default size, only responding to a manual
+        # click on the title bar's own Maximize button afterward. Letting
+        # the window get mapped first, then requesting maximized state
+        # on the next iteration, is the standard workaround.
+        window.show()
+        QTimer.singleShot(0, window.showMaximized)
+
+        # Ctrl+C in the terminal otherwise surfaces as a confusing
+        # traceback inside whatever unrelated Qt callback happens to be
+        # running when the signal arrives (Qt's C++ event loop doesn't
+        # hand control back to Python's interpreter often enough for the
+        # default SIGINT handler to run promptly). Route it through
+        # close() instead, so it gets the same unsaved-changes prompt as
+        # File > Exit or the window's own close button - not an abrupt
+        # kill. QTimer.singleShot(0, ...) defers the actual close to a
+        # normal event-loop turn rather than doing GUI work inside the
+        # raw signal handler itself. The periodic no-op timer just keeps
+        # ticking the interpreter over so Python gets a chance to notice
+        # the signal in the first place.
+        def _handle_sigint(*_args):
+            QTimer.singleShot(0, window.close)
+
+        signal.signal(signal.SIGINT, _handle_sigint)
+        _signal_pump = QTimer()
+        _signal_pump.timeout.connect(lambda: None)
+        _signal_pump.start(200)
+
         sys.exit(app.exec())
     else:
         sys.exit(0)

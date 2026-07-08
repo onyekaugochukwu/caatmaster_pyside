@@ -20,7 +20,6 @@ class LoginDialog(QDialog):
 
     def __init__(self, auth_service, parent=None):
         super().__init__(parent if parent else None)
-        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.auth_service = auth_service
         self.setup_ui()
 
@@ -133,7 +132,6 @@ class RegisterDialog(QDialog):
 
     def __init__(self, auth_service, parent=None):
         super().__init__(parent if parent else None)
-        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.auth_service = auth_service
         self._username = ""
         self._password = ""
@@ -313,7 +311,6 @@ class ChangePasswordDialog(QDialog):
 
     def __init__(self, auth_service, user_id: int, parent=None):
         super().__init__(parent if parent else None)
-        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.auth_service = auth_service
         self.user_id = user_id
         self.setup_ui()

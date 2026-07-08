@@ -197,6 +197,8 @@ ML_MENU = [
 ]
 
 VIEW_MENU = [
+    ("Show Dashboard", "fa5s.tachometer-alt", "show_dashboard"),
+    None,
     ("Query", [
         ("Query Parameters...", "fa5s.cog", "query_settings"),
         ("Dependencies", "fa5s.project-diagram", "dependencies"),
@@ -285,6 +287,11 @@ def build_menu_bar(main_window, registry: CommandRegistry) -> QMenuBar:
     file_menu.addAction(_icon("fa5s.share-square"), "Export for Review...", main_window.export_for_review)
     file_menu.addSeparator()
     file_menu.addAction(_icon("fa5s.cog"), "Settings", lambda: main_window.on_navigation_requested("settings"))
+    file_menu.addSeparator()
+    # Routed through close() (not QApplication.quit() directly) so
+    # closeEvent's unsaved-changes prompt still runs instead of silently
+    # discarding pending work.
+    file_menu.addAction(_icon("fa5s.sign-out-alt"), "Exit", main_window.close).setShortcut(QKeySequence.Quit)
 
     transform_menu = menu_bar.addMenu("&Transform")
     _populate_menu(transform_menu, TRANSFORM_MENU, registry)

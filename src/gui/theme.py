@@ -5,8 +5,9 @@ and typography.
 Palette is a refinement of Microsoft's Fluent Design tokens - same family
 (a "communication blue" accent, clean neutrals), tuned toward a slightly more
 confident, cool-toned reading rather than stock Fluent defaults. This is a
-deliberate choice for a tool auditors use alongside Excel/Office all day: keep
-the visual vocabulary they already trust, don't invent a new one.
+deliberate choice for a tool auditors use alongside the office productivity
+suites they already work in all day: keep the visual vocabulary they already
+trust, don't invent a new one.
 
 Every widget-level stylesheet in the app should build on these tokens instead
 of hardcoding hex values. `get_stylesheet()` returns the one application-wide

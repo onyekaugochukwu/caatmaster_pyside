@@ -1,5 +1,5 @@
 """Dataset Profiler - an automatic "what's interesting about this data"
-summary, mirroring CaseWare IDEA's Discover feature. Runs a fixed set of
+summary. Runs a fixed set of
 cheap, deterministic checks (never an LLM, nothing fabricated) and
 returns real, computed findings - duplicate rows, per-column completeness/
 uniqueness/outliers, Benford's Law deviation on plausible amount columns,

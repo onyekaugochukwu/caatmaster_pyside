@@ -1,5 +1,5 @@
 """Data Verification - validates column contents against declared
-expectations, mirroring ACL's VERIFY command. Unlike a dtype cast (which
+expectations. Unlike a dtype cast (which
 silently nulls or crashes on a bad value), this is a deliberate, reviewable
 check: "this column should be numeric/a valid date/unique/positive/in
 range - how many values actually violate that, and which check failed."

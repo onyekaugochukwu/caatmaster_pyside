@@ -301,10 +301,11 @@ class AIPanel(QWidget):
     sendMessage = Signal(str)  # When user sends a message
     cancelRequest = Signal()  # When user wants to cancel ongoing request
     clearChat = Signal()  # When user wants to clear the chat
-    analyzeDataset = Signal()  # When user wants to analyze current dataset
+    analyzeDataset = Signal()  # When user wants to analyze the selected dataset(s)
     generateColumn = Signal()  # When user wants to generate a column
-    complianceCheck = Signal()  # When user wants to run compliance check
+    complianceCheck = Signal()  # When user wants to run compliance check on the selected dataset(s)
     showSettings = Signal()  # When user wants to open AI settings
+    datasetsPanelOpened = Signal()  # Quick Actions opened - main_window should refresh the dataset checklist
     actionProposed = Signal(str, dict, str)  # operation_id, params, reason - AI proposed a dataset change to review
     datasetProposed = Signal(str, str, str)  # sql, name, reason - AI proposed materializing a query as a new dataset
     # Thread-safe signals for UI updates
@@ -379,17 +380,15 @@ class AIPanel(QWidget):
         input_frame = self.create_input_area()
         layout.addWidget(input_frame)
 
-        # Quick actions - only shown in the empty/welcome state (see
-        # _update_quick_actions_visibility), the same way Claude/ChatGPT
-        # show suggested prompts before a conversation starts and get out
-        # of the way once one is underway, rather than permanently eating
-        # vertical space in every conversation regardless of length.
+        # Quick actions - hidden until opened via the header's lightning-
+        # bolt toggle (see _toggle_quick_actions). Used to auto-show before
+        # the first message and vanish afterward, which meant it
+        # disappeared exactly when a "what can this do" hint was still
+        # useful, and could never be reopened mid-conversation.
         self.quick_actions_frame = self.create_quick_actions()
+        self.quick_actions_frame.setVisible(False)
         layout.addWidget(self.quick_actions_frame)
 
-        # Welcome message - added last, since it triggers
-        # _update_quick_actions_visibility(), which needs quick_actions_frame
-        # to already exist.
         self.add_welcome_message()
 
     def create_header(self) -> QWidget:
@@ -443,6 +442,39 @@ class AIPanel(QWidget):
 
         title_layout.addLayout(text_col)
         layout.addLayout(title_layout, 1)
+
+        # Quick Actions launcher - previously a panel that auto-showed
+        # before the first message and vanished afterward, which meant it
+        # disappeared right when a "what can this thing do" hint would
+        # still be useful, and could never be reopened once a
+        # conversation was underway. A persistent toggle beside
+        # Settings/Clear keeps it reachable at any point in the chat.
+        self.quick_actions_btn = QToolButton()
+        self.quick_actions_btn.setFixedSize(32, 32)
+        self.quick_actions_btn.setIcon(qta.icon("fa5s.bolt", color=Colors.TEXT_SECONDARY))
+        self.quick_actions_btn.setIconSize(QSize(14, 14))
+        self.quick_actions_btn.setCheckable(True)
+        self.quick_actions_btn.setStyleSheet(f"""
+            QToolButton {{
+                background-color: transparent;
+                border: 1px solid {Colors.BORDER_STRONG};
+                border-radius: 6px;
+                padding: 4px;
+            }}
+            QToolButton:hover {{
+                background-color: {Colors.BG_TERTIARY};
+                border-color: {Colors.TEXT_TERTIARY};
+                color: {Colors.TEXT_PRIMARY};
+            }}
+            QToolButton:checked {{
+                background-color: {Colors.ACCENT_SOFT};
+                border-color: {Colors.ACCENT};
+                color: {Colors.ACCENT};
+            }}
+        """)
+        self.quick_actions_btn.setToolTip("Quick Actions")
+        self.quick_actions_btn.clicked.connect(self._toggle_quick_actions)
+        layout.addWidget(self.quick_actions_btn)
 
         # Settings button (using QToolButton for better icon visibility)
         settings_btn = QToolButton()
@@ -791,6 +823,58 @@ class AIPanel(QWidget):
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(8)
 
+        dataset_header = QHBoxLayout()
+        dataset_label = QLabel("Datasets to Include")
+        dataset_label.setStyleSheet(f"""
+            QLabel {{
+                font-size: 12px;
+                font-weight: 600;
+                color: {Colors.TEXT_SECONDARY};
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }}
+        """)
+        dataset_header.addWidget(dataset_label)
+        dataset_header.addStretch()
+
+        self.select_all_datasets_btn = QPushButton("Select All")
+        self.select_all_datasets_btn.setCursor(Qt.PointingHandCursor)
+        self.select_all_datasets_btn.setStyleSheet(f"""
+            QPushButton {{
+                border: none;
+                background: transparent;
+                color: {Colors.ACCENT};
+                font-size: 11px;
+                font-weight: 600;
+                padding: 0;
+            }}
+            QPushButton:hover {{
+                color: {Colors.ACCENT_HOVER};
+                text-decoration: underline;
+            }}
+        """)
+        self.select_all_datasets_btn.clicked.connect(self._toggle_select_all_datasets)
+        dataset_header.addWidget(self.select_all_datasets_btn)
+        layout.addLayout(dataset_header)
+
+        # Checklist of project datasets - Analyze/Compliance Check reason
+        # across whichever ones are checked here, instead of silently
+        # defaulting to whatever the active dataset happens to be. Only
+        # checked by default matches today's single-dataset behavior;
+        # checking more lets these actions compare/combine across them.
+        self.dataset_list = QListWidget()
+        self.dataset_list.setMaximumHeight(84)
+        self.dataset_list.setSelectionMode(QListWidget.NoSelection)
+        self.dataset_list.setStyleSheet(f"""
+            QListWidget {{
+                border: 1px solid {Colors.BORDER};
+                border-radius: 6px;
+                font-size: 12px;
+            }}
+        """)
+        self.dataset_list.itemChanged.connect(lambda _item: self._update_select_all_datasets_label())
+        layout.addWidget(self.dataset_list)
+
         label = QLabel("Quick Actions")
         label.setStyleSheet(f"""
             QLabel {{
@@ -905,17 +989,68 @@ What would you like to do?"""
         alignment = Qt.AlignRight if is_user else Qt.AlignLeft
         self.messages_layout.insertWidget(self.messages_layout.count() - 1, widget, 0, alignment)
 
-        self._update_quick_actions_visibility()
-
         # Scroll to bottom
         QTimer.singleShot(50, self.scroll_to_bottom)
 
-    def _update_quick_actions_visibility(self):
-        """Quick Actions are only useful before a conversation starts -
-        once the user has sent a real message, keep that vertical space
-        for the conversation instead of a permanently-pinned row. Only the
-        welcome message counts as "empty"."""
-        self.quick_actions_frame.setVisible(len(self.messages) <= 1)
+    def _toggle_quick_actions(self):
+        """Show/hide the Quick Actions panel - see the header button that
+        calls this for why this replaced auto-show/auto-hide."""
+        visible = not self.quick_actions_frame.isVisible()
+        self.quick_actions_frame.setVisible(visible)
+        self.quick_actions_btn.setChecked(visible)
+        if visible:
+            self.datasetsPanelOpened.emit()
+
+    def set_available_datasets(self, names: List[str], active: str = None):
+        """Populate the dataset checklist. Preserves check-state for any
+        dataset that was already listed (so reopening/refreshing the
+        panel doesn't silently reset a deliberate multi-dataset
+        selection); anything new defaults to checked only if it's the
+        active dataset, matching today's single-dataset behavior until
+        the user opts more datasets in."""
+        previously_checked = {
+            self.dataset_list.item(i).text(): self.dataset_list.item(i).checkState()
+            for i in range(self.dataset_list.count())
+        }
+        self.dataset_list.clear()
+        for name in names:
+            item = QListWidgetItem(name)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            if name in previously_checked:
+                item.setCheckState(previously_checked[name])
+            else:
+                item.setCheckState(Qt.Checked if name == active else Qt.Unchecked)
+            self.dataset_list.addItem(item)
+        self._update_select_all_datasets_label()
+
+    def get_selected_datasets(self) -> List[str]:
+        """Names of the datasets currently checked in the Quick Actions
+        selector, for Analyze/Compliance Check to reason across."""
+        return [
+            self.dataset_list.item(i).text()
+            for i in range(self.dataset_list.count())
+            if self.dataset_list.item(i).checkState() == Qt.Checked
+        ]
+
+    def _toggle_select_all_datasets(self):
+        """Select All when not everything is checked yet; Deselect All
+        once everything already is - a single button whose action always
+        matches its own current label."""
+        all_checked = self.dataset_list.count() > 0 and all(
+            self.dataset_list.item(i).checkState() == Qt.Checked
+            for i in range(self.dataset_list.count())
+        )
+        new_state = Qt.Unchecked if all_checked else Qt.Checked
+        for i in range(self.dataset_list.count()):
+            self.dataset_list.item(i).setCheckState(new_state)
+        self._update_select_all_datasets_label()
+
+    def _update_select_all_datasets_label(self):
+        all_checked = self.dataset_list.count() > 0 and all(
+            self.dataset_list.item(i).checkState() == Qt.Checked
+            for i in range(self.dataset_list.count())
+        )
+        self.select_all_datasets_btn.setText("Deselect All" if all_checked else "Select All")
 
     def add_chart_message(self, image_bytes: bytes):
         """Show an AI-generated chart inline in the chat, the same way a

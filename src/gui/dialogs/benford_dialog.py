@@ -27,7 +27,6 @@ class BenfordChartPopup(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(self.windowFlags() | Qt.Window)
         self.setWindowTitle("Benford's Law - Distribution Chart")
         self.setMinimumSize(800, 500)
         self.resize(900, 550)

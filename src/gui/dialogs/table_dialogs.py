@@ -300,11 +300,17 @@ class JoinDatasetsDialog(BaseModal):
     """Dialog for joining two datasets using various join types"""
 
     def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None,
-                 available_datasets: List[str] = None, source_dataset_name: str = None):
+                 available_datasets: List[str] = None, source_dataset_name: str = None,
+                 dataset_columns: Dict[str, List[str]] = None):
         self.original_df = dataframe
         self.selected_column = selected_column
         self.available_datasets = available_datasets or []
         self.source_dataset_name = source_dataset_name or "Current Dataset"
+        # Maps every available dataset name (including the source) to its
+        # column list, so the Left Dataset selector below can repopulate
+        # the join-key list for whichever dataset gets chosen, not just
+        # the one that happened to be active when this opened.
+        self.dataset_columns = dataset_columns or {self.source_dataset_name: list(dataframe.columns)}
         super().__init__("Join Datasets", dataframe, parent, selected_column=selected_column)
         self.setMinimumSize(700, 600)
 
@@ -329,7 +335,15 @@ class JoinDatasetsDialog(BaseModal):
 
         # Content widget for scroll area
         content = QWidget()
-        content.setStyleSheet("background-color: transparent;")
+        # Scoped to #DialogScrollContent specifically - a bare, no-selector
+        # "background-color: transparent;" cascades to every descendant
+        # regardless of type (the same class of bug as an unscoped
+        # "QWidget { ... }"/"QFrame { ... }" rule), including a checkbox
+        # indicator nested inside a QListWidgetItem several levels down -
+        # it rendered as a solid black square instead of an empty box,
+        # looking pre-checked even when it wasn't.
+        content.setObjectName("DialogScrollContent")
+        content.setStyleSheet("QWidget#DialogScrollContent { background-color: transparent; }")
         layout = QVBoxLayout(content)
         layout.setSpacing(15)
         layout.setContentsMargins(15, 15, 15, 15)
@@ -361,17 +375,23 @@ class JoinDatasetsDialog(BaseModal):
 
         layout.addWidget(join_group)
 
-        # Left dataset (current)
-        left_group = QGroupBox(f"Left Dataset ({self.source_dataset_name})")
+        # Left dataset - now selectable, not just whichever was active
+        # when this dialog was opened.
+        left_group = QGroupBox("Left Dataset")
         left_layout = QFormLayout(left_group)
         left_layout.setLabelAlignment(Qt.AlignRight)
         left_layout.setFormAlignment(Qt.AlignLeft)
 
+        self.left_dataset_combo = QComboBox()
+        self.left_dataset_combo.setEditable(False)
+        self.left_dataset_combo.setMinimumWidth(200)
+        self.left_dataset_combo.addItems(self.available_datasets)
+        if self.source_dataset_name in self.available_datasets:
+            self.left_dataset_combo.setCurrentText(self.source_dataset_name)
+        left_layout.addRow("Dataset:", self.left_dataset_combo)
+
         self.left_key_combo = QComboBox()
-        self.left_key_combo.addItems(self.original_df.columns)
         self.left_key_combo.setMinimumWidth(200)
-        if self.selected_column:
-            self.left_key_combo.setCurrentText(self.selected_column)
         left_layout.addRow("Join Key:", self.left_key_combo)
 
         layout.addWidget(left_group)
@@ -385,17 +405,14 @@ class JoinDatasetsDialog(BaseModal):
         self.right_dataset_combo = QComboBox()
         self.right_dataset_combo.setEditable(False)
         self.right_dataset_combo.setMinimumWidth(200)
-        # Filter out the source dataset from available datasets
-        other_datasets = [ds for ds in self.available_datasets if ds != self.source_dataset_name]
-        self.right_dataset_combo.addItems(other_datasets)
-        if other_datasets:
-            self.right_dataset_combo.setCurrentIndex(0)
         right_layout.addRow("Dataset:", self.right_dataset_combo)
 
+        # Was hardcoded to the left dataset's columns regardless of which
+        # right dataset was picked - now follows the actual selection via
+        # _on_right_dataset_changed.
         self.right_key_combo = QComboBox()
         self.right_key_combo.setEditable(False)
         self.right_key_combo.setMinimumWidth(200)
-        self.right_key_combo.addItems(self.original_df.columns)
         right_layout.addRow("Join Key:", self.right_key_combo)
 
         layout.addWidget(right_group)
@@ -443,14 +460,60 @@ class JoinDatasetsDialog(BaseModal):
 
         main_layout.addLayout(btn_layout)
 
-        # Load preview
-        self.preview_table.load_dataframe(self.original_df.head(10))
+        # Populate left/right-dependent controls now that everything
+        # exists, and wire up live updates when either selection changes.
+        self._on_left_dataset_changed(self.left_dataset_combo.currentText())
+        self.left_dataset_combo.currentTextChanged.connect(self._on_left_dataset_changed)
+        self.right_dataset_combo.currentTextChanged.connect(self._on_right_dataset_changed)
+
+    def _on_left_dataset_changed(self, left_name: str):
+        """Repopulate the left join-key list and preview for whichever
+        dataset is now selected as left, and keep it out of the right
+        dataset's own options."""
+        columns = self.dataset_columns.get(left_name, [])
+
+        self.left_key_combo.clear()
+        self.left_key_combo.addItems(columns)
+        if self.selected_column and left_name == self.source_dataset_name and self.selected_column in columns:
+            self.left_key_combo.setCurrentText(self.selected_column)
+
+        current_right = self.right_dataset_combo.currentText()
+        self.right_dataset_combo.blockSignals(True)
+        self.right_dataset_combo.clear()
+        other_datasets = [ds for ds in self.available_datasets if ds != left_name]
+        self.right_dataset_combo.addItems(other_datasets)
+        if current_right in other_datasets:
+            self.right_dataset_combo.setCurrentText(current_right)
+        elif other_datasets:
+            self.right_dataset_combo.setCurrentIndex(0)
+        self.right_dataset_combo.blockSignals(False)
+        self._on_right_dataset_changed(self.right_dataset_combo.currentText())
+
+        # Preview only has real row data for the dataset actually passed
+        # in - other datasets are known by name/columns only at this
+        # dialog level, so there's nothing to preview for them.
+        if left_name == self.source_dataset_name:
+            self.preview_table.load_dataframe(self.original_df.head(10))
+        else:
+            self.preview_table.load_dataframe(pl.DataFrame({c: [] for c in columns}))
+
+    def _on_right_dataset_changed(self, right_name: str):
+        """Repopulate the right join-key list for the actually selected
+        right dataset - this used to always show the left dataset's
+        columns regardless of which right dataset was picked."""
+        columns = self.dataset_columns.get(right_name, [])
+        self.right_key_combo.clear()
+        self.right_key_combo.addItems(columns)
 
     def _apply_join(self):
         """Validate and accept join"""
+        left_name = self.left_dataset_combo.currentText()
         dataset_name = self.right_dataset_combo.currentText()
         if not dataset_name:
             QMessageBox.warning(self, "Warning", "Please select a dataset to join with.")
+            return
+        if left_name == dataset_name:
+            QMessageBox.warning(self, "Warning", "Left and right datasets must be different.")
             return
 
         right_key = self.right_key_combo.currentText()
@@ -466,6 +529,7 @@ class JoinDatasetsDialog(BaseModal):
                 break
 
         self.current_params = {
+            "left_dataset": left_name,
             "right_dataset": dataset_name,
             "left_key": self.left_key_combo.currentText(),
             "right_key": right_key,
@@ -479,35 +543,79 @@ class JoinDatasetsDialog(BaseModal):
 
 
 class CompareDatasetsDialog(BaseModal):
-    """Dialog for a cell-by-cell comparison of two datasets by key -
-    mirrors ActiveData for Excel's Compare Sheets. Classifies every key as
-    only-in-left, only-in-right, matched-identical, or matched-different."""
+    """Dialog for a cell-by-cell comparison of two datasets by key.
+    Classifies every key as only-in-left, only-in-right, matched-identical,
+    or matched-different."""
 
     def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None,
-                 available_datasets: List[str] = None, source_dataset_name: str = None):
+                 available_datasets: List[str] = None, source_dataset_name: str = None,
+                 dataset_columns: Dict[str, List[str]] = None):
         self.original_df = dataframe
         self.selected_column = selected_column
         self.available_datasets = available_datasets or []
         self.source_dataset_name = source_dataset_name or "Current Dataset"
+        # Maps every available dataset name (including the source) to its
+        # column list, so the Left Dataset selector below can repopulate
+        # the key/compare lists for whichever dataset gets chosen, not
+        # just the one that happened to be active when this opened.
+        self.dataset_columns = dataset_columns or {self.source_dataset_name: list(dataframe.columns)}
         super().__init__("Compare Datasets", dataframe, parent, selected_column=selected_column)
         self.setMinimumSize(650, 600)
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(15)
+        # Main layout with scroll area - previously had none at all, so
+        # content taller than the dialog just got clipped/squished
+        # instead of scrolling.
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
-        left_group = QGroupBox(f"Left Dataset ({self.source_dataset_name})")
-        left_layout = QVBoxLayout(left_group)
-        left_layout.addWidget(QLabel("Key column(s) - identify the same record on both sides (Ctrl/Shift-click for multiple):"))
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+
+        content = QWidget()
+        # Scoped to #DialogScrollContent specifically - a bare, no-selector
+        # "background-color: transparent;" cascades to every descendant
+        # regardless of type (the same class of bug as an unscoped
+        # "QWidget { ... }"/"QFrame { ... }" rule), including a checkbox
+        # indicator nested inside a QListWidgetItem several levels down -
+        # it rendered as a solid black square instead of an empty box,
+        # looking pre-checked even when it wasn't.
+        content.setObjectName("DialogScrollContent")
+        content.setStyleSheet("QWidget#DialogScrollContent { background-color: transparent; }")
+        layout = QVBoxLayout(content)
+        layout.setSpacing(15)
+        layout.setContentsMargins(15, 15, 15, 15)
+
+        left_group = QGroupBox("Left Dataset")
+        left_layout = QFormLayout(left_group)
+        left_layout.setLabelAlignment(Qt.AlignRight)
+        left_layout.setFormAlignment(Qt.AlignLeft)
+
+        self.left_dataset_combo = QComboBox()
+        self.left_dataset_combo.setEditable(False)
+        self.left_dataset_combo.setMinimumWidth(200)
+        self.left_dataset_combo.addItems(self.available_datasets)
+        if self.source_dataset_name in self.available_datasets:
+            self.left_dataset_combo.setCurrentText(self.source_dataset_name)
+        left_layout.addRow("Dataset:", self.left_dataset_combo)
+        layout.addWidget(left_group)
+
+        key_group = QGroupBox("Key Column(s)")
+        key_layout = QVBoxLayout(key_group)
+        key_layout.addWidget(QLabel("Identify the same record on both sides (Ctrl/Shift-click for multiple):"))
         self.key_list = QListWidget()
         self.key_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.key_list.addItems(self.original_df.columns)
         self.key_list.setMaximumHeight(120)
-        if self.selected_column:
-            for item in self.key_list.findItems(self.selected_column, Qt.MatchExactly):
-                item.setSelected(True)
-        left_layout.addWidget(self.key_list)
-        layout.addWidget(left_group)
+        key_layout.addWidget(self.key_list)
+        layout.addWidget(key_group)
 
         right_group = QGroupBox("Right Dataset")
         right_layout = QFormLayout(right_group)
@@ -516,10 +624,6 @@ class CompareDatasetsDialog(BaseModal):
         self.right_dataset_combo = QComboBox()
         self.right_dataset_combo.setEditable(False)
         self.right_dataset_combo.setMinimumWidth(200)
-        other_datasets = [ds for ds in self.available_datasets if ds != self.source_dataset_name]
-        self.right_dataset_combo.addItems(other_datasets)
-        if other_datasets:
-            self.right_dataset_combo.setCurrentIndex(0)
         right_layout.addRow("Compare against:", self.right_dataset_combo)
         layout.addWidget(right_group)
 
@@ -528,12 +632,15 @@ class CompareDatasetsDialog(BaseModal):
         compare_layout.addWidget(QLabel("Leave unselected to compare every column common to both datasets:"))
         self.compare_list = QListWidget()
         self.compare_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.compare_list.addItems([c for c in self.original_df.columns])
         self.compare_list.setMaximumHeight(120)
         compare_layout.addWidget(self.compare_list)
         layout.addWidget(compare_group)
 
+        scroll.setWidget(content)
+        main_layout.addWidget(scroll)
+
         btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(15, 10, 15, 10)
         btn_layout.addStretch()
 
         self.cancel_btn = QPushButton("Cancel")
@@ -544,13 +651,48 @@ class CompareDatasetsDialog(BaseModal):
         self.apply_btn.clicked.connect(self._apply_compare)
         btn_layout.addWidget(self.apply_btn)
 
-        layout.addLayout(btn_layout)
+        main_layout.addLayout(btn_layout)
+
+        # Now that every widget exists, populate the left-dependent
+        # controls and wire up live updates when the left dataset changes.
+        self._on_left_dataset_changed(self.left_dataset_combo.currentText())
+        self.left_dataset_combo.currentTextChanged.connect(self._on_left_dataset_changed)
+
+    def _on_left_dataset_changed(self, left_name: str):
+        """Repopulate the key/compare column lists for whichever dataset
+        is now selected as left, and keep it out of the right dataset's
+        own options."""
+        columns = self.dataset_columns.get(left_name, [])
+
+        self.key_list.clear()
+        self.key_list.addItems(columns)
+        if self.selected_column and left_name == self.source_dataset_name:
+            for item in self.key_list.findItems(self.selected_column, Qt.MatchExactly):
+                item.setSelected(True)
+
+        self.compare_list.clear()
+        self.compare_list.addItems(columns)
+
+        current_right = self.right_dataset_combo.currentText()
+        self.right_dataset_combo.blockSignals(True)
+        self.right_dataset_combo.clear()
+        other_datasets = [ds for ds in self.available_datasets if ds != left_name]
+        self.right_dataset_combo.addItems(other_datasets)
+        if current_right in other_datasets:
+            self.right_dataset_combo.setCurrentText(current_right)
+        elif other_datasets:
+            self.right_dataset_combo.setCurrentIndex(0)
+        self.right_dataset_combo.blockSignals(False)
 
     def _apply_compare(self):
         """Validate and accept compare parameters"""
+        left_name = self.left_dataset_combo.currentText()
         dataset_name = self.right_dataset_combo.currentText()
         if not dataset_name:
             QMessageBox.warning(self, "Warning", "Please select a dataset to compare against.")
+            return
+        if left_name == dataset_name:
+            QMessageBox.warning(self, "Warning", "Left and right datasets must be different.")
             return
 
         key_columns = [item.text() for item in self.key_list.selectedItems()]
@@ -561,6 +703,7 @@ class CompareDatasetsDialog(BaseModal):
         compare_columns = [item.text() for item in self.compare_list.selectedItems()]
 
         self.current_params = {
+            "left_dataset": left_name,
             "right_dataset": dataset_name,
             "key_columns": key_columns,
             "compare_columns": compare_columns or None,
@@ -572,10 +715,9 @@ class CompareDatasetsDialog(BaseModal):
 
 
 class FuzzyMatchDatasetsDialog(BaseModal):
-    """Dialog for approximate/fuzzy text matching between two datasets -
-    mirrors ActiveData for Excel's Approximate Column Match, e.g. matching
-    an employee's address against a vendor's to catch a conflict of
-    interest even when the text isn't typed identically."""
+    """Dialog for approximate/fuzzy text matching between two datasets,
+    e.g. matching an employee's address against a vendor's to catch a
+    conflict of interest even when the text isn't typed identically."""
 
     def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None,
                  available_datasets: List[str] = None, source_dataset_name: str = None):
@@ -723,16 +865,32 @@ class AppendDatasetsDialog(BaseModal):
 
         # Content widget for scroll area
         content = QWidget()
-        content.setStyleSheet("background-color: transparent;")
+        # Scoped to #DialogScrollContent specifically - a bare, no-selector
+        # "background-color: transparent;" cascades to every descendant
+        # regardless of type (the same class of bug as an unscoped
+        # "QWidget { ... }"/"QFrame { ... }" rule), including a checkbox
+        # indicator nested inside a QListWidgetItem several levels down -
+        # it rendered as a solid black square instead of an empty box,
+        # looking pre-checked even when it wasn't.
+        content.setObjectName("DialogScrollContent")
+        content.setStyleSheet("QWidget#DialogScrollContent { background-color: transparent; }")
         layout = QVBoxLayout(content)
         layout.setSpacing(15)
         layout.setContentsMargins(15, 15, 15, 15)
 
-        # Source dataset info
+        # Source dataset - now selectable, not just whichever was active
+        # when this dialog was opened.
         info_group = QGroupBox("Source Dataset (First)")
         info_layout = QVBoxLayout(info_group)
 
-        self.source_label = QLabel(f"{self.source_dataset_name}: {len(self.original_df)} rows, {len(self.original_df.columns)} columns")
+        self.source_dataset_combo = QComboBox()
+        self.source_dataset_combo.setEditable(False)
+        self.source_dataset_combo.addItems(self.available_datasets)
+        if self.source_dataset_name in self.available_datasets:
+            self.source_dataset_combo.setCurrentText(self.source_dataset_name)
+        info_layout.addWidget(self.source_dataset_combo)
+
+        self.source_label = QLabel()
         self.source_label.setStyleSheet(f"""
             QLabel {{
                 background-color: {Colors.ACCENT_SOFT};
@@ -744,41 +902,30 @@ class AppendDatasetsDialog(BaseModal):
         """)
         info_layout.addWidget(self.source_label)
 
-        source_cols = self.original_df.columns
-        self.source_columns_label = QLabel(f"Columns ({len(source_cols)}): {', '.join(source_cols[:10])}" +
-                                           ("..." if len(source_cols) > 10 else ""))
+        self.source_columns_label = QLabel()
         self.source_columns_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
         self.source_columns_label.setWordWrap(True)
         info_layout.addWidget(self.source_columns_label)
 
         layout.addWidget(info_group)
 
-        # Datasets to append
+        # Datasets to append - NoSelection mode so only the checkbox
+        # itself indicates checked state; MultiSelection painted a
+        # selection-highlight background on top of the checkboxes, which
+        # looked like every item was already checked.
         append_group = QGroupBox("Datasets to Append (Second and onwards)")
         append_layout = QVBoxLayout(append_group)
 
-        # Filter out the source dataset from available datasets
-        other_datasets = [ds for ds in self.available_datasets if ds != self.source_dataset_name]
+        self.datasets_list = QListWidget()
+        self.datasets_list.setSelectionMode(QAbstractItemView.NoSelection)
+        self.datasets_list.setMinimumHeight(120)
+        self.datasets_list.itemChanged.connect(self._update_schema_info)
+        append_layout.addWidget(self.datasets_list)
 
-        if other_datasets:
-            self.datasets_list = QListWidget()
-            self.datasets_list.setSelectionMode(QAbstractItemView.MultiSelection)
-            self.datasets_list.setMinimumHeight(120)
-            self.datasets_list.itemChanged.connect(self._update_schema_info)
-            for ds_name in other_datasets:
-                item = QListWidgetItem(ds_name)
-                item.setCheckState(Qt.Unchecked)
-                self.datasets_list.addItem(item)
-            append_layout.addWidget(self.datasets_list)
-
-            self.no_datasets_label = QLabel()
-        else:
-            self.datasets_list = QListWidget()
-            self.datasets_list.setMinimumHeight(60)
-            append_layout.addWidget(self.datasets_list)
-            self.no_datasets_label = QLabel("No other datasets available in the project")
-            self.no_datasets_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
-            append_layout.addWidget(self.no_datasets_label)
+        self.no_datasets_label = QLabel("No other datasets available in the project")
+        self.no_datasets_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
+        self.no_datasets_label.setVisible(False)
+        append_layout.addWidget(self.no_datasets_label)
 
         layout.addWidget(append_group)
 
@@ -866,6 +1013,40 @@ class AppendDatasetsDialog(BaseModal):
 
         main_layout.addLayout(btn_layout)
 
+        # Populate source-dependent controls now that everything exists,
+        # and wire up live updates when the source selection changes.
+        self._on_source_dataset_changed(self.source_dataset_combo.currentText())
+        self.source_dataset_combo.currentTextChanged.connect(self._on_source_dataset_changed)
+
+    def _on_source_dataset_changed(self, source_name: str):
+        """Repopulate the source info labels and the append-candidates
+        checklist for whichever dataset is now selected as source, and
+        keep it out of the checklist's own options."""
+        columns = self.dataset_columns.get(source_name, [])
+
+        # Row count is only known for the dataset actually passed in at
+        # construction - other datasets are known by name/columns only at
+        # this dialog level.
+        if source_name == self.source_dataset_name:
+            self.source_label.setText(f"{source_name}: {len(self.original_df)} rows, {len(columns)} columns")
+        else:
+            self.source_label.setText(f"{source_name}: {len(columns)} columns")
+        self.source_columns_label.setText(
+            f"Columns ({len(columns)}): {', '.join(columns[:10])}" + ("..." if len(columns) > 10 else "")
+        )
+
+        other_datasets = [ds for ds in self.available_datasets if ds != source_name]
+        self.datasets_list.blockSignals(True)
+        self.datasets_list.clear()
+        for ds_name in other_datasets:
+            item = QListWidgetItem(ds_name)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Unchecked)
+            self.datasets_list.addItem(item)
+        self.datasets_list.blockSignals(False)
+        self.no_datasets_label.setVisible(not other_datasets)
+        self._update_schema_info()
+
     def _get_selected_datasets(self) -> List[str]:
         """Get list of selected dataset names"""
         selected = []
@@ -878,6 +1059,8 @@ class AppendDatasetsDialog(BaseModal):
     def _update_schema_info(self):
         """Update schema comparison information"""
         selected_datasets = self._get_selected_datasets()
+        source_name = self.source_dataset_combo.currentText()
+        source_columns = self.dataset_columns.get(source_name, [])
 
         if not selected_datasets:
             self.schema_info_label.setText("Select datasets to see schema comparison")
@@ -887,19 +1070,16 @@ class AppendDatasetsDialog(BaseModal):
             return
 
         # Collect all columns
-        all_columns = set(self.original_df.columns)
+        all_columns = set(source_columns)
         for ds_name in selected_datasets:
             if ds_name in self.dataset_columns:
                 all_columns.update(self.dataset_columns[ds_name])
 
         # Find common columns
-        common_cols = set(self.original_df.columns)
+        common_cols = set(source_columns)
         for ds_name in selected_datasets:
             if ds_name in self.dataset_columns:
                 common_cols = common_cols & set(self.dataset_columns[ds_name])
-
-        # Find unique columns per dataset
-        source_cols = set(self.original_df.columns)
 
         if selected_datasets:
             if common_cols:
@@ -928,15 +1108,15 @@ class AppendDatasetsDialog(BaseModal):
             self.common_cols_label.setText("")
             self.unique_cols_label.setText("")
 
-        # Update result preview
-        total_rows = len(self.original_df)
-        selected_rows_info = []
-        for ds_name in selected_datasets:
-            if ds_name in self.dataset_columns:
-                # We don't have row counts, just show dataset names
-                selected_rows_info.append(ds_name)
-
-        result_text = f"Source: {self.source_dataset_name} ({len(self.original_df):,} rows)\n"
+        # Update result preview - row count is only known for the dataset
+        # actually passed in at construction; other datasets are known by
+        # name/columns only at this dialog level.
+        if source_name == self.source_dataset_name:
+            total_rows = len(self.original_df)
+            result_text = f"Source: {source_name} ({total_rows:,} rows)\n"
+        else:
+            total_rows = 0
+            result_text = f"Source: {source_name}\n"
         result_text += f"Appending {len(selected_datasets)} dataset(s): {', '.join(selected_datasets[:3])}"
         if len(selected_datasets) > 3:
             result_text += f" + {len(selected_datasets) - 3} more"
@@ -952,14 +1132,17 @@ class AppendDatasetsDialog(BaseModal):
             QMessageBox.warning(self, "Warning", "Please select at least one dataset to append.")
             return
 
+        source_name = self.source_dataset_combo.currentText()
+        source_columns = self.dataset_columns.get(source_name, [])
+
         # Check for schema differences if warning is enabled
         if self.warn_check.isChecked():
-            all_columns = set(self.original_df.columns)
+            all_columns = set(source_columns)
             for ds_name in selected_datasets:
                 if ds_name in self.dataset_columns:
                     all_columns.update(self.dataset_columns[ds_name])
 
-            common_cols = set(self.original_df.columns)
+            common_cols = set(source_columns)
             for ds_name in selected_datasets:
                 if ds_name in self.dataset_columns:
                     common_cols = common_cols & set(self.dataset_columns[ds_name])
@@ -980,6 +1163,7 @@ class AppendDatasetsDialog(BaseModal):
                     return
 
         self.current_params = {
+            "source_dataset": source_name,
             "source_datasets": selected_datasets,
             "warn_if_schemas_differ": self.warn_check.isChecked()
         }

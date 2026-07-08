@@ -16,24 +16,56 @@ from gui.components.common_modals import create_primary_button, create_secondary
 class ComplianceReportDialog(QDialog):
     """Dialog for AI-powered compliance checking and report generation"""
 
-    # Thread-safe signals for UI updates
-    _reportReady = Signal(str)  # Report generated
-    _statusReady = Signal(str)  # Status message
+    # Thread-safe signals for UI updates. Each tab (Policy Check, Rule
+    # Detection, Generate Report) gets its own report/status signal so
+    # results always land on the tab that produced them - they used to
+    # all funnel into _reportReady/_statusReady, which only ever updated
+    # widgets on the Generate Report tab, so running Policy Check or Rule
+    # Detection appeared to silently do nothing unless you happened to
+    # switch tabs.
+    _reportReady = Signal(str)  # Generate Report tab's narrative ready
+    _statusReady = Signal(str)  # Policy Check tab's status message
+    _policyReportReady = Signal(str)  # Policy Check tab's detailed results
+    _detectionStatusReady = Signal(str)  # Rule Detection tab's status message
+    _detectionReportReady = Signal(str)  # Rule Detection tab's detailed results
+    _reportStatusReady = Signal(str)  # Generate Report tab's status message - was
+    # wrongly sharing _statusReady/policy_status (a different tab) before
     _checkComplete = Signal()  # Check complete
     _checkFailed = Signal(str)  # Check failed with error
+    # Cross-thread delivery of the actual ComplianceFinding objects (not
+    # just their text rendering), so per-finding action cards can be
+    # built with real matched_df/mask data attached.
+    _policyFindingsReady = Signal(object)  # List[Tuple[dataset_name, ComplianceFinding]]
+    _detectionFindingsReady = Signal(object)  # List[Tuple[dataset_name, ComplianceFinding]]
 
-    def __init__(self, dataframes: dict, compliance_generator, parent=None, selected_key: str = None):
+    # Emitted when the user clicks a per-finding action button - handled
+    # by whoever constructed this dialog (main_window.py), which has
+    # access to the actual project/dataset objects this dialog doesn't.
+    createDatasetFromFindingRequested = Signal(str, object)  # dataset_name, ComplianceFinding
+    addColumnFromFindingRequested = Signal(str, object)  # dataset_name, ComplianceFinding
+
+    def __init__(self, dataframes: dict, compliance_generator, parent=None, selected_keys: list = None):
         """Initialize dialog with multiple datasets
 
         Args:
             dataframes: Dictionary of {dataset_name: polars DataFrame}
             compliance_generator: AI compliance generator instance
             parent: Parent widget
-            selected_key: Key of initially selected dataset
+            selected_keys: Keys initially checked in the dataset selector -
+                Policy Check/Rule Detection run against all of them and
+                combine results. Defaults to just the first dataset.
         """
         super().__init__(parent)
         self.dataframes = dataframes
-        self.df = dataframes.get(selected_key, list(dataframes.values())[0]) if selected_key else list(dataframes.values())[0]
+        checked = [k for k in (selected_keys or []) if k in dataframes]
+        if not checked:
+            checked = [next(iter(dataframes))]
+        self.selected_dataframes = {k: dataframes[k] for k in checked}
+        # Generate Report (the narrative memo tab) still works against a
+        # single dataframe - out of scope for multi-dataset reasoning,
+        # unlike Policy Check/Rule Detection above. Uses the first checked
+        # dataset.
+        self.df = self.selected_dataframes[checked[0]]
         self.generator = compliance_generator
         self.report = None
         # Thread pool for async operations (no parent to avoid thread issues)
@@ -44,6 +76,12 @@ class ComplianceReportDialog(QDialog):
         # Connect thread-safe signals for UI updates
         self._reportReady.connect(self._on_report_ready, Qt.QueuedConnection)
         self._statusReady.connect(self._on_status_ready, Qt.QueuedConnection)
+        self._policyReportReady.connect(self._on_policy_report_ready, Qt.QueuedConnection)
+        self._detectionStatusReady.connect(self._on_detection_status_ready, Qt.QueuedConnection)
+        self._detectionReportReady.connect(self._on_detection_report_ready, Qt.QueuedConnection)
+        self._reportStatusReady.connect(self._on_report_status_ready, Qt.QueuedConnection)
+        self._policyFindingsReady.connect(self._on_policy_findings_ready, Qt.QueuedConnection)
+        self._detectionFindingsReady.connect(self._on_detection_findings_ready, Qt.QueuedConnection)
         self._checkComplete.connect(self._on_check_complete, Qt.QueuedConnection)
         self._checkFailed.connect(self._on_check_failed, Qt.QueuedConnection)
 
@@ -59,8 +97,132 @@ class ComplianceReportDialog(QDialog):
         self.report = report
 
     def _on_status_ready(self, status: str):
-        """Handle status ready signal"""
+        """Handle Policy Check tab's status message"""
         self.policy_status.setText(status)
+
+    def _on_policy_report_ready(self, report: str):
+        """Handle Policy Check tab's detailed results - separate from
+        Generate Report's report_output, which lives on a different tab."""
+        self.policy_results_output.setText(report)
+
+    def _on_detection_status_ready(self, status: str):
+        """Handle Rule Detection tab's status message"""
+        self.detection_status.setVisible(True)
+        self.detection_status.setText(status)
+
+    def _on_detection_report_ready(self, report: str):
+        """Handle Rule Detection tab's detailed results"""
+        self.detection_results_output.setText(report)
+
+    def _on_report_status_ready(self, status: str):
+        """Handle Generate Report tab's status message"""
+        self.report_status.setVisible(True)
+        self.report_status.setText(status)
+
+    def _build_findings_container(self):
+        """A vertically-stacked container for per-finding action cards -
+        shared by the Policy Check and Rule Detection tabs so both get the
+        same "create dataset" / "add column" affordance. Not its own
+        QScrollArea - each whole tab is one now (see create_policy_tab),
+        so a nested scroll area here just meant two competing scrollbars
+        without actually fixing the space-pressure squishing this was
+        meant to avoid."""
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        layout.addStretch()
+        return container, layout
+
+    def _populate_findings(self, layout, findings_with_ds):
+        """Clear and rebuild a findings-scroll-area's cards."""
+        while layout.count() > 1:  # keep the trailing stretch
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        for dataset_name, finding in findings_with_ds:
+            layout.insertWidget(layout.count() - 1, self._build_finding_card(dataset_name, finding))
+
+    def _build_finding_card(self, dataset_name: str, finding) -> QWidget:
+        """One finding's summary plus its own "create dataset from
+        flagged rows" / "add flag column" actions - scoped to whichever
+        dataset it came from, since a check can span more than one."""
+        card = QFrame()
+        card.setObjectName("ComplianceFindingCard")
+        card.setStyleSheet(f"""
+            QFrame#ComplianceFindingCard {{
+                background-color: {Colors.BG_SECONDARY};
+                border: 1px solid {Colors.BORDER};
+                border-radius: 6px;
+            }}
+        """)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
+
+        header = QLabel(f"<b>{finding.title}</b> ({finding.severity.upper()}) — {dataset_name}")
+        header.setStyleSheet(f"QLabel {{ color: {Colors.TEXT_PRIMARY}; font-size: 13px; }}")
+        layout.addWidget(header)
+
+        detail_text = finding.finding
+        if finding.computable:
+            detail_text += f"\nAffected: {finding.affected_count:,} of {finding.total_count:,} rows ({finding.affected_pct}%)"
+            if finding.affected_amount:
+                detail_text += f" | Dollar impact: ${finding.affected_amount:,.2f}"
+        detail = QLabel(detail_text)
+        detail.setWordWrap(True)
+        detail.setStyleSheet(f"QLabel {{ color: {Colors.TEXT_SECONDARY}; font-size: 12px; }}")
+        layout.addWidget(detail)
+
+        if finding.computable and finding.affected_count > 0:
+            actions = QHBoxLayout()
+            actions.setSpacing(8)
+
+            if finding.matched_df is not None:
+                create_btn = create_secondary_button("Create Dataset from Flagged Rows")
+                create_btn.setCursor(Qt.PointingHandCursor)
+                create_btn.clicked.connect(
+                    lambda checked=False, n=dataset_name, f=finding: self.createDatasetFromFindingRequested.emit(n, f)
+                )
+                actions.addWidget(create_btn)
+
+            if finding.mask is not None:
+                add_col_btn = create_secondary_button(f"Add '{finding.title}' Column")
+                add_col_btn.setCursor(Qt.PointingHandCursor)
+                add_col_btn.clicked.connect(
+                    lambda checked=False, n=dataset_name, f=finding: self.addColumnFromFindingRequested.emit(n, f)
+                )
+                actions.addWidget(add_col_btn)
+
+            actions.addStretch()
+            layout.addLayout(actions)
+
+        return card
+
+    def _on_policy_findings_ready(self, findings_with_ds):
+        self._policy_findings = findings_with_ds
+        self._populate_findings(self.policy_findings_layout, findings_with_ds)
+
+    def _on_detection_findings_ready(self, findings_with_ds):
+        self._detection_findings = findings_with_ds
+        self._populate_findings(self.detection_findings_layout, findings_with_ds)
+
+    def _add_results_to_report(self, results_text: str, source_label: str):
+        """Append a Policy Check/Rule Detection run's results into the
+        Generate Report tab's findings box, labeled by source, so a report
+        can be drafted from real check output instead of retyping or
+        copy-pasting it by hand. Appends rather than overwrites, so both
+        tabs' results can be added without one clobbering the other."""
+        results_text = results_text.strip()
+        if not results_text:
+            QMessageBox.warning(self, "No Results", f"Run {source_label} first - there's nothing to add yet.")
+            return
+
+        existing = self.findings_edit.toPlainText().strip()
+        block = f"--- {source_label} ---\n{results_text}"
+        self.findings_edit.setPlainText(f"{existing}\n\n{block}" if existing else block)
+
+        self.tabs.setCurrentWidget(self.report_tab)
 
     def _on_check_complete(self):
         """Handle check complete signal"""
@@ -70,21 +232,44 @@ class ComplianceReportDialog(QDialog):
         self.report_progress.setVisible(False)
 
     def _on_check_failed(self, error: str):
-        """Handle check failed signal"""
+        """Handle check failed signal - shared by Policy Check, Rule
+        Detection, and Generate Report, so resets all three tabs' busy
+        state regardless of which one raised it."""
         self.policy_status.setText(f"Error: {error}")
         self.run_check_btn.setEnabled(True)
         self.policy_progress.setVisible(False)
         self.generate_report_btn.setEnabled(True)
         self.report_progress.setVisible(False)
+        self.run_detection_btn.setEnabled(True)
+        self.detection_progress.setVisible(False)
+        self.detection_status.setVisible(True)
+        self.detection_status.setText(f"Error: {error}")
+        self.report_status.setVisible(True)
+        self.report_status.setText(f"Error: {error}")
         QMessageBox.critical(self, "Check Error", error)
 
-    def _on_dataset_changed(self, index: int):
-        """Handle dataset selection change"""
-        key = self.dataset_combo.itemData(index)
-        if key and key in self.dataframes:
-            self.df = self.dataframes[key]
-            self.report_output.clear()
-            self.report = None
+    def _on_dataset_selection_changed(self, item):
+        """Keep self.selected_dataframes in sync with the checklist -
+        Policy Check/Rule Detection read from it directly."""
+        checked = [
+            self.dataset_list.item(i).text()
+            for i in range(self.dataset_list.count())
+            if self.dataset_list.item(i).checkState() == Qt.Checked
+        ]
+        if not checked:
+            # Never allow zero datasets selected - nothing to run against.
+            item.setCheckState(Qt.Checked)
+            return
+        self.selected_dataframes = {k: self.dataframes[k] for k in checked}
+        self.df = self.selected_dataframes[checked[0]]
+        # Stale results from the old selection would otherwise linger on
+        # all three tabs, looking like they still reflect the current one.
+        self.report_output.clear()
+        self.policy_results_output.clear()
+        self.detection_results_output.clear()
+        self._populate_findings(self.policy_findings_layout, [])
+        self._populate_findings(self.detection_findings_layout, [])
+        self.report = None
 
     def setup_ui(self):
         self.setWindowTitle("AI Compliance Report Generator")
@@ -113,24 +298,33 @@ class ComplianceReportDialog(QDialog):
         title_layout.addStretch()
         layout.addLayout(title_layout)
 
-        # Dataset selector (if multiple datasets available) - QGroupBox/
-        # QComboBox chrome inherited from the app-wide rules in theme.py.
+        # Dataset selector (if multiple datasets available) - checklist
+        # rather than a single-select combo, so Policy Check/Rule
+        # Detection can run across more than one dataset and combine the
+        # results. QGroupBox/QListWidget chrome inherited from theme.py.
         if len(self.dataframes) > 1:
-            dataset_group = QGroupBox("Select Dataset")
-            dataset_layout = QHBoxLayout(dataset_group)
+            dataset_group = QGroupBox("Datasets to Check")
+            dataset_layout = QVBoxLayout(dataset_group)
             dataset_layout.setContentsMargins(16, 20, 16, 16)
 
-            dataset_layout.addWidget(QLabel("Dataset:"))
-            self.dataset_combo = QComboBox()
-            self.dataset_combo.setStyleSheet("QComboBox { min-width: 200px; }")
+            hint = QLabel("Policy Check and Rule Detection run against every checked dataset below and combine the results.")
+            hint.setWordWrap(True)
+            hint.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
+            dataset_layout.addWidget(hint)
+
+            self.dataset_list = QListWidget()
+            self.dataset_list.setMaximumHeight(100)
+            self.dataset_list.setSelectionMode(QListWidget.NoSelection)
             for key in self.dataframes.keys():
-                self.dataset_combo.addItem(key, key)
-            self.dataset_combo.currentIndexChanged.connect(self._on_dataset_changed)
-            dataset_layout.addWidget(self.dataset_combo)
-            dataset_layout.addStretch()
+                item = QListWidgetItem(key)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Checked if key in self.selected_dataframes else Qt.Unchecked)
+                self.dataset_list.addItem(item)
+            self.dataset_list.itemChanged.connect(self._on_dataset_selection_changed)
+            dataset_layout.addWidget(self.dataset_list)
             layout.addWidget(dataset_group)
         else:
-            self.dataset_combo = None
+            self.dataset_list = None
 
         # Tabs for different compliance modes - pane/border chrome
         # inherited from the app-wide QTabWidget rule; only sizing here.
@@ -162,7 +356,17 @@ class ComplianceReportDialog(QDialog):
         layout.addLayout(button_layout)
 
     def create_policy_tab(self) -> QWidget:
-        """Create the policy compliance check tab"""
+        """Create the policy compliance check tab. Wrapped in its own
+        scroll area - this tab's total content (policy input, templates,
+        results, and per-finding action cards) can be taller than the
+        dialog when the multi-dataset checklist is also showing above the
+        tabs. Without a scroll area, that space pressure didn't scroll
+        anything - it squished the GroupBoxes down to just their title
+        bar, making the policy input and template buttons invisible."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -252,11 +456,39 @@ class ComplianceReportDialog(QDialog):
         self.policy_status.setVisible(False)
         layout.addWidget(self.policy_status)
 
-        layout.addStretch()
-        return tab
+        # Results - separate from Generate Report's report_output (a
+        # different tab entirely); this is where Run Compliance Check's
+        # own detailed findings actually show up.
+        self.policy_results_output = QTextEdit()
+        self.policy_results_output.setReadOnly(True)
+        self.policy_results_output.setPlaceholderText("Results will appear here after running the compliance check.")
+        self.policy_results_output.setStyleSheet("QTextEdit { min-height: 120px; }")
+        layout.addWidget(self.policy_results_output)
+
+        add_to_report_btn = create_secondary_button("Add to Compliance Report")
+        add_to_report_btn.setCursor(Qt.PointingHandCursor)
+        add_to_report_btn.clicked.connect(
+            lambda: self._add_results_to_report(self.policy_results_output.toPlainText(), "Policy Check")
+        )
+        layout.addWidget(add_to_report_btn, alignment=Qt.AlignLeft)
+
+        # Per-finding actions - each finding that actually matched rows
+        # gets its own "create a dataset from just these rows" / "add a
+        # flag column back onto the dataset" buttons, scoped to whichever
+        # dataset it came from.
+        self.policy_findings_container, self.policy_findings_layout = self._build_findings_container()
+        layout.addWidget(self.policy_findings_container)
+
+        scroll.setWidget(tab)
+        return scroll
 
     def create_rules_tab(self) -> QWidget:
-        """Create the rule-based detection tab"""
+        """Create the rule-based detection tab. Wrapped in its own scroll
+        area - see create_policy_tab's docstring for why."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -282,13 +514,14 @@ class ComplianceReportDialog(QDialog):
 
         layout.addWidget(rules_group)
 
-        # Sample rules
+        # Sample rules - NOT italic: an italicized "|" reads too much like
+        # a "/" and can mislead users about the required pipe-delimited
+        # syntax.
         sample_rules = QLabel("Sample: Large Transaction | amount > 10000 | high")
         sample_rules.setStyleSheet(f"""
             QLabel {{
                 font-size: 11px;
                 color: {Colors.TEXT_SECONDARY};
-                font-style: italic;
             }}
         """)
         layout.addWidget(sample_rules)
@@ -324,8 +557,43 @@ class ComplianceReportDialog(QDialog):
         self.detection_progress.setVisible(False)
         layout.addWidget(self.detection_progress)
 
-        layout.addStretch()
-        return tab
+        # Status label - matches the Policy Check tab's pattern (this tab
+        # previously had no status feedback at all).
+        self.detection_status = QLabel()
+        self.detection_status.setStyleSheet(f"""
+            QLabel {{
+                font-size: 12px;
+                color: {Colors.TEXT_SECONDARY};
+                padding: 8px;
+                border-radius: 4px;
+                background-color: {Colors.BG_SECONDARY};
+            }}
+        """)
+        self.detection_status.setVisible(False)
+        layout.addWidget(self.detection_status)
+
+        # Results - previously nothing on this tab showed the actual
+        # detected violations; they silently went to the Generate Report
+        # tab's output box instead.
+        self.detection_results_output = QTextEdit()
+        self.detection_results_output.setReadOnly(True)
+        self.detection_results_output.setPlaceholderText("Results will appear here after running detection.")
+        self.detection_results_output.setStyleSheet("QTextEdit { min-height: 120px; }")
+        layout.addWidget(self.detection_results_output)
+
+        add_to_report_btn = create_secondary_button("Add to Compliance Report")
+        add_to_report_btn.setCursor(Qt.PointingHandCursor)
+        add_to_report_btn.clicked.connect(
+            lambda: self._add_results_to_report(self.detection_results_output.toPlainText(), "Rule Detection")
+        )
+        layout.addWidget(add_to_report_btn, alignment=Qt.AlignLeft)
+
+        # Per-finding actions - same pattern as the Policy Check tab.
+        self.detection_findings_container, self.detection_findings_layout = self._build_findings_container()
+        layout.addWidget(self.detection_findings_container)
+
+        scroll.setWidget(tab)
+        return scroll
 
     def create_report_tab(self) -> QWidget:
         """Create the report generation tab"""
@@ -409,6 +677,21 @@ class ComplianceReportDialog(QDialog):
         """)
         self.report_progress.setVisible(False)
         layout.addWidget(self.report_progress)
+
+        # Status label - this tab's status message used to be routed to
+        # policy_status on the Policy Check tab, so it was invisible here.
+        self.report_status = QLabel()
+        self.report_status.setStyleSheet(f"""
+            QLabel {{
+                font-size: 12px;
+                color: {Colors.TEXT_SECONDARY};
+                padding: 8px;
+                border-radius: 4px;
+                background-color: {Colors.BG_SECONDARY};
+            }}
+        """)
+        self.report_status.setVisible(False)
+        layout.addWidget(self.report_status)
 
         # AI-generated content disclaimer — persistent and visible above
         # the output, not just a one-time warning dialog, since the risk
@@ -509,7 +792,9 @@ Payment Policy Requirements:
 """.strip()
 
     def run_policy_check(self):
-        """Run compliance check against policy"""
+        """Run compliance check against policy, across every currently
+        checked dataset - combined into one report, with a per-dataset
+        breakdown when more than one is checked."""
         policy = self.policy_edit.toPlainText().strip()
         if not policy:
             QMessageBox.warning(self, "No Policy", "Please enter a compliance policy to check against.")
@@ -531,23 +816,38 @@ Payment Policy Requirements:
         self.policy_status.setVisible(True)
         self.policy_status.setText("Analyzing data against policy...")
 
+        targets = dict(self.selected_dataframes)
+        multi = len(targets) > 1
+
         async def do_check():
             try:
-                report = await self.generator.generate_report(
-                    policy_text=policy,
-                    df=self.df,
-                )
+                sections = []
+                scores = []
+                totals = {"high": 0, "medium": 0, "low": 0}
+                errors = []
+                all_findings = []  # (dataset_name, ComplianceFinding) - for the per-finding action cards
 
-                self.report = report
+                for name, df in targets.items():
+                    try:
+                        report = await self.generator.generate_report(policy_text=policy, df=df)
+                    except Exception as e:
+                        errors.append(f"{name}: {e}")
+                        continue
 
-                # Show results
-                results = f"""
-COMPLIANCE ASSESSMENT RESULTS
-(Every count and dollar figure below was computed over all {len(self.df):,} rows of the
+                    self.report = report
+                    scores.append(report.overall_compliance_score)
+                    totals["high"] += report.risk_summary.get('high_risk_count', 0)
+                    totals["medium"] += report.risk_summary.get('medium_risk_count', 0)
+                    totals["low"] += report.risk_summary.get('low_risk_count', 0)
+                    all_findings.extend((name, f) for f in report.findings)
+
+                    section = f"""
+{f"=== {name} ===" if multi else ""}
+(Every count and dollar figure below was computed over all {len(df):,} rows of the
 complete dataset, not a sample — see AI Activity Log for the full prompts/responses behind
 the drafted text.)
 
-Overall Compliance Score: {report.overall_compliance_score:.1f}%
+Compliance Score: {report.overall_compliance_score:.1f}%
 
 Executive Summary:
 {report.executive_summary}
@@ -559,16 +859,16 @@ Risk Summary:
 
 Key Findings:
 """
-                for i, finding in enumerate(report.findings[:10], 1):
-                    if not finding.computable:
-                        results += f"""
+                    for i, finding in enumerate(report.findings[:10], 1):
+                        if not finding.computable:
+                            section += f"""
 {i}. {finding.title} — NOT COMPUTABLE
    Requirement: {finding.policy_requirement}
    Reason: {finding.finding}
    Recommendation: {finding.recommendation}
 """
-                        continue
-                    results += f"""
+                            continue
+                        section += f"""
 {i}. {finding.title} (Severity: {finding.severity.upper()})
    Requirement: {finding.policy_requirement}
    Finding: {finding.finding}
@@ -577,9 +877,30 @@ Key Findings:
    Evidence (actual matching rows): {', '.join(finding.evidence[:5]) or 'none'}
    Recommendation: {finding.recommendation}
 """
+                    sections.append(section)
+
+                if not sections:
+                    self._checkFailed.emit(
+                        "Compliance check failed for every selected dataset:\n" + "\n".join(errors)
+                    )
+                    return
+
+                results = "COMPLIANCE ASSESSMENT RESULTS\n"
+                if multi:
+                    avg_score = sum(scores) / len(scores)
+                    results += (
+                        f"\nChecked {len(sections)} of {len(targets)} selected dataset(s). "
+                        f"Average Compliance Score: {avg_score:.1f}%\n"
+                        f"Combined Risk Totals — High: {totals['high']}, Medium: {totals['medium']}, "
+                        f"Low: {totals['low']}\n"
+                    )
+                    if errors:
+                        results += "Skipped due to error: " + "; ".join(errors) + "\n"
+                results += "\n" + "\n".join(sections)
 
                 # Emit signals for thread-safe UI updates
-                self._reportReady.emit(results)
+                self._policyReportReady.emit(results)
+                self._policyFindingsReady.emit(all_findings)
                 self._statusReady.emit("Compliance check complete!")
 
             except Exception as e:
@@ -599,7 +920,8 @@ Key Findings:
         self.thread_pool.start(run_async)
 
     def run_rule_detection(self):
-        """Run rule-based violation detection"""
+        """Run rule-based violation detection across every currently
+        checked dataset, combined into one report."""
         rules_text = self.rules_edit.toPlainText().strip()
         if not rules_text:
             QMessageBox.warning(self, "No Rules", "Please define detection rules.")
@@ -635,28 +957,39 @@ Key Findings:
         self.detection_progress.setVisible(True)
         self.detection_progress.setRange(0, 0)
 
+        targets = dict(self.selected_dataframes)
+        multi = len(targets) > 1
+
         async def do_detect():
             try:
-                violations = await self.generator.detect_violations(
-                    df=self.df,
-                    policy_rules=policy_rules
-                )
+                sections = []
+                errors = []
+                all_findings = []  # (dataset_name, ComplianceFinding) - for the per-finding action cards
 
-                results = f"VIOLATION DETECTION RESULTS\n\n"
-                results += (
-                    f"Rules Analyzed: {len(policy_rules)}  |  "
-                    f"Rows in dataset: {len(self.df):,} (every count below is computed over all of them, not a sample)\n\n"
-                )
+                for name, df in targets.items():
+                    try:
+                        violations = await self.generator.detect_violations(df=df, policy_rules=policy_rules)
+                    except Exception as e:
+                        errors.append(f"{name}: {e}")
+                        continue
 
-                for i, v in enumerate(violations, 1):
-                    if not v.computable:
-                        results += f"""
+                    all_findings.extend((name, v) for v in violations)
+
+                    section = f"{f'=== {name} ===' if multi else ''}\n"
+                    section += (
+                        f"Rules Analyzed: {len(policy_rules)}  |  "
+                        f"Rows in dataset: {len(df):,} (every count below is computed over all of them, not a sample)\n\n"
+                    )
+
+                    for i, v in enumerate(violations, 1):
+                        if not v.computable:
+                            section += f"""
 {i}. {v.title} — NOT COMPUTABLE
    Reason: {v.finding}
    Recommendation: {v.recommendation}
 """
-                        continue
-                    results += f"""
+                            continue
+                        section += f"""
 {i}. {v.title} (Severity: {v.severity.upper()})
    Finding: {v.finding}
    Evidence (actual matching rows): {', '.join(v.evidence[:5]) or 'none'}
@@ -664,10 +997,26 @@ Key Findings:
    Dollar Impact: ${v.affected_amount:,.2f}
    Recommendation: {v.recommendation}
 """
+                    sections.append(section)
+
+                if not sections:
+                    self._checkFailed.emit(
+                        "Rule detection failed for every selected dataset:\n" + "\n".join(errors)
+                    )
+                    return
+
+                results = "VIOLATION DETECTION RESULTS\n\n"
+                if multi:
+                    results += f"Checked {len(sections)} of {len(targets)} selected dataset(s).\n"
+                    if errors:
+                        results += "Skipped due to error: " + "; ".join(errors) + "\n"
+                    results += "\n"
+                results += "\n".join(sections)
 
                 # Emit signals for thread-safe UI updates
-                self._reportReady.emit(results)
-                self._statusReady.emit("Detection complete!")
+                self._detectionReportReady.emit(results)
+                self._detectionFindingsReady.emit(all_findings)
+                self._detectionStatusReady.emit("Detection complete!")
 
             except Exception as e:
                 self._checkFailed.emit(str(e))
@@ -740,7 +1089,7 @@ Key Findings:
 
                 # Emit signals for thread-safe UI updates
                 self._reportReady.emit(report_text)
-                self._statusReady.emit("Report generated successfully!")
+                self._reportStatusReady.emit("Report generated successfully!")
 
             except Exception as e:
                 self._checkFailed.emit(str(e))

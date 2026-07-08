@@ -2352,7 +2352,7 @@ class DataProcessor:
         """Flags each row whose value breaks strict ascending (or
         descending) order relative to the row directly before it, in the
         table's ACTUAL current row order - not sorted first, unlike gap
-        analysis. Mirrors ACL's SEQUENCE command: a check or invoice
+        analysis. A check or invoice
         number issued out of chronological order is a classic fraud/error
         indicator that a gap check alone won't catch (nothing is missing,
         it's just out of order)."""
@@ -2433,8 +2433,8 @@ class DataProcessor:
     # ============================================================================
 
     def field_statistics(self, df: pl.DataFrame, columns: List[str] = None) -> pl.DataFrame:
-        """Comprehensive per-field statistics report, one row per column -
-        mirrors CaseWare IDEA's Field Statistics. Numeric columns get the
+        """Comprehensive per-field statistics report, one row per column.
+        Numeric columns get the
         full descriptive set (min/max/range/sum/mean/median/mode/std/
         variance/skewness/kurtosis/percentiles/coefficient of variation);
         every column (numeric or not) gets count/missing/unique/most-and-
@@ -2965,8 +2965,7 @@ class DataProcessor:
 
     def join_datasets(self, left_df: pl.DataFrame, right_df: pl.DataFrame, left_key: str, right_key: str, join_type: str = "left", suffix: str = "_right") -> pl.DataFrame:
         """Join two datasets by a key column. "semi"/"anti" are polars'
-        native match/non-match filters - the same result as ActiveData for
-        Excel's "Match Sheets" (rows in the left dataset that do, or don't,
+        native match/non-match filters (rows in the left dataset that do, or don't,
         have a matching key in the right one), just built on polars' own
         join strategies rather than a bespoke comparison routine."""
         if left_df is None:
@@ -3062,8 +3061,7 @@ class DataProcessor:
 
     def compare_datasets(self, left_df: pl.DataFrame, right_df: pl.DataFrame, key_columns: List[str],
                          compare_columns: List[str] = None, suffix: str = "_right") -> pl.DataFrame:
-        """Cell-by-cell comparison of two datasets by key - mirrors
-        ActiveData for Excel's Compare Sheets. Classifies every row by
+        """Cell-by-cell comparison of two datasets by key. Classifies every row by
         `_diff_status`: "only_in_left", "only_in_right", "matched_same", or
         "matched_different" (with `_diff_columns` listing which compared
         columns actually differ). Built on polars' own anti/inner joins
@@ -3116,8 +3114,7 @@ class DataProcessor:
     def fuzzy_match_datasets(self, left_df: pl.DataFrame, right_df: pl.DataFrame, left_column: str,
                              right_column: str, threshold: float = 0.8, suffix: str = "_right",
                              max_matches_per_row: int = 1) -> pl.DataFrame:
-        """Approximate/fuzzy text matching between two datasets - mirrors
-        ActiveData for Excel's Approximate Column Match (the classic fraud
+        """Approximate/fuzzy text matching between two datasets (the classic fraud
         test: does this vendor's address approximately match an
         employee's, even when it's not typed identically). Uses the
         standard library's difflib ratio (0-1, comparable across different
@@ -3312,8 +3309,7 @@ class DataProcessor:
                         include_counts: bool = True) -> pl.DataFrame:
         """Classic AR/AP aging report: buckets rows by the age (in days) of
         a date column as of a reference date (default today), and
-        summarizes count/sum/mean per bucket - mirrors ActiveData for
-        Excel's Age... function. Negative ages (the date is after the
+        summarizes count/sum/mean per bucket. Negative ages (the date is after the
         as-of date, i.e. not yet due) fall into their own leading bucket."""
         import datetime as dt
 
@@ -4111,7 +4107,7 @@ def parse_clipboard_text(text: str) -> pl.DataFrame:
 def list_directory_as_dataframe(folder_path: str, recursive: bool = False, pattern: str = "*") -> pl.DataFrame:
     """List every file in a folder as a real dataset - name, path,
     extension, size, and modified/created timestamps. The classic
-    "inventory the evidence folder" audit test (ACL's DIRECTORY command):
+    "inventory the evidence folder" audit test:
     confirming exactly what files exist, when they were touched, and how
     big they are, as data you can filter/sort/join like anything else."""
     from pathlib import Path

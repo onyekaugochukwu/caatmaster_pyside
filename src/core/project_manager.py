@@ -57,8 +57,8 @@ class Dataset:
 
     def refresh_from_source(self) -> pl.DataFrame:
         """Re-read this dataset's original file and replay all transformation
-        steps against the fresh data — the same "refresh" idea as Power
-        Query: source + steps stay the recipe of record, so re-running it
+        steps against the fresh data — source + steps stay the recipe of
+        record, so re-running it
         against updated source data is always possible.
 
         Raises FileNotFoundError if the source file no longer exists, and

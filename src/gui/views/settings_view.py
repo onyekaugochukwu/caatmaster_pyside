@@ -9,13 +9,14 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 
 from gui.theme import Colors
-from gui.components.common_modals import create_primary_button
+from gui.components.common_modals import create_primary_button, create_secondary_button
 
 
 class SettingsView(QWidget):
     """Application settings view with user management"""
 
     logout_requested = Signal()  # Signal when user requests logout
+    close_requested = Signal()  # Signal when user wants to leave the Settings page
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -26,6 +27,7 @@ class SettingsView(QWidget):
     def set_auth_service(self, auth_service):
         """Set the authentication service"""
         self.auth_service = auth_service
+        self._update_auth_toggle_button()
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -53,10 +55,20 @@ class SettingsView(QWidget):
             QPushButton:hover {{
                 background: {Colors.DANGER_HOVER};
             }}
+            QPushButton:disabled {{
+                background: {Colors.BG_TERTIARY};
+                color: {Colors.TEXT_TERTIARY};
+            }}
         """)
         self.logout_btn.clicked.connect(self.logout)
         self.logout_btn.setEnabled(False)
         header_layout.addWidget(self.logout_btn)
+
+        # Close - leaves the Settings page for the Dashboard.
+        self.close_btn = create_secondary_button("Close")
+        self.close_btn.setCursor(Qt.PointingHandCursor)
+        self.close_btn.clicked.connect(self.close_requested.emit)
+        header_layout.addWidget(self.close_btn)
 
         layout.addLayout(header_layout)
 
@@ -92,15 +104,25 @@ class SettingsView(QWidget):
 
     def update_user_info(self, user):
         """Update user information display"""
+        auth_enabled = bool(self.auth_service and self.auth_service.is_auth_enabled())
         if user:
             role = "Administrator" if user.is_superuser else "User"
+            suffix = "" if auth_enabled else " — auth is off, running as your device account"
             self.user_info_label.setText(
-                f"Logged in as: <b>{user.full_name}</b> ({user.username}) - {role}"
+                f"Logged in as: <b>{user.full_name}</b> ({user.username}) - {role}{suffix}"
             )
-            self.logout_btn.setEnabled(True)
+            # Both lead to a dead end when auth is off: there's no
+            # password to log back in with afterward, and the
+            # auto-provisioned account's password is a random value
+            # nobody knows, so "current password" can never be entered.
+            self.logout_btn.setEnabled(auth_enabled)
+            if hasattr(self, 'change_password_btn'):
+                self.change_password_btn.setEnabled(auth_enabled)
         else:
             self.user_info_label.setText("Not logged in")
             self.logout_btn.setEnabled(False)
+            if hasattr(self, 'change_password_btn'):
+                self.change_password_btn.setEnabled(False)
 
     def logout(self):
         """Handle logout request"""
@@ -113,6 +135,68 @@ class SettingsView(QWidget):
 
         if reply == QMessageBox.Yes:
             self.logout_requested.emit()
+
+    def _update_auth_toggle_button(self):
+        """Keep the Activate/Deactivate Auth button's label in sync with
+        the persisted setting."""
+        if not self.auth_service or not hasattr(self, 'auth_toggle_btn'):
+            return
+        if self.auth_service.is_auth_enabled():
+            self.auth_toggle_btn.setText("Deactivate Auth")
+        else:
+            self.auth_toggle_btn.setText("Activate Auth")
+
+    def toggle_auth(self):
+        """Turn password-based login on or off. Off is the default - this
+        is a single-user desktop app with no server, so there's no way to
+        offer a password-recovery flow if it's turned on and then
+        forgotten. Each direction requires an explicit, informed
+        confirmation, and the change only takes effect on next launch."""
+        if not self.auth_service:
+            return
+
+        if self.auth_service.is_auth_enabled():
+            reply = QMessageBox.question(
+                self,
+                "Deactivate Auth",
+                "Turn off password-based login?\n\n"
+                "CaatMaster will no longer ask for a username and "
+                "password at startup - it will open straight to your "
+                "last project, signed in under your device account name."
+                "\n\nTakes effect the next time you start CaatMaster.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                self.auth_service.set_auth_enabled(False)
+                self._update_auth_toggle_button()
+                QMessageBox.information(
+                    self, "Deactivated",
+                    "Auth will be off the next time you start CaatMaster."
+                )
+        else:
+            reply = QMessageBox.warning(
+                self,
+                "Activate Auth",
+                "Turn on password-based login?\n\n"
+                "There is no password-recovery flow. If you forget a "
+                "password after this, the only way back in is to "
+                "manually delete the local user database and start "
+                "over - you would lose the accounts you've created, "
+                "though not your project files, which are stored "
+                "separately.\n\n"
+                "Takes effect the next time you start CaatMaster.\n\n"
+                "Continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                self.auth_service.set_auth_enabled(True)
+                self._update_auth_toggle_button()
+                QMessageBox.information(
+                    self, "Activated",
+                    "Auth will be required the next time you start CaatMaster."
+                )
 
     def create_user_tab(self) -> QWidget:
         """Create user account management tab"""
@@ -155,6 +239,13 @@ class SettingsView(QWidget):
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.clicked.connect(self.refresh_user_info)
         actions_layout.addWidget(self.refresh_btn)
+
+        # Label set by _update_auth_toggle_button() - off by default (no
+        # server, no password-recovery flow, so this is opt-in and
+        # explicit each time it's turned on).
+        self.auth_toggle_btn = QPushButton()
+        self.auth_toggle_btn.clicked.connect(self.toggle_auth)
+        actions_layout.addWidget(self.auth_toggle_btn)
 
         # Without this, QHBoxLayout stretched both buttons to split the
         # full row width evenly - odd for two short labels sitting in a
@@ -293,6 +384,42 @@ class SettingsView(QWidget):
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
 
+        # AI response length - applies to every AI feature (dataset
+        # analysis, compliance reports, column generation, chat), not
+        # just report generation, since it's a single setting on
+        # AIManager that every one of those goes through.
+        response_group = QGroupBox("AI Response Settings")
+        response_layout = QFormLayout()
+
+        self.max_tokens_spin = QSpinBox()
+        self.max_tokens_spin.setRange(500, 32000)
+        self.max_tokens_spin.setSingleStep(500)
+        self.max_tokens_spin.setSuffix(" tokens")
+        self.max_tokens_spin.setToolTip(
+            "Maximum length of each AI response, across dataset analysis, "
+            "compliance reports, column generation, and chat. Higher values "
+            "let the model be more thorough - e.g. a detailed multi-dataset "
+            "compliance report - but cost more per response and depend on "
+            "what your provider/model actually supports."
+        )
+        if self.main_window and hasattr(self.main_window, 'ai_manager') and self.main_window.ai_manager:
+            self.max_tokens_spin.setValue(self.main_window.ai_manager.get_max_tokens())
+        else:
+            self.max_tokens_spin.setValue(4000)
+        self.max_tokens_spin.valueChanged.connect(self._on_max_tokens_changed)
+        response_layout.addRow("Max Response Length:", self.max_tokens_spin)
+
+        response_hint = QLabel(
+            "Report sections and summaries scale their target length to this setting "
+            "automatically, rather than a fixed word count."
+        )
+        response_hint.setWordWrap(True)
+        response_hint.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
+        response_layout.addRow(response_hint)
+
+        response_group.setLayout(response_layout)
+        layout.addWidget(response_group)
+
         # ML settings
         ml_group = QGroupBox("Machine Learning")
         ml_layout = QFormLayout()
@@ -330,6 +457,13 @@ class SettingsView(QWidget):
                 "Error",
                 "Unable to open AI settings. Please restart the application."
             )
+
+    def _on_max_tokens_changed(self, value: int):
+        """Persist the new max response length immediately - every AI
+        call reads it fresh via AIManager.get_max_tokens(), so this takes
+        effect on the very next request, not just future sessions."""
+        if self.main_window and hasattr(self.main_window, 'ai_manager') and self.main_window.ai_manager:
+            self.main_window.ai_manager.set_max_tokens(value)
 
     def update_ai_info(self):
         """Update AI configuration info display"""
@@ -389,6 +523,7 @@ class SettingsView(QWidget):
 
     def refresh_user_info(self):
         """Refresh user information display"""
+        self._update_auth_toggle_button()
         if not self.auth_service:
             return
 

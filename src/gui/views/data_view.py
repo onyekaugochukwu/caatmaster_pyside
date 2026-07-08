@@ -303,8 +303,7 @@ class DataView(QWidget):
     def import_folder_listing(self):
         """Create a new dataset by listing every file in a folder - name,
         path, extension, size, modified/created dates - the classic
-        "inventory the evidence folder" audit test (ACL's DIRECTORY
-        command)."""
+        "inventory the evidence folder" audit test."""
         from PySide6.QtWidgets import QFileDialog, QMessageBox, QCheckBox
 
         if not self.current_project:

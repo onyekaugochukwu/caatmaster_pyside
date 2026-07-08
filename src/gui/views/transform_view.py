@@ -73,7 +73,7 @@ class TransformView(QWidget):
         # Formula bar — hidden until toggled from View > Formula Bar.
         # Type an expression using col('Name') to reference columns, same
         # syntax as Custom Column, just entered inline instead of in a
-        # dialog — the muscle memory Excel users already have.
+        # dialog — the same muscle memory spreadsheet users already have.
         self.formula_bar = QWidget()
         formula_layout = QHBoxLayout(self.formula_bar)
         formula_layout.setContentsMargins(0, 0, 0, 8)

@@ -11,7 +11,7 @@ import polars as pl
 
 from sqlalchemy.orm import Session
 from core.database import get_db_context
-from core.models import MLModel, MLRun
+from core.models import MLModel
 
 
 class MLModelService:

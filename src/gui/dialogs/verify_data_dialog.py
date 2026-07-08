@@ -1,6 +1,6 @@
 """Verify Data Dialog - build a checklist of data-integrity expectations
 (numeric/date/no-nulls/unique/positive/in-range) and run them against the
-active dataset, mirroring ACL's VERIFY command. Read-only: never modifies
+active dataset. Read-only: never modifies
 the dataset, just reports which expectations the real data violates."""
 import polars as pl
 from PySide6.QtWidgets import (
