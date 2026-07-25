@@ -376,7 +376,17 @@ class ColumnContextMenu(QMenu):
     def _add_financial_section(self):
         """Add Financial analysis submenu"""
         fin_menu = self._create_submenu("Financial", "money")
-        
+
+        reshape_action = QAction("Reshape Statement to Ratio Inputs", self)
+        reshape_action.setToolTip(
+            "Map financial-statement line items (Cash, Total Assets, ...) to ratio "
+            "concepts and pivot into the wide format Financial Ratios needs"
+        )
+        reshape_action.triggered.connect(
+            lambda: self._emit_transform("reshape_statement_to_concepts")
+        )
+        fin_menu.addAction(reshape_action)
+
         ratio_action = QAction("Financial Ratios", self)
         ratio_action.setToolTip("Calculate liquidity, solvency, profitability ratios")
         ratio_action.triggered.connect(

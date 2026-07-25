@@ -4,7 +4,7 @@ Financial Ratios Dialog
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QPushButton, QGroupBox, QGridLayout, QCheckBox, QScrollArea,
-    QWidget, QMessageBox, QRadioButton, QFrame
+    QWidget, QMessageBox, QRadioButton, QFrame, QDoubleSpinBox, QToolButton
 )
 from PySide6.QtCore import Qt, Signal, QThread, Slot
 from PySide6.QtGui import QMovie
@@ -17,6 +17,9 @@ import asyncio
 
 from ..components.common_modals import BaseModal, create_primary_button, create_success_button
 from ..theme import Colors
+from core.financial_concepts import (
+    FINANCIAL_CONCEPTS, CONCEPT_DETECTION_PATTERNS, suggest_concept_for_text,
+)
 
 
 @dataclass
@@ -33,32 +36,6 @@ class FinancialColumnMappings:
 
     def get_column(self, key: str) -> Optional[str]:
         return self.mappings.get(key)
-
-
-# Financial statement groupings with required concepts
-FINANCIAL_CONCEPTS = {
-    "Income Statement (P&L)": [
-        ("revenue", "Revenue / Sales"),
-        ("gross_profit", "Gross Profit"),
-        ("cogs", "Cost of Goods Sold"),
-        ("ebitda", "EBITDA"),
-        ("ebit", "EBIT"),
-        ("net_income", "Net Income"),
-    ],
-    "Balance Sheet": [
-        ("current_assets", "Current Assets"),
-        ("current_liabilities", "Current Liabilities"),
-        ("cash", "Cash & Equivalents"),
-        ("inventory", "Inventory"),
-        ("total_assets", "Total Assets"),
-        ("total_liabilities", "Total Liabilities"),
-        ("total_equity", "Total Equity"),
-    ],
-    "Cash Flow Statement": [
-        ("interest_expense", "Interest Expense"),
-        ("depreciation_amortization", "Depreciation & Amortization"),
-    ]
-}
 
 
 class FinancialRatiosDialog(BaseModal):
@@ -92,6 +69,14 @@ class FinancialRatiosDialog(BaseModal):
         # Track column combos for each concept
         self.column_combos = {}  # {concept_key: QComboBox}
         self.statement_combos = {}  # {statement_type: QComboBox}
+        self.constant_inputs = {}  # {concept_key: QDoubleSpinBox} - concepts in "fixed value" mode
+
+        # Row-oriented ("accounts are in rows") per-statement support
+        self.row_mode_checks = {}  # {statement_type: QCheckBox}
+        self.map_accounts_btns = {}  # {statement_type: QPushButton}
+        self.statement_auto_btns = {}  # {statement_type: QPushButton} - hidden in row-mode
+        self.statement_concept_widgets = {}  # {statement_type: [QWidget, ...]} - concept rows to hide in row-mode
+        self.statement_row_specs = {}  # {statement_type: dict} - reshape params from StatementConceptMapDialog
 
         super().__init__("Financial Ratios Analysis", dataframe, parent)
         self.resize(950, 750)
@@ -141,12 +126,13 @@ class FinancialRatiosDialog(BaseModal):
             combo.addItems(dataset_options)
             combo.setCurrentText("Current Dataset")  # Default to current
             combo.currentTextChanged.connect(
-                lambda checked, st=stmt_type, cb=combo: self._on_dataset_changed(st, cb.currentText)
+                lambda checked, st=stmt_type, cb=combo: self._on_dataset_changed(st, cb.currentText())
             )
             mapping_layout.addWidget(combo, row, 1)
             self.statement_combos[stmt_type] = combo
 
-            # Auto-detect button for this statement
+            # Auto-detect button for this statement (column-mode only -
+            # hidden in row-mode, see _on_row_mode_toggled)
             auto_btn = QPushButton(f"Auto-Detect {stmt_type.split()[0]}")
             auto_btn.setToolTip(f"Auto-detect columns for {stmt_type}")
             auto_btn.setObjectName("SuccessButton")
@@ -154,6 +140,31 @@ class FinancialRatiosDialog(BaseModal):
                 lambda checked, st=stmt_type: self._auto_detect_for_statement(st)
             )
             mapping_layout.addWidget(auto_btn, row, 2)
+            self.statement_auto_btns[stmt_type] = auto_btn
+
+            # Row-oriented toggle - lets this statement's data be a
+            # normal row-based statement (accounts as rows) from a
+            # dataset that doesn't need to already be column-oriented,
+            # instead of forcing every concept through "pick an existing
+            # column" below.
+            row_mode_check = QCheckBox("Accounts in Rows")
+            row_mode_check.setToolTip(
+                "Check if this statement's dataset has accounts as rows (e.g. 'Cash', "
+                "'Total Assets') rather than concepts as columns"
+            )
+            row_mode_check.toggled.connect(
+                lambda checked, st=stmt_type: self._on_row_mode_toggled(st, checked)
+            )
+            mapping_layout.addWidget(row_mode_check, row, 3)
+            self.row_mode_checks[stmt_type] = row_mode_check
+
+            map_accounts_btn = QPushButton("Map Accounts...")
+            map_accounts_btn.setVisible(False)
+            map_accounts_btn.clicked.connect(
+                lambda checked, st=stmt_type: self._on_map_accounts_clicked(st)
+            )
+            mapping_layout.addWidget(map_accounts_btn, row, 4)
+            self.map_accounts_btns[stmt_type] = map_accounts_btn
 
             row += 1
 
@@ -177,6 +188,8 @@ class FinancialRatiosDialog(BaseModal):
 
         # Column mapping for each concept
         for stmt_type, concepts in FINANCIAL_CONCEPTS.items():
+            self.statement_concept_widgets[stmt_type] = []
+
             # Section header
             header = QLabel(f"\n--- {stmt_type} ---")
             header.setStyleSheet(f"font-weight: bold; color: {Colors.ACCENT}; margin-top: 15px;")
@@ -184,12 +197,41 @@ class FinancialRatiosDialog(BaseModal):
             row += 1
 
             for key, label in concepts:
-                mapping_layout.addWidget(QLabel(f"  {label}:"), row, 1)
+                concept_label = QLabel(f"  {label}:")
+                mapping_layout.addWidget(concept_label, row, 1)
 
                 combo = QComboBox()
                 self.column_combos[key] = combo
                 self._update_combo_for_concept(key, "Current Dataset")
-                mapping_layout.addWidget(combo, row, 2)
+
+                spin = QDoubleSpinBox()
+                spin.setRange(-1e15, 1e15)
+                spin.setDecimals(2)
+                spin.setVisible(False)
+                self.constant_inputs[key] = spin
+
+                toggle_btn = QToolButton()
+                toggle_btn.setText("#")
+                toggle_btn.setCheckable(True)
+                toggle_btn.setFixedWidth(24)
+                toggle_btn.setToolTip(
+                    "Toggle between picking a column and entering a fixed value "
+                    "for concepts not present in your data (e.g. an external equity figure)"
+                )
+                toggle_btn.toggled.connect(
+                    lambda checked, c=combo, s=spin: (c.setVisible(not checked), s.setVisible(checked))
+                )
+
+                value_row = QWidget()
+                value_layout = QHBoxLayout(value_row)
+                value_layout.setContentsMargins(0, 0, 0, 0)
+                value_layout.addWidget(combo, 1)
+                value_layout.addWidget(spin, 1)
+                value_layout.addWidget(toggle_btn)
+                mapping_layout.addWidget(value_row, row, 2)
+                # Tracked so row-mode can hide this statement's whole
+                # column-mode input set as a group (see _on_row_mode_toggled)
+                self.statement_concept_widgets[stmt_type].extend([concept_label, value_row])
                 row += 1
 
         scroll = QScrollArea()
@@ -611,6 +653,65 @@ If no mappings found: {"mappings":{},"error":"Could not determine mappings"}
         return prompt
 
     @Slot(dict)
+    def _offer_reshape_dialog(self, detected_items):
+        """Row-oriented data detected - offer to open the Reshape
+        Statement to Ratio Inputs tool right here instead of just telling
+        the user to go manually transpose it (which doesn't even solve
+        the real problem: a plain transpose can't roll multiple detail
+        accounts up into one concept the way this tool's mapping table
+        does)."""
+        lines = "\n".join(f"  - {key}: {val}" for key, val in detected_items[:15])
+        reply = QMessageBox.question(
+            self, "Row-Oriented Data Detected",
+            "Your data appears to have line items as ROWS rather than columns, e.g.:\n"
+            f"{lines}\n\n"
+            "Financial Ratios needs concepts (Total Assets, Revenue, ...) as columns. "
+            "Open the 'Reshape Statement to Ratio Inputs' tool now to map your accounts "
+            "to concepts?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        from .statement_concept_map_dialog import StatementConceptMapDialog
+        reshape_dialog = StatementConceptMapDialog(self.original_df, self)
+        if not reshape_dialog.exec():
+            return
+
+        params = reshape_dialog.get_parameters()
+        try:
+            from core.data_processor import DataProcessor
+            reshaped_df = DataProcessor().reshape_statement_to_concepts(self.original_df, **params)
+        except Exception as e:
+            QMessageBox.critical(self, "Reshape Failed", f"Could not reshape the statement:\n{e}")
+            return
+
+        self._apply_reshaped_dataframe(reshaped_df)
+
+    def _apply_reshaped_dataframe(self, new_df):
+        """Swap in a reshaped (concept-as-column) dataframe and re-point
+        every concept combo at it. The reshape's own output columns ARE
+        the concept keys (total_assets, revenue, ...), so this is a
+        direct, deterministic match rather than another round of
+        guessing."""
+        self.original_df = new_df
+        # Keep dataset_map's "Current Dataset" entry in sync - it's built
+        # once at __init__ and get_parameters() reads it directly as
+        # name_to_df for row-mode statements, so a stale entry here would
+        # silently feed a statement assigned to "Current Dataset" the
+        # pre-reshape data instead of this one.
+        self.dataset_map["Current Dataset"] = new_df
+        for key, combo in self.column_combos.items():
+            combo.clear()
+            combo.addItems(list(new_df.columns))
+            if key in new_df.columns:
+                combo.setCurrentText(key)
+        QMessageBox.information(
+            self, "Reshaped",
+            f"Reshaped into {len(new_df.columns)} concept column(s) across {new_df.height} "
+            "period(s). Mappings below have been updated - review and run your ratio analysis."
+        )
+
     def _on_ai_result(self, result):
         """Handle AI detection result"""
         # Reset button state
@@ -659,23 +760,7 @@ If no mappings found: {"mappings":{},"error":"Could not determine mappings"}
 
         # Show results
         if row_oriented_detected:
-            guidance = (
-                "AI detected that your data is ROW-ORIENTED (line items as rows).\n\n"
-                f"Explanation: {explanation}\n\n"
-                "To use Financial Ratios analysis, you need to restructure the data:\n\n"
-                "Step 1: Remove header rows if any\n"
-                "   Use: Table → Transform → Remove Rows\n\n"
-                "Step 2: Promote year/period row to headers\n"
-                "   Use: Table → Transform → Use First Row as Headers\n\n"
-                "Step 3: Transpose the data (swap rows and columns)\n"
-                "   Use: Table → Transform → Transpose\n\n"
-                "Step 4: Run Financial Ratios analysis\n\n"
-                "AI-detected line items (these are in your first column):\n"
-            )
-            for key, val in row_oriented_detected:
-                guidance += f"  - {key}: {val}\n"
-
-            QMessageBox.warning(self, "Data Restructuring Required", guidance)
+            self._offer_reshape_dialog(row_oriented_detected)
         elif detected_count > 0:
             QMessageBox.information(
                 self, "AI Detection Complete",
@@ -689,6 +774,65 @@ If no mappings found: {"mappings":{},"error":"Could not determine mappings"}
                 "AI could not detect any financial columns.\n"
                 "Please map columns manually."
             )
+
+    def _on_row_mode_toggled(self, stmt_type: str, checked: bool):
+        """Switch a statement between column-mode (pick a column per
+        concept, requires that statement's dataset to already be wide)
+        and row-mode (accounts as rows, mapped via StatementConceptMapDialog).
+        Row-mode replaces ALL of that statement's concept inputs - mixing
+        row-mapped and column-picked concepts within the SAME statement
+        isn't supported, since they'd need separate period handling."""
+        for widget in self.statement_concept_widgets.get(stmt_type, []):
+            widget.setVisible(not checked)
+        auto_btn = self.statement_auto_btns.get(stmt_type)
+        if auto_btn:
+            auto_btn.setVisible(not checked)
+        map_btn = self.map_accounts_btns.get(stmt_type)
+        if map_btn:
+            map_btn.setVisible(checked)
+        if not checked:
+            self.statement_row_specs.pop(stmt_type, None)
+        self._update_analysis_availability()
+
+    def _update_analysis_availability(self):
+        """Vertical/horizontal analysis still target the primary
+        dataset's raw columns directly (see get_parameters) - not yet
+        meaningful once statements are combined via row-mode, so disable
+        rather than silently compute against the wrong columns."""
+        any_row_mode = any(chk.isChecked() for chk in self.row_mode_checks.values())
+        tooltip = "Not yet supported when any statement uses 'Accounts in Rows'" if any_row_mode else ""
+        for chk in (getattr(self, 'vertical_chk', None), getattr(self, 'horizontal_chk', None)):
+            if chk is not None:
+                chk.setEnabled(not any_row_mode)
+                chk.setToolTip(tooltip)
+                if any_row_mode:
+                    chk.setChecked(False)
+
+    def _on_map_accounts_clicked(self, stmt_type: str):
+        """Open a StatementConceptMapDialog scoped to this statement
+        type's concepts, against whichever dataset is currently assigned
+        to it, and store the resulting reshape parameters."""
+        dataset_name = self.statement_datasets.get(stmt_type) or self.statement_combos[stmt_type].currentText()
+        df = self.dataset_map.get(dataset_name)
+        if df is None:
+            df = self.original_df
+        if df is None:
+            QMessageBox.warning(self, "No Dataset", f"Select a dataset for {stmt_type} first.")
+            return
+
+        from .statement_concept_map_dialog import StatementConceptMapDialog
+        dialog = StatementConceptMapDialog(df, self, statement_types=[stmt_type])
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        params = dialog.get_parameters()
+        params["dataset_name"] = dataset_name
+        self.statement_row_specs[stmt_type] = params
+
+        mapped_count = len(params.get("account_concept_map", {}))
+        map_btn = self.map_accounts_btns.get(stmt_type)
+        if map_btn:
+            map_btn.setText(f"Mapped: {mapped_count} concept{'s' if mapped_count != 1 else ''}")
 
     def _on_dataset_changed(self, stmt_type: str, dataset_name: str):
         """Handle dataset selection change for a statement type"""
@@ -750,31 +894,15 @@ If no mappings found: {"mappings":{},"error":"Could not determine mappings"}
         # Get concepts for this statement type
         concepts = FINANCIAL_CONCEPTS.get(stmt_type, [])
 
-        # Run pattern-based detection
+        # Run pattern-based detection (shared patterns - see
+        # core/financial_concepts.py)
         all_cols = list(df.columns)
-        detection_patterns = {
-            "revenue": [r"revenue", r"sale", r"turnover"],
-            "gross_profit": [r"gross.?profit"],
-            "cogs": [r"cogs", r"cost.?of.?good", r"cost.?of.?sale"],
-            "ebitda": [r"ebitda"],
-            "ebit": [r"ebit", r"operating.?income", r"operating.?profit"],
-            "net_income": [r"net.?income", r"profit.?after.?tax"],
-            "current_assets": [r"current.?asset", r"receivable"],
-            "current_liabilities": [r"current.?liabil", r"payable"],
-            "cash": [r"cash", r"bank"],
-            "inventory": [r"invent", r"stock"],
-            "total_assets": [r"total.?asset"],
-            "total_liabilities": [r"total.?liabil"],
-            "total_equity": [r"total.?equit", r"shareholder"],
-            "interest_expense": [r"interest.?expense"],
-            "depreciation_amortization": [r"depreciat", r"amortiz"],
-        }
 
         detected = 0
         for key, label in concepts:
-            if key not in detection_patterns:
+            if key not in CONCEPT_DETECTION_PATTERNS:
                 continue
-            patterns = detection_patterns[key]
+            patterns = CONCEPT_DETECTION_PATTERNS[key]
             matched = False
             for col in all_cols:
                 col_lower = col.lower()
@@ -800,73 +928,9 @@ If no mappings found: {"mappings":{},"error":"Could not determine mappings"}
             )
 
     def _auto_detect_columns(self):
-        """Auto-detect financial columns based on common patterns"""
+        """Auto-detect financial columns based on common patterns (shared
+        patterns - see core/financial_concepts.py)"""
         all_cols = list(self.original_df.columns)
-
-        # Patterns to match financial terms - regex patterns
-        # Key: (concept_key, search_patterns)
-        detection_patterns = {
-            # Liquidity
-            "current_assets": [
-                r"current.?asset", r"total.?current.?asset",
-                r"receivable", r"debtor", r"trade.?receive"
-            ],
-            "current_liabilities": [
-                r"current.?liabil", r"total.?current.?liabil",
-                r"payable", r"creditor", r"trade.?payable",
-                r"short.?term.?debt"
-            ],
-            "cash": [
-                r"cash", r"bank", r"cash.?equival"
-            ],
-            "inventory": [
-                r"invent", r"stock", r"goods"
-            ],
-            # Solvency
-            "total_assets": [
-                r"total.?asset", r"asset.?total"
-            ],
-            "total_liabilities": [
-                r"total.?liabil", r"liabil.?total",
-                r"non.?current.?liabil"
-            ],
-            "total_equity": [
-                r"total.?equit", r"equit.?total",
-                r"shareholder", r"stockholder",
-                r"reserve", r"retained.?earn"
-            ],
-            "interest_expense": [
-                r"interest.?expense", r"finance.?cost",
-                r"interest.?cost"
-            ],
-            # Profitability
-            "revenue": [
-                r"revenue", r"sale", r"turnover",
-                r"income.?from.?oper", r"operating.?income"
-            ],
-            "net_income": [
-                r"net.?income", r"profit.?after.?tax",
-                r"profit.?for.?year", r"earn"
-            ],
-            "gross_profit": [
-                r"gross.?profit", r"gross.?margin"
-            ],
-            "cogs": [
-                r"cost.?of.?good", r"cogs", r"cost.?of.?sale",
-                r"direct.?cost", r"operational.?expense"
-            ],
-            "ebitda": [
-                r"ebitda", r"earning.?before.?interest",
-                r"operating.?profit.?before.?deprec"
-            ],
-            "ebit": [
-                r"ebit", r"operating.?income",
-                r"operating.?profit", r"earning.?before.?interest.?tax"
-            ],
-            "retained_earnings": [
-                r"retained.?earn", r"accumulate.?profit"
-            ]
-        }
 
         # Try to detect if data is row-oriented (line items in first column)
         first_col = all_cols[0] if all_cols else ""
@@ -874,14 +938,10 @@ If no mappings found: {"mappings":{},"error":"Could not determine mappings"}
         if self.original_df.height > 0:
             first_col_values = [str(self.original_df.row(i)[0]) for i in range(min(30, self.original_df.height))]
 
-        # Combine column names and first column values for matching
-        search_values = all_cols.copy()
-        search_values.extend(first_col_values)
-
         # Track what columns have been matched
         matched_cols = {}
 
-        for key, patterns in detection_patterns.items():
+        for key, patterns in CONCEPT_DETECTION_PATTERNS.items():
             # First try to match column names (column-oriented data)
             for col in all_cols:
                 col_lower = col.lower()
@@ -919,19 +979,7 @@ If no mappings found: {"mappings":{},"error":"Could not determine mappings"}
 
         # Show results
         if missing_from_cols:
-            # Data is row-oriented - provide guidance
-            guidance = (
-                "Your data appears to be ROW-ORIENTED (line items as rows).\n\n"
-                "To use Financial Ratios analysis, you need to:\n"
-                "1. Use 'Table → Transform → Use First Row as Headers' to promote year headers\n"
-                "2. Use 'Table → Transform → Transpose' to swap rows/columns\n"
-                "3. Then run Financial Ratios analysis\n\n"
-                f"Detected line items:\n"
-            )
-            for key, val in missing_from_cols:
-                guidance += f"  - {key}: {val}\n"
-
-            QMessageBox.warning(self, "Data Restructuring Required", guidance)
+            self._offer_reshape_dialog(missing_from_cols)
         elif detected_count > 0:
             QMessageBox.information(
                 self, "Auto-Detection Complete",
@@ -948,8 +996,15 @@ If no mappings found: {"mappings":{},"error":"Could not determine mappings"}
     def get_parameters(self):
         """Get the parameters for the operation"""
         mapping = {}
+        constants = {}
         dataset_mapping = {}  # Track which dataset each concept uses
         for key, combo in self.column_combos.items():
+            spin = self.constant_inputs.get(key)
+            if spin is not None and spin.isVisible():
+                # Toggled to "fixed value" mode - not present as a column
+                # at all, e.g. an externally-known equity balance.
+                constants[key] = spin.value()
+                continue
             val = combo.currentText()
             if val:
                 mapping[key] = val
@@ -974,29 +1029,79 @@ If no mappings found: {"mappings":{},"error":"Could not determine mappings"}
             if name != "Current Dataset" and df is not None:
                 all_datasets[name] = df
 
-        return {
+        # Vertical/horizontal analysis still target the primary dataset's
+        # raw columns directly, which isn't meaningful once one or more
+        # statements are combined via row-mode (their base table has
+        # concept-key columns instead) - disabled in that case rather
+        # than silently computing against the wrong columns. See
+        # _on_row_mode_toggled/_update_analysis_availability.
+        any_row_mode = any(chk.isChecked() for chk in self.row_mode_checks.values())
+
+        params = {
             "mapping": mapping,
+            "constants": constants,  # Fixed values for concepts not present as a column
             "dataset_mapping": dataset_mapping,  # Which dataset each concept comes from
             "all_datasets": all_datasets,  # Dict of available datasets (excluding primary)
             "ratios": ratios,
             "do_altman_z": self.altman_chk.isChecked(),
             "is_public": self.public_radio.isChecked(),
-            "vertical_base": self.v_base_combo.currentText() if self.vertical_chk.isChecked() else None,
-            "vertical_cols": numeric_cols if self.vertical_chk.isChecked() else [],
-            "horizontal_period": self.h_period_combo.currentText() if self.horizontal_chk.isChecked() else None,
-            "horizontal_cols": numeric_cols if self.horizontal_chk.isChecked() else []
+            "vertical_base": self.v_base_combo.currentText() if (self.vertical_chk.isChecked() and not any_row_mode) else None,
+            "vertical_cols": numeric_cols if (self.vertical_chk.isChecked() and not any_row_mode) else [],
+            "horizontal_period": self.h_period_combo.currentText() if (self.horizontal_chk.isChecked() and not any_row_mode) else None,
+            "horizontal_cols": numeric_cols if (self.horizontal_chk.isChecked() and not any_row_mode) else [],
         }
+
+        if any_row_mode:
+            # Combine every statement (row-mode via StatementConceptMapDialog's
+            # reshape params, column-mode via the {concept: column} mapping
+            # already built above) into one set of specs build_ratio_base can
+            # align by period and pivot into a single wide table.
+            statement_specs = {}
+            for stmt_type in FINANCIAL_CONCEPTS.keys():
+                if self.row_mode_checks[stmt_type].isChecked():
+                    spec = self.statement_row_specs.get(stmt_type)
+                    if spec:
+                        statement_specs[stmt_type] = spec
+                else:
+                    dataset_name = self.statement_datasets.get(stmt_type, "Current Dataset")
+                    concept_mapping = {
+                        key: mapping[key] for key, _label in FINANCIAL_CONCEPTS.get(stmt_type, [])
+                        if key in mapping
+                    }
+                    if concept_mapping:
+                        statement_specs[stmt_type] = {"dataset_name": dataset_name, "mapping": concept_mapping}
+            params["statement_specs"] = statement_specs
+            # self.dataset_map already includes the primary ("Current
+            # Dataset") - unlike all_datasets above, which deliberately
+            # excludes it for the legacy per-concept multi-dataset path.
+            params["name_to_df"] = dict(self.dataset_map)
+
+        return params
 
     def accept_changes(self):
         """Validate and accept"""
         params = self.get_parameters()
-        if not params["mapping"]:
-            QMessageBox.warning(self, "Missing Mapping", "Please map at least one data column.")
+        statement_specs = params.get("statement_specs")
+
+        if not params["mapping"] and not params["constants"] and not statement_specs:
+            QMessageBox.warning(self, "Missing Mapping", "Please map at least one data column or enter a fixed value.")
             return
-            
+
         if not any([params["ratios"], params["do_altman_z"], params["vertical_base"], params["horizontal_period"]]):
             QMessageBox.warning(self, "No Analysis Selected", "Please select at least one analysis type to perform.")
             return
-            
+
+        if statement_specs:
+            # Pre-flight: surface period-alignment problems now, with a
+            # clear message, rather than have Apply fail cryptically later.
+            from core.data_processor import DataProcessor
+            try:
+                _base_df, report = DataProcessor().build_ratio_base(params["name_to_df"], statement_specs)
+            except ValueError as e:
+                QMessageBox.critical(self, "Cannot Combine Statements", str(e))
+                return
+            if report.get("warnings"):
+                QMessageBox.warning(self, "Some Periods Excluded", "\n".join(report["warnings"]))
+
         self.transformation_applied.emit("financial_ratios", params)
         self.accept()

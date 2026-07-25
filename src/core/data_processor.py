@@ -3,7 +3,7 @@ Data Processor for CAATmaster
 Handles data import, export, and transformations using Polars
 """
 import polars as pl
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
 import re
 import hashlib
@@ -389,7 +389,15 @@ class DataProcessor:
             )
         elif operation_id == 'ifrs9_staging':
             return self.ifrs9_staging(df, params.get('mapping', {}), params.get('thresholds', {}))
-            
+        elif operation_id == 'reshape_statement_to_concepts':
+            return self.reshape_statement_to_concepts(
+                df,
+                params.get('account_col'),
+                params.get('value_cols', []),
+                period_col=params.get('period_col'),
+                account_concept_map=params.get('account_concept_map', {})
+            )
+
         # SOX operations
         elif operation_id == 'sox_sod_analysis':
             return self.sox_sod_analysis(
@@ -1082,9 +1090,42 @@ class DataProcessor:
         from services.financial_service import FinancialService
         service = FinancialService()
 
-        # Check for multi-dataset mode
-        dataset_mapping = kwargs.get('dataset_mapping', {})
-        all_datasets = kwargs.get('all_datasets', {})
+        # Multiple per-statement-type sources (row-oriented and/or
+        # column-oriented, possibly different datasets each) - combine
+        # into one wide, period-aligned base table up front, then treat
+        # it exactly like a normal single dataset from here on (identity
+        # mapping, and dataset_mapping/all_datasets forced empty so the
+        # buggy calculate_ratios_multi_dataset cross-dataset path below
+        # is never reached - see build_ratio_base's docstring for why).
+        statement_specs = kwargs.get('statement_specs')
+        if statement_specs:
+            name_to_df = kwargs.get('name_to_df', {})
+            df, _ratio_base_report = self.build_ratio_base(name_to_df, statement_specs)
+            mapping = {col: col for col in df.columns if col != 'period'}
+            dataset_mapping = {}
+            all_datasets = {}
+        else:
+            # Check for multi-dataset mode (legacy: per-concept column
+            # picked directly from a different already-wide dataset)
+            dataset_mapping = kwargs.get('dataset_mapping', {})
+            all_datasets = kwargs.get('all_datasets', {})
+
+        # Fixed/manual values for concepts that aren't present as a
+        # column at all (e.g. a market-cap figure, an externally-known
+        # equity balance). Injected as a real literal column so every
+        # existing "if col in df.columns" guard downstream (calculate_
+        # ratios/calculate_ratios_multi_dataset/calculate_altman_z_score)
+        # works completely unchanged - the constant just looks like any
+        # other mapped column to them. Applies uniformly to every row,
+        # since a fixed value can't vary per row/period.
+        constants = kwargs.get('constants', {})
+        for concept, value in constants.items():
+            if value is None or value == "":
+                continue
+            const_col = f"__const__{concept}"
+            df = df.with_columns(pl.lit(float(value)).alias(const_col))
+            mapping = dict(mapping)
+            mapping[concept] = const_col
 
         # 1. Standard Ratios - use multi-dataset if dataset_mapping provided
         if ratios:
@@ -1116,7 +1157,185 @@ class DataProcessor:
             df = service.calculate_horizontal_analysis(df, h_period, h_cols)
 
         return df
-        
+
+    def _melt_statement_to_long(self, df: pl.DataFrame, account_col: str,
+                                 value_cols: List[str], period_col: str = None,
+                                 account_concept_map: Dict[str, str] = None) -> pl.DataFrame:
+        """Normalize a row-based financial statement (accounts as rows,
+        one or more value columns) into a long (period, __concept, __val)
+        frame - one row per (period, mapped account). Handles all three
+        shapes a parsed statement can be in:
+        - still wide with one column per period (len(value_cols) > 1) -
+          unpivoted into long form
+        - already long format (a single value_cols entry + period_col)
+        - single-period, single value column (no period_col at all) -
+          synthesizes a single "Period 1" label
+
+        Shared by reshape_statement_to_concepts (pivots this into a wide
+        table on its own) and build_ratio_base (concatenates several of
+        these - one per attached statement - before a single combined
+        pivot, so multiple statements' periods align by label instead of
+        each statement being reduced to just its first row). Rows not
+        present in account_concept_map are dropped (not defaulted to any
+        concept), since guessing wrong here would silently corrupt every
+        ratio computed from the result. Period labels are always cast to
+        string so labels from different statements can be compared.
+        """
+        account_concept_map = account_concept_map or {}
+        if not account_concept_map:
+            raise ValueError("account_concept_map is empty - map at least one account to a concept first.")
+        if not value_cols:
+            raise ValueError("No value column(s) specified.")
+
+        mapped = df.filter(pl.col(account_col).is_in(list(account_concept_map.keys())))
+        if mapped.height == 0:
+            raise ValueError("None of the mapped account names were found in the data.")
+
+        mapped = mapped.with_columns(
+            pl.col(account_col).replace(account_concept_map).alias("__concept")
+        )
+
+        if len(value_cols) > 1:
+            # Still wide (one column per period) - unpivot so every shape
+            # converges on the same long frame.
+            long = mapped.unpivot(
+                index=["__concept"], on=value_cols,
+                variable_name="period", value_name="__val"
+            )
+        elif period_col:
+            long = mapped.select([
+                pl.col("__concept"),
+                pl.col(period_col).cast(pl.Utf8).alias("period"),
+                pl.col(value_cols[0]).alias("__val"),
+            ])
+        else:
+            long = mapped.select([
+                pl.col("__concept"),
+                pl.lit("Period 1").alias("period"),
+                pl.col(value_cols[0]).alias("__val"),
+            ])
+        return long.select(["period", "__concept", "__val"])
+
+    def reshape_statement_to_concepts(self, df: pl.DataFrame, account_col: str,
+                                       value_cols: List[str], period_col: str = None,
+                                       account_concept_map: Dict[str, str] = None) -> pl.DataFrame:
+        """Bridge from a row-based financial statement (accounts as rows,
+        e.g. "Cash", "Total Assets", one or more value columns) to the
+        wide, concept-as-column shape financial_ratios()/FinancialService
+        need (one row per period, columns named total_assets/revenue/...).
+
+        Multiple account rows mapped to the SAME concept are summed by
+        the pivot's aggregate_function - this is what lets a rollup like
+        "Total Assets" stand alone (map only that row) or, if a statement
+        has no explicit subtotal line, several detail rows be mapped to
+        the same concept and summed instead.
+        """
+        long = self._melt_statement_to_long(df, account_col, value_cols, period_col, account_concept_map)
+        return long.pivot(index="period", on="__concept", values="__val", aggregate_function="sum")
+
+    def build_ratio_base(self, name_to_df: Dict[str, pl.DataFrame],
+                          statement_specs: Dict[str, dict]) -> Tuple[pl.DataFrame, dict]:
+        """Combine one or more per-statement-type sources into ONE wide,
+        period-indexed table with concept keys as columns, ready for
+        FinancialService.calculate_ratios()/calculate_altman_z_score()/etc.
+        with an identity mapping ({concept: concept}).
+
+        This replaces FinancialService.calculate_ratios_multi_dataset's
+        cross-dataset expressions, which only ever used the FIRST row of
+        each dataset whenever two concepts came from different dataframe
+        objects - silently discarding every other period. Aligning by
+        period LABEL here (one concat + one summing pivot) is correct for
+        any number of periods per statement, not just one.
+
+        name_to_df: every dataset name a spec might reference, INCLUDING
+        the primary dataset (e.g. "Current Dataset" -> primary_df) - the
+        old dataset_mapping/all_datasets split intentionally excluded the
+        primary, which breaks here since a statement in row-mode might be
+        the primary dataset itself.
+        statement_specs: {stmt_type: spec}, where spec is one of:
+          - row-mode:    {"dataset_name", "account_col", "value_cols",
+                          "period_col" (optional), "account_concept_map"}
+          - column-mode: {"dataset_name", "mapping": {concept: column_name}}
+            (column-mode rows are treated as already one-row-per-period,
+            in row order - "Period 1", "Period 2", ... - since a plain
+            wide table has no explicit period label of its own; this
+            matches how a single, no-row-mode dataset was always treated.)
+
+        Returns (base_df, report). report has:
+          - "periods": sorted list of period labels present in the result
+          - "warnings": list of human-readable strings (e.g. periods
+            dropped because they weren't shared by every statement) -
+            non-fatal, meant to be shown to the user
+        Raises ValueError if the statements share no common period at all,
+        or if no statement contributed any usable data.
+        """
+        long_frames = []
+        per_statement_periods = {}
+
+        for stmt_type, spec in statement_specs.items():
+            dataset_name = spec.get("dataset_name")
+            df = name_to_df.get(dataset_name)
+            if df is None:
+                raise ValueError(f"Dataset '{dataset_name}' for {stmt_type} was not found.")
+
+            if "account_concept_map" in spec:
+                long = self._melt_statement_to_long(
+                    df, spec["account_col"], spec["value_cols"],
+                    spec.get("period_col"), spec["account_concept_map"]
+                )
+            else:
+                mapping = spec.get("mapping", {})
+                valid = {concept: col for concept, col in mapping.items() if col and col in df.columns}
+                if not valid or df.height == 0:
+                    continue
+                period_labels = [f"Period {i + 1}" for i in range(df.height)]
+                wide_slice = df.select([pl.col(col).alias(concept) for concept, col in valid.items()])
+                wide_slice = wide_slice.with_columns(pl.Series("period", period_labels))
+                long = wide_slice.unpivot(
+                    index=["period"], on=list(valid.keys()),
+                    variable_name="__concept", value_name="__val"
+                )
+
+            if long.height == 0:
+                continue
+            per_statement_periods[stmt_type] = set(long["period"].unique().to_list())
+            long_frames.append(long)
+
+        if not long_frames:
+            raise ValueError("No statement data to combine - map at least one statement's accounts or columns.")
+
+        warnings = []
+        period_sets = list(per_statement_periods.values())
+        if len(period_sets) > 1:
+            common_periods = set.intersection(*period_sets)
+            all_periods = set.union(*period_sets)
+            if not common_periods:
+                details = "; ".join(f"{stmt}: {sorted(periods)}" for stmt, periods in per_statement_periods.items())
+                raise ValueError(
+                    "No common period across statements - their period labels don't match. "
+                    f"Found - {details}. Make sure periods are labeled consistently across statements "
+                    "(e.g. all '2023', not a mix of '2023' and 'FY2023')."
+                )
+            dropped = all_periods - common_periods
+            if dropped:
+                warnings.append(
+                    f"Some periods weren't present in every statement and were excluded: {sorted(dropped)}"
+                )
+        else:
+            common_periods = period_sets[0]
+
+        combined = pl.concat(long_frames, how="vertical")
+        if len(period_sets) > 1:
+            combined = combined.filter(pl.col("period").is_in(list(common_periods)))
+
+        base_df = combined.pivot(index="period", on="__concept", values="__val", aggregate_function="sum")
+
+        report = {
+            "periods": sorted(base_df["period"].unique().to_list()),
+            "warnings": warnings,
+        }
+        return base_df, report
+
     def ifrs9_staging(self, df: pl.DataFrame, mapping: Dict[str, str], thresholds: Dict[str, int]) -> pl.DataFrame:
         """Perform IFRS 9 Staging"""
         from services.ifrs9_service import IFRS9Service

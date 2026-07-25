@@ -37,6 +37,7 @@ from .summary_dialogs import (
 )
 from .split_columns_dialog import SplitColumnsDialog
 from .financial_ratios_dialog import FinancialRatiosDialog
+from .statement_concept_map_dialog import StatementConceptMapDialog
 from .ifrs9_dialog import IFRS9Dialog
 from .sox_dialog import SoxSodDialog
 from .coso_dialog import CosoDialog
@@ -65,8 +66,9 @@ class TransformationDialogFactory:
 
         # Financial Operations
         'financial_ratios': FinancialRatiosDialog,
+        'reshape_statement_to_concepts': StatementConceptMapDialog,
         'ifrs9_staging': IFRS9Dialog,
-        
+
         # SOX/COSO Operations
         'sox_sod_analysis': SoxSodDialog,
         'coso_risk_heatmap': CosoDialog,

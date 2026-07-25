@@ -309,15 +309,21 @@ class ChooseColumnsDialog(BaseModal):
         available_widget = QWidget()
         available_layout = QVBoxLayout(available_widget)
         available_layout.addWidget(QLabel("Available Columns:"))
+        self.selection_hint = QLabel()
+        self.selection_hint.setWordWrap(True)
+        self.selection_hint.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
+        available_layout.addWidget(self.selection_hint)
         self.available_list = QListWidget()
         self.available_list.setSelectionMode(QAbstractItemView.MultiSelection)
         for col in self.original_df.columns:
             self.available_list.addItem(col)
         available_layout.addWidget(self.available_list)
 
-        # Selected columns (for reorder mode)
-        selected_widget = QWidget()
-        selected_layout = QVBoxLayout(selected_widget)
+        # Selected columns (reorder mode only - Keep/Remove select directly
+        # in Available Columns above instead, since Apply reads highlighted
+        # items there, not whatever's been moved into this list)
+        self.selected_widget = QWidget()
+        selected_layout = QVBoxLayout(self.selected_widget)
         selected_layout.addWidget(QLabel("Selected Columns (in order):"))
         self.selected_list = QListWidget()
         self.selected_list.setSelectionMode(QAbstractItemView.MultiSelection)
@@ -326,14 +332,16 @@ class ChooseColumnsDialog(BaseModal):
         selected_layout.addWidget(self.selected_list)
 
         lists_splitter.addWidget(available_widget)
-        lists_splitter.addWidget(selected_widget)
+        lists_splitter.addWidget(self.selected_widget)
         lists_splitter.setSizes([200, 200])
 
         selection_layout.addWidget(lists_splitter)
         layout.addWidget(selection_group)
 
-        # Move buttons
-        move_layout = QHBoxLayout()
+        # Move buttons (reorder mode only - see selected_widget comment above)
+        self.move_widget = QWidget()
+        move_layout = QHBoxLayout(self.move_widget)
+        move_layout.setContentsMargins(0, 0, 0, 0)
 
         add_btn = QPushButton("Add →")
         add_btn.clicked.connect(self._add_selected)
@@ -352,7 +360,7 @@ class ChooseColumnsDialog(BaseModal):
         move_layout.addWidget(remove_all_btn)
 
         move_layout.addStretch()
-        layout.addLayout(move_layout)
+        layout.addWidget(self.move_widget)
 
         # Preview
         preview_group = QGroupBox("Column Order Preview")
@@ -385,12 +393,32 @@ class ChooseColumnsDialog(BaseModal):
 
         layout.addLayout(btn_layout)
 
+        self._on_action_changed()
         self._update_preview()
 
     def _on_action_changed(self):
-        """Update UI based on selected action"""
+        """Update UI based on selected action. The Add/Remove move
+        buttons and the "Selected Columns" list only make sense in
+        Reorder mode - Apply's validation for Keep/Remove reads directly
+        selected (highlighted) items in Available Columns, not whatever
+        was moved into the (otherwise hidden) selected list, so both are
+        hidden here to avoid the confusing "select column, click Add, it
+        vanishes, Apply says nothing is selected" trap."""
         is_reorder = self.reorder_radio.isChecked()
-        self.selected_list.setVisible(is_reorder)
+        self.selected_widget.setVisible(is_reorder)
+        self.move_widget.setVisible(is_reorder)
+        if is_reorder:
+            self.selection_hint.setText(
+                "Click a column below, then 'Add →' to move it into your desired order on the right."
+            )
+        elif self.remove_radio.isChecked():
+            self.selection_hint.setText(
+                "Click a column to select it for removal - Ctrl+Click (or Shift+Click) to select multiple."
+            )
+        else:
+            self.selection_hint.setText(
+                "Click a column to select it to keep - Ctrl+Click (or Shift+Click) to select multiple."
+            )
 
     def _filter_columns(self, text):
         """Filter available columns based on search text"""

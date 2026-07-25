@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QFrame, QRadioButton, QButtonGroup,
     QMessageBox, QLineEdit
 )
-from PySide6.QtCore import Qt, QThreadPool
+from PySide6.QtCore import Qt, QThread, Signal
 
 from core.cleaning_wizard import CleaningStep
 from core.financial_import_wizard import DOCUMENT_TYPES, build_financial_import_plan
@@ -22,6 +22,33 @@ from gui.theme import Colors
 from gui.components.common_modals import create_primary_button
 from core.data_processor import DataProcessor
 from core.operation_registry import OPERATION_REGISTRY
+
+
+class _AIWorker(QThread):
+    """Runs an async AI call on a background thread and hands the result
+    back via a Qt signal. A bare QThreadPool callback would invoke the
+    result callback directly on the worker thread - and that callback
+    builds/shows a QDialog to review the suggestion, which Qt widgets
+    cannot do off the main thread (surfaces as QObject::setParent /
+    QBasicTimer::start "different thread" errors, and the dialog never
+    actually appearing)."""
+    result_ready = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, coro_factory):
+        super().__init__()
+        self.coro_factory = coro_factory
+
+    def run(self):
+        import asyncio
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(self.coro_factory())
+            self.result_ready.emit(result)
+        except Exception as e:
+            self.failed.emit(str(e))
+        finally:
+            loop.close()
 
 
 class _MappingReviewDialog(QDialog):
@@ -80,7 +107,7 @@ class FinancialImportWizardDialog(QDialog):
         self.plan = None
         self.step_checkboxes = []
         self.data_processor = DataProcessor()
-        self.thread_pool = QThreadPool()
+        self._working_df = None  # cache for _get_working_df()
 
         self.layout = QVBoxLayout(self)
         self._build_doc_type_screen()
@@ -332,29 +359,51 @@ class FinancialImportWizardDialog(QDialog):
         return box
 
     def _run_ai_task(self, coro_factory, on_success):
-        """Runs an async AI call on a background thread, exactly like the
-        rest of the app's AI features - Qt signals aren't used here since
-        this is a one-shot dialog action; a simple callback on the main
-        thread via a completed future is enough."""
-        import asyncio
+        """Runs an async AI call on a background QThread; on_success is
+        invoked on the MAIN thread via the worker's result_ready signal,
+        since it builds/shows a QDialog to review the suggestion and Qt
+        widgets can only be created on the GUI thread. Keeps a reference
+        to the worker on self so it isn't garbage-collected mid-run."""
+        worker = _AIWorker(coro_factory)
+        worker.result_ready.connect(on_success)
+        worker.failed.connect(lambda msg: QMessageBox.warning(self, "AI Request Failed", msg))
+        if not hasattr(self, '_ai_workers'):
+            self._ai_workers = []
+        self._ai_workers.append(worker)
+        worker.finished.connect(lambda: self._ai_workers.remove(worker) if worker in self._ai_workers else None)
+        worker.start()
 
-        def run_async():
-            loop = asyncio.new_event_loop()
-            try:
-                result = loop.run_until_complete(coro_factory())
-                on_success(result)
-            except Exception as e:
-                QMessageBox.warning(self, "AI Request Failed", str(e))
-            finally:
-                loop.close()
+    def _get_working_df(self) -> pl.DataFrame:
+        """self.raw_df is read with no header assumed, so its columns are
+        always generic placeholders (column_1, column_2, ...) - every
+        detector in build_financial_import_plan() instead works off
+        column/account names AFTER the proposed row-removal and header-
+        promotion steps are simulated (see raw_data_view in
+        core.financial_import_wizard.build_financial_import_plan). Replay
+        just those structural steps here, in plan order, so every AI-
+        assist method sees the same names the plan's own steps (like
+        extract_hierarchy_level) refer to - regardless of whether the
+        user has checked those steps' boxes yet. Cached since the plan
+        doesn't change after the dialog is built."""
+        if self._working_df is not None:
+            return self._working_df
 
-        self.thread_pool.start(run_async)
+        df = self.raw_df
+        for step in self.plan.steps:
+            if step.operation_id in ("remove_rows", "promote_row_header"):
+                try:
+                    df = self.data_processor.apply_operation(df, step.operation_id, step.params)
+                except Exception:
+                    pass
+        self._working_df = df
+        return df
 
     def _on_ask_ai_column_mapping(self):
         from services.ai_service import FinancialImportAI
         ai = FinancialImportAI(self.ai_manager)
-        column_names = list(self.raw_df.columns)
-        sample_rows = self.raw_df.head(5).to_dicts()
+        working_df = self._get_working_df()
+        column_names = list(working_df.columns)
+        sample_rows = working_df.head(5).to_dicts()
         target_fields = {"debit_column": "the debit amount column", "credit_column": "the credit amount column"}
 
         def on_result(mapping):
@@ -379,13 +428,23 @@ class FinancialImportWizardDialog(QDialog):
         from services.ai_service import FinancialImportAI
         hierarchy_step = next((s for s in self.plan.steps if s.operation_id == "extract_hierarchy_level"), None)
         if hierarchy_step is None:
+            QMessageBox.information(
+                self, "Not Available",
+                "No account/line-item hierarchy was detected in this file, so there's no "
+                "account column to classify."
+            )
             return
         account_col = hierarchy_step.params["column"]
-        if account_col not in self.raw_df.columns:
-            QMessageBox.information(self, "Not Available", "Run the hierarchy detection step first.")
+        working_df = self._get_working_df()
+        if account_col not in working_df.columns:
+            QMessageBox.warning(
+                self, "Not Available",
+                f"Expected an account column named '{account_col}' after the proposed structural "
+                "steps, but it isn't there. Please map columns manually."
+            )
             return
 
-        account_names = [str(v).strip() for v in self.raw_df[account_col].drop_nulls().unique().to_list()]
+        account_names = [str(v).strip() for v in working_df[account_col].drop_nulls().unique().to_list()]
         categories = ["Current Assets", "Non-Current Assets", "Current Liabilities",
                      "Non-Current Liabilities", "Equity", "Revenue", "Expense"]
         ai = FinancialImportAI(self.ai_manager)
@@ -410,7 +469,7 @@ class FinancialImportWizardDialog(QDialog):
 
     def _on_ask_ai_period_columns(self):
         from services.ai_service import FinancialImportAI
-        column_names = list(self.raw_df.columns)
+        column_names = list(self._get_working_df().columns)
         ai = FinancialImportAI(self.ai_manager)
 
         def on_result(period_cols):

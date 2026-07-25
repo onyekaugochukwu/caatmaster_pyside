@@ -518,11 +518,25 @@ OPERATION_REGISTRY = {
         "description": "Calculate standard financial ratios (Liquidity, Solvency, Profitability)",
         "parameter_schema": {
             "mapping": {"type": "dict", "label": "Column Mapping"},
-            "ratios": {"type": "list", "label": "Selected Ratios"}
+            "ratios": {"type": "list", "label": "Selected Ratios"},
+            "constants": {"type": "dict", "label": "Fixed Values (for concepts not present as a column)"}
         },
         "creates_columns": True
     },
-    
+    "reshape_statement_to_concepts": {
+        "display_name": "Reshape Statement to Ratio Inputs",
+        "type": TransformationStepType.PIVOT,
+        "category": "financial",
+        "description": "Map financial-statement line items (rows) to ratio concepts and pivot into wide, one-row-per-period format",
+        "parameter_schema": {
+            "account_col": {"type": "column", "required": True, "label": "Account/Line Item Column"},
+            "value_cols": {"type": "list[column]", "required": True, "label": "Value Column(s)"},
+            "period_col": {"type": "column", "required": False, "label": "Period Column"},
+            "account_concept_map": {"type": "dict", "label": "Account -> Concept Mapping"}
+        },
+        "creates_columns": True
+    },
+
     # IFRS 9 OPERATIONS
     "ifrs9_staging": {
         "display_name": "IFRS 9 Staging",
