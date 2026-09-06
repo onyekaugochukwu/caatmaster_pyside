@@ -37,6 +37,7 @@ RIBBON_ACTIONS = [
     ("Pearson Correlation", "stat_pearson"), ("Spearman Correlation", "stat_spearman"), ("Heatmap", "stat_heatmap"),
     ("Normal Distribution", "stat_normal"), ("Binomial Distribution", "stat_binomial"), ("Poisson Distribution", "stat_poisson"),
     ("Generate Audit Report", "report_audit"), ("LLM Analysis", "report_llm"), ("Export Report as PDF", "report_pdf"),
+    ("Numeric Disclosure Reconciliation", "report_disclosure_recon"),
     ("Data Profile Report", "report_profile"), ("Transformation Log", "report_transformation"), ("Quality Metrics", "report_quality"),
     ("Export as Word", "report_word"), ("Export as Excel", "report_excel"),
     ("AI Explain", "ai_explain"), ("AI Sentiment", "ai_sentiment"), ("AI Extract", "ai_extract"), ("AI Pattern", "ai_pattern"),

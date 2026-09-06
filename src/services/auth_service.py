@@ -2,6 +2,8 @@
 Authentication Service for CAATmaster
 Handles user authentication, registration, and session management
 """
+import os
+import secrets
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -19,8 +21,34 @@ pwd_context = CryptContext(
     deprecated="auto"
 )
 
+
+def _load_or_create_secret_key() -> str:
+    """Generate a random per-installation JWT signing secret the first
+    time it's needed, rather than a fixed value baked into source code
+    that's public in this repo (the previous
+    "caatmaster-secret-key-change-in-production" literal never actually
+    got changed for production). Persisted next to the app's other local
+    secrets (Path.home()/".caatmaster"), which is already gitignored and
+    never part of the repo - see core.database's DATA_DIR for the same
+    convention applied to the user database."""
+    secret_dir = Path.home() / ".caatmaster"
+    secret_dir.mkdir(parents=True, exist_ok=True)
+    secret_path = secret_dir / "secret_key"
+    if secret_path.exists():
+        existing = secret_path.read_text().strip()
+        if existing:
+            return existing
+    key = secrets.token_hex(32)
+    secret_path.write_text(key)
+    try:
+        os.chmod(secret_path, 0o600)  # restrict to the owning user, matching ai_service.py's credential file
+    except OSError:
+        pass
+    return key
+
+
 # JWT settings
-SECRET_KEY = "caatmaster-secret-key-change-in-production"
+SECRET_KEY = _load_or_create_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 

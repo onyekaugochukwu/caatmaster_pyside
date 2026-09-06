@@ -389,6 +389,11 @@ class DataProcessor:
             )
         elif operation_id == 'ifrs9_staging':
             return self.ifrs9_staging(df, params.get('mapping', {}), params.get('thresholds', {}))
+        elif operation_id == 'ifrs9_scenario_ecl':
+            return self.ifrs9_scenario_ecl(
+                df, params.get('mapping', {}), params.get('weights'),
+                params.get('variance_threshold_pct', 20.0)
+            )
         elif operation_id == 'reshape_statement_to_concepts':
             return self.reshape_statement_to_concepts(
                 df,
@@ -412,6 +417,62 @@ class DataProcessor:
                 params.get('category_column'),
                 params.get('risk_score_column'),
                 params.get('mapping', {})
+            )
+        elif operation_id == 'sox_access_review':
+            return self.sox_access_review(
+                df,
+                params.get('status_column'),
+                params.get('terminated_values'),
+                params.get('activity_date_column'),
+                params.get('termination_date_column'),
+            )
+        elif operation_id == 'ias36_implied_growth_rate':
+            return self.ias36_implied_growth_rate(
+                df,
+                params.get('carrying_value_column'),
+                params.get('discount_rate_column'),
+                params.get('cash_flow_columns', []),
+                params.get('benchmark_growth_column'),
+                params.get('benchmark_growth_value'),
+                params.get('flag_threshold_pp', 2.0),
+            )
+        elif operation_id == 'ifrs16_lease_liability':
+            return self.ifrs16_lease_liability(
+                df, params.get('mapping', {}), params.get('threshold_bps', 50.0)
+            )
+        elif operation_id == 'ifrs15_margin_cusum':
+            return self.ifrs15_margin_cusum(
+                df,
+                params.get('revenue_column'),
+                params.get('cost_column'),
+                params.get('date_column'),
+                params.get('group_column'),
+                params.get('k_multiplier', 0.5),
+                params.get('h_multiplier', 4.0),
+            )
+        elif operation_id == 'ifrs15_timing_gap':
+            return self.ifrs15_timing_gap(
+                df,
+                params.get('revenue_date_column'),
+                params.get('delivery_date_column'),
+                params.get('threshold_days', 0),
+            )
+        elif operation_id == 'ias37_provision_trend':
+            return self.ias37_provision_trend(
+                df, params.get('mapping', {}), params.get('change_threshold_pct', 30.0)
+            )
+        elif operation_id == 'ias2_nrv_writedown':
+            return self.ias2_nrv_writedown(
+                df, params.get('mapping', {}), params.get('tolerance_pct', 0.0)
+            )
+        elif operation_id == 'ias21_fx_rate_check':
+            return self.ias21_fx_rate_check(
+                df, params.get('mapping', {}), params.get('tolerance_pct', 1.0)
+            )
+        elif operation_id == 'ias12_dta_recoverability':
+            return self.ias12_dta_recoverability(
+                df, params.get('mapping', {}), params.get('benchmark_profit_column'),
+                params.get('benchmark_profit_value'), params.get('flag_threshold_pct', 20.0)
             )
 
         # Audit transformations
@@ -1342,6 +1403,13 @@ class DataProcessor:
         service = IFRS9Service()
         return service.perform_staging(df, mapping, thresholds)
 
+    def ifrs9_scenario_ecl(self, df: pl.DataFrame, mapping: Dict[str, str], weights: Dict[str, float] = None,
+                            variance_threshold_pct: float = 20.0) -> pl.DataFrame:
+        """Probability-weighted IFRS 9 ECL across base/upside/downside scenarios"""
+        from services.ifrs9_service import IFRS9Service
+        service = IFRS9Service()
+        return service.calculate_scenario_weighted_ecl(df, mapping, weights, variance_threshold_pct)
+
     def sox_sod_analysis(self, df: pl.DataFrame, user_col: str, action_col: str, conflicts: List[Dict]) -> pl.DataFrame:
         """Perform SOX SoD Analysis"""
         from services.sox_service import SoxService
@@ -1353,6 +1421,78 @@ class DataProcessor:
         from services.coso_service import CosoService
         service = CosoService()
         return service.generate_risk_heatmap(df, category_col, risk_score_col, mapping)
+
+    def sox_access_review(self, df: pl.DataFrame, status_col: str, terminated_values: List[str] = None,
+                           activity_date_col: str = None, termination_date_col: str = None) -> pl.DataFrame:
+        """SOX ITGC user access review - flags activity by a terminated/inactive user"""
+        from services.sox_service import SoxService
+        service = SoxService()
+        return service.access_review_analysis(df, status_col, terminated_values, activity_date_col, termination_date_col)
+
+    def ias36_implied_growth_rate(self, df: pl.DataFrame, carrying_value_col: str, discount_rate_col: str,
+                                   cash_flow_columns: List[str], benchmark_growth_col: str = None,
+                                   benchmark_growth_value: float = None, flag_threshold_pp: float = 2.0) -> pl.DataFrame:
+        """IAS 36 reverse-DCF - solves for the implied terminal growth rate per CGU"""
+        from services.ias36_service import IAS36Service
+        service = IAS36Service()
+        return service.calculate_implied_growth_rate(
+            df, carrying_value_col, discount_rate_col, cash_flow_columns,
+            benchmark_growth_col, benchmark_growth_value, flag_threshold_pp
+        )
+
+    def ifrs16_lease_liability(self, df: pl.DataFrame, mapping: Dict[str, str],
+                                threshold_bps: float = 50.0) -> pl.DataFrame:
+        """IFRS 16 lease liability/ROU asset and IBR reasonableness check"""
+        from services.ifrs16_service import IFRS16Service
+        service = IFRS16Service()
+        return service.calculate_lease_liability(df, mapping, threshold_bps)
+
+    def ifrs15_margin_cusum(self, df: pl.DataFrame, revenue_col: str, cost_col: str, date_col: str,
+                             group_col: str = None, k_multiplier: float = 0.5,
+                             h_multiplier: float = 4.0) -> pl.DataFrame:
+        """IFRS 15 CUSUM margin-shift detection"""
+        from services.ifrs15_service import IFRS15Service
+        service = IFRS15Service()
+        return service.detect_margin_shifts_cusum(df, revenue_col, cost_col, date_col, group_col,
+                                                     k_multiplier, h_multiplier)
+
+    def ifrs15_timing_gap(self, df: pl.DataFrame, revenue_date_col: str, delivery_date_col: str,
+                           threshold_days: int = 0) -> pl.DataFrame:
+        """IFRS 15 revenue recognition timing-gap check"""
+        from services.ifrs15_service import IFRS15Service
+        service = IFRS15Service()
+        return service.detect_revenue_timing_gap(df, revenue_date_col, delivery_date_col, threshold_days)
+
+    def ias37_provision_trend(self, df: pl.DataFrame, mapping: Dict[str, str],
+                               change_threshold_pct: float = 30.0) -> pl.DataFrame:
+        """IAS 37 YoY provision trend-break check, with optional legal-claims cross-check"""
+        from services.ias37_service import IAS37Service
+        service = IAS37Service()
+        return service.cross_check_legal_claims(df, mapping, change_threshold_pct)
+
+    def ias2_nrv_writedown(self, df: pl.DataFrame, mapping: Dict[str, str],
+                            tolerance_pct: float = 0.0) -> pl.DataFrame:
+        """IAS 2 inventory net realizable value write-down test"""
+        from services.ias2_service import IAS2Service
+        service = IAS2Service()
+        return service.detect_nrv_writedowns(df, mapping, tolerance_pct)
+
+    def ias21_fx_rate_check(self, df: pl.DataFrame, mapping: Dict[str, str],
+                             tolerance_pct: float = 1.0) -> pl.DataFrame:
+        """IAS 21 foreign currency rate consistency check"""
+        from services.ias21_service import IAS21Service
+        service = IAS21Service()
+        return service.detect_fx_rate_deviations(df, mapping, tolerance_pct)
+
+    def ias12_dta_recoverability(self, df: pl.DataFrame, mapping: Dict[str, str],
+                                  benchmark_profit_col: str = None, benchmark_profit_value: float = None,
+                                  flag_threshold_pct: float = 20.0) -> pl.DataFrame:
+        """IAS 12 deferred tax asset recoverability check"""
+        from services.ias12_service import IAS12Service
+        service = IAS12Service()
+        return service.calculate_required_taxable_profit(
+            df, mapping, benchmark_profit_col, benchmark_profit_value, flag_threshold_pct
+        )
 
     # ============================================================================
     # AUDIT TRANSFORMATION IMPLEMENTATIONS
@@ -2997,6 +3137,20 @@ class DataProcessor:
                 pl.col(column).str.to_date(format_string, strict=strict) if new_dtype == "Date"
                 else pl.col(column).str.to_datetime(format_string, strict=strict)
             )
+
+        numeric_targets = {"Int8", "Int16", "Int32", "Int64", "Float32", "Float64"}
+        if new_dtype in numeric_targets and not df[column].dtype.is_numeric():
+            # A plain cast() only understands a bare numeric string - a
+            # column of "1,234,567" or "(800,000)" (thousands separators,
+            # accounting-negative parentheses) fails every value under a
+            # strict cast, or silently turns every one of them into null
+            # under coerce, which is how a "Total Assets" column typed as
+            # text ends up entirely null (and every ratio built from it
+            # wrong) with no visible error anywhere. Clean it to a real
+            # number first, then cast to the requested numeric subtype.
+            from core.numeric_parsing import clean_numeric_string_expr
+            df = df.with_columns(clean_numeric_string_expr(column))
+
         return df.with_columns(pl.col(column).cast(target_type, strict=strict))
 
     def rename_columns_bulk(self, df: pl.DataFrame, renames: List[dict] = None, prefix: str = None, suffix: str = None, lowercase: bool = False, uppercase: bool = False) -> pl.DataFrame:

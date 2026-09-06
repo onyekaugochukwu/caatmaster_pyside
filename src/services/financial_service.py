@@ -309,10 +309,21 @@ class FinancialService:
         def get_col(concept):
             return mapping.get(concept)
 
-        # Helper to safely divide
+        # Helper to safely divide two EXPRESSIONS (not yet column names) -
+        # guards the denominator being exactly 0 directly, rather than
+        # dividing first and mopping up afterward. That distinction
+        # matters: x/0 is +/-inf in IEEE-754, not NaN, so a later
+        # .fill_nan(None) (the previous approach) never actually caught
+        # it - only the 0/0 case produces NaN. An unguarded inf ratio
+        # silently poisons every downstream mean/chart/threshold check it
+        # touches instead of failing visibly anywhere.
+        def safe_div_expr(numerator: pl.Expr, denominator: pl.Expr) -> pl.Expr:
+            return pl.when(denominator != 0).then(numerator / denominator).otherwise(None)
+
+        # Helper to safely divide two COLUMNS by name
         def safe_div(num_col, den_col, alias):
             if num_col and den_col and num_col in df.columns and den_col in df.columns:
-                return (pl.col(num_col) / pl.col(den_col)).fill_nan(None).alias(alias)
+                return safe_div_expr(pl.col(num_col), pl.col(den_col)).alias(alias)
             return None
 
         expressions = []
@@ -327,13 +338,13 @@ class FinancialService:
             ca = get_col('current_assets')
             inv = get_col('inventory')
             cl = get_col('current_liabilities')
-            
+
             if ca and cl and ca in df.columns and cl in df.columns:
                 if inv and inv in df.columns:
-                    expr = ((pl.col(ca) - pl.col(inv)) / pl.col(cl)).alias('ratio_quick')
+                    expr = safe_div_expr(pl.col(ca) - pl.col(inv), pl.col(cl)).alias('ratio_quick')
                 else:
                     # Fallback if inventory missing: assume CA is mostly quick or user didn't map it
-                    expr = (pl.col(ca) / pl.col(cl)).alias('ratio_quick_approx')
+                    expr = safe_div_expr(pl.col(ca), pl.col(cl)).alias('ratio_quick_approx')
                 if expr is not None: expressions.append(expr)
 
         if 'cash_ratio' in ratios_to_calculate:
@@ -342,7 +353,7 @@ class FinancialService:
 
         # --- SOLVENCY RATIOS ---
         if 'debt_to_equity' in ratios_to_calculate:
-            # If total liabilities is not mapped, try current + non-current? 
+            # If total liabilities is not mapped, try current + non-current?
             # For now assume simple mapping
             expr = safe_div(get_col('total_liabilities'), get_col('total_equity'), 'ratio_debt_to_equity')
             if expr is not None: expressions.append(expr)
@@ -350,15 +361,15 @@ class FinancialService:
         if 'debt_ratio' in ratios_to_calculate:
             expr = safe_div(get_col('total_liabilities'), get_col('total_assets'), 'ratio_debt_ratio')
             if expr is not None: expressions.append(expr)
-            
+
         if 'interest_coverage' in ratios_to_calculate:
             # EBIT / Interest Expense
             # Approx EBIT as Net Income + Interest + Tax (if tax mapped, else just Net + Interest)
             ni = get_col('net_income')
             ie = get_col('interest_expense')
-            
+
             if ni and ie and ni in df.columns and ie in df.columns:
-                expr = ((pl.col(ni) + pl.col(ie)) / pl.col(ie)).alias('ratio_interest_coverage')
+                expr = safe_div_expr(pl.col(ni) + pl.col(ie), pl.col(ie)).alias('ratio_interest_coverage')
                 expressions.append(expr)
 
         # --- PROFITABILITY RATIOS ---
@@ -373,12 +384,12 @@ class FinancialService:
             rev = get_col('revenue')
             cogs = get_col('cogs')
             gp = get_col('gross_profit')
-            
+
             if rev and rev in df.columns:
                 if gp and gp in df.columns:
-                     expressions.append((pl.col(gp) / pl.col(rev)).alias('ratio_gross_margin'))
+                     expressions.append(safe_div_expr(pl.col(gp), pl.col(rev)).alias('ratio_gross_margin'))
                 elif cogs and cogs in df.columns:
-                     expressions.append(((pl.col(rev) - pl.col(cogs)) / pl.col(rev)).alias('ratio_gross_margin'))
+                     expressions.append(safe_div_expr(pl.col(rev) - pl.col(cogs), pl.col(rev)).alias('ratio_gross_margin'))
 
         if 'return_on_assets' in ratios_to_calculate:
             expr = safe_div(get_col('net_income'), get_col('total_assets'), 'ratio_roa')

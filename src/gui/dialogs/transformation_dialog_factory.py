@@ -38,8 +38,15 @@ from .summary_dialogs import (
 from .split_columns_dialog import SplitColumnsDialog
 from .financial_ratios_dialog import FinancialRatiosDialog
 from .statement_concept_map_dialog import StatementConceptMapDialog
-from .ifrs9_dialog import IFRS9Dialog
-from .sox_dialog import SoxSodDialog
+from .ifrs9_dialog import IFRS9Dialog, IFRS9ScenarioECLDialog
+from .ias36_dialog import IAS36ReverseDCFDialog
+from .ifrs16_dialog import IFRS16LeaseLiabilityDialog
+from .ifrs15_dialog import IFRS15MarginCusumDialog, IFRS15TimingGapDialog
+from .ias37_dialog import IAS37ProvisionTrendDialog
+from .ias2_dialog import IAS2NrvWritedownDialog
+from .ias21_dialog import IAS21FxRateCheckDialog
+from .ias12_dialog import IAS12DtaRecoverabilityDialog
+from .sox_dialog import SoxSodDialog, SoxAccessReviewDialog
 from .coso_dialog import CosoDialog
 from .promote_row_header_dialog import PromoteRowHeaderDialog
 
@@ -68,9 +75,19 @@ class TransformationDialogFactory:
         'financial_ratios': FinancialRatiosDialog,
         'reshape_statement_to_concepts': StatementConceptMapDialog,
         'ifrs9_staging': IFRS9Dialog,
+        'ifrs9_scenario_ecl': IFRS9ScenarioECLDialog,
+        'ias36_implied_growth_rate': IAS36ReverseDCFDialog,
+        'ifrs16_lease_liability': IFRS16LeaseLiabilityDialog,
+        'ifrs15_margin_cusum': IFRS15MarginCusumDialog,
+        'ifrs15_timing_gap': IFRS15TimingGapDialog,
+        'ias37_provision_trend': IAS37ProvisionTrendDialog,
+        'ias2_nrv_writedown': IAS2NrvWritedownDialog,
+        'ias21_fx_rate_check': IAS21FxRateCheckDialog,
+        'ias12_dta_recoverability': IAS12DtaRecoverabilityDialog,
 
         # SOX/COSO Operations
         'sox_sod_analysis': SoxSodDialog,
+        'sox_access_review': SoxAccessReviewDialog,
         'coso_risk_heatmap': CosoDialog,
 
         # ML Operations

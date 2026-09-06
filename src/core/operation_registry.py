@@ -549,6 +549,158 @@ OPERATION_REGISTRY = {
         },
         "creates_columns": True
     },
+    "ifrs9_scenario_ecl": {
+        "display_name": "IFRS 9 Scenario-Weighted ECL",
+        "type": TransformationStepType.CALCULATE,
+        "category": "financial",
+        "description": "Probability-weighted ECL across base/upside/downside PD scenarios, with an optional variance check against management's booked ECL",
+        "parameter_schema": {
+            "mapping": {"type": "dict", "label": "Column Mapping"},
+            "weights": {"type": "dict", "label": "Scenario Weights"},
+            "variance_threshold_pct": {"type": "number", "default": 20.0, "label": "Variance Flag Threshold (%)"}
+        },
+        "creates_columns": ["ifrs9_weighted_pd", "ifrs9_scenario_ecl", "ifrs9_ecl_variance",
+                             "ifrs9_ecl_variance_pct", "ifrs9_ecl_variance_flag"],
+        "requires_specific_dialog": True
+    },
+
+    # =========================================================================
+    # IAS 36 OPERATIONS
+    # =========================================================================
+    "ias36_implied_growth_rate": {
+        "display_name": "IAS 36 Implied Growth Rate (Reverse DCF)",
+        "type": TransformationStepType.CALCULATE,
+        "category": "financial",
+        "description": "Solve for the terminal growth rate a CGU's carrying value implicitly requires, and flag it against a benchmark",
+        "parameter_schema": {
+            "carrying_value_column": {"type": "column", "label": "Carrying Value Column"},
+            "discount_rate_column": {"type": "column", "label": "Discount Rate Column"},
+            "cash_flow_columns": {"type": "list[column]", "label": "Explicit-Period Cash Flow Columns (in order)"},
+            "benchmark_growth_column": {"type": "column", "required": False, "label": "Benchmark Growth Column (optional)"},
+            "benchmark_growth_value": {"type": "number", "required": False, "label": "Benchmark Growth Value (optional)"},
+            "flag_threshold_pp": {"type": "number", "default": 2.0, "label": "Flag Threshold Above Benchmark (pp)"}
+        },
+        "creates_columns": ["ias36_implied_growth_rate", "ias36_benchmark_growth_rate",
+                             "ias36_growth_gap_pp", "ias36_flag"],
+        "requires_specific_dialog": True
+    },
+
+    # =========================================================================
+    # IFRS 16 OPERATIONS
+    # =========================================================================
+    "ifrs16_lease_liability": {
+        "display_name": "IFRS 16 Lease Liability & IBR Check",
+        "type": TransformationStepType.CALCULATE,
+        "category": "financial",
+        "description": "Calculate lease liability/ROU asset from a lease schedule and flag an IBR that deviates from a benchmark rate",
+        "parameter_schema": {
+            "mapping": {"type": "dict", "label": "Column Mapping"},
+            "threshold_bps": {"type": "number", "default": 50.0, "label": "IBR Flag Threshold (bps)"}
+        },
+        "creates_columns": ["ifrs16_lease_liability", "ifrs16_rou_asset", "ifrs16_benchmark_liability",
+                             "ifrs16_ibr_deviation_bps", "ifrs16_liability_understatement", "ifrs16_ibr_flag"],
+        "requires_specific_dialog": True
+    },
+
+    # =========================================================================
+    # IFRS 15 OPERATIONS
+    # =========================================================================
+    "ifrs15_margin_cusum": {
+        "display_name": "IFRS 15 Margin Shift Detection (CUSUM)",
+        "type": TransformationStepType.CALCULATE,
+        "category": "financial",
+        "description": "Detect a sustained shift in a contract's revenue-to-cost margin over time via a CUSUM control chart",
+        "parameter_schema": {
+            "revenue_column": {"type": "column", "label": "Revenue Column"},
+            "cost_column": {"type": "column", "label": "Cost Column"},
+            "date_column": {"type": "column", "label": "Period Date Column"},
+            "group_column": {"type": "column", "required": False, "label": "Contract/Group Column (optional)"},
+            "k_multiplier": {"type": "number", "default": 0.5, "label": "CUSUM Slack (x std dev)"},
+            "h_multiplier": {"type": "number", "default": 4.0, "label": "CUSUM Threshold (x std dev)"}
+        },
+        "creates_columns": ["ifrs15_margin", "ifrs15_cusum_flag"],
+        "requires_specific_dialog": True
+    },
+    "ifrs15_timing_gap": {
+        "display_name": "IFRS 15 Revenue Timing Gap",
+        "type": TransformationStepType.CALCULATE,
+        "category": "financial",
+        "description": "Flag revenue recognized materially before the delivery/shipment date",
+        "parameter_schema": {
+            "revenue_date_column": {"type": "column", "label": "Revenue Recognition Date Column"},
+            "delivery_date_column": {"type": "column", "label": "Delivery/Shipment Date Column"},
+            "threshold_days": {"type": "number", "default": 0, "label": "Allowed Buffer (days)"}
+        },
+        "creates_columns": ["ifrs15_timing_gap_days", "ifrs15_premature_recognition_flag"],
+        "requires_specific_dialog": True
+    },
+
+    # =========================================================================
+    # IAS 37 OPERATIONS
+    # =========================================================================
+    "ias37_provision_trend": {
+        "display_name": "IAS 37 Provision Trend Break",
+        "type": TransformationStepType.CALCULATE,
+        "category": "financial",
+        "description": "Flag a large YoY provision change, optionally distinguishing decreases with no recorded settlement",
+        "parameter_schema": {
+            "mapping": {"type": "dict", "label": "Column Mapping"},
+            "change_threshold_pct": {"type": "number", "default": 30.0, "label": "Flag Threshold (% YoY change)"}
+        },
+        "creates_columns": ["ias37_yoy_change_pct", "ias37_trend_break_flag", "ias37_unexplained_decrease_flag"],
+        "requires_specific_dialog": True
+    },
+
+    # =========================================================================
+    # IAS 2 OPERATIONS
+    # =========================================================================
+    "ias2_nrv_writedown": {
+        "display_name": "IAS 2 Inventory NRV Write-Down",
+        "type": TransformationStepType.CALCULATE,
+        "category": "financial",
+        "description": "Flag inventory carried at cost above net realizable value (selling price less costs to sell)",
+        "parameter_schema": {
+            "mapping": {"type": "dict", "label": "Column Mapping"},
+            "tolerance_pct": {"type": "number", "default": 0.0, "label": "Tolerance Above NRV (%)"}
+        },
+        "creates_columns": ["ias2_nrv", "ias2_writedown_amount", "ias2_writedown_flag"],
+        "requires_specific_dialog": True
+    },
+
+    # =========================================================================
+    # IAS 21 OPERATIONS
+    # =========================================================================
+    "ias21_fx_rate_check": {
+        "display_name": "IAS 21 FX Rate Consistency Check",
+        "type": TransformationStepType.CALCULATE,
+        "category": "financial",
+        "description": "Flag a transaction whose booked FX rate deviates from a benchmark rate, quantifying the $ impact",
+        "parameter_schema": {
+            "mapping": {"type": "dict", "label": "Column Mapping"},
+            "tolerance_pct": {"type": "number", "default": 1.0, "label": "Flag Threshold (% rate deviation)"}
+        },
+        "creates_columns": ["ias21_rate_deviation_pct", "ias21_fx_rate_flag", "ias21_fx_amount_variance"],
+        "requires_specific_dialog": True
+    },
+
+    # =========================================================================
+    # IAS 12 OPERATIONS
+    # =========================================================================
+    "ias12_dta_recoverability": {
+        "display_name": "IAS 12 DTA Recoverability Check",
+        "type": TransformationStepType.CALCULATE,
+        "category": "financial",
+        "description": "Solve for the annual taxable profit a DTA balance requires and flag it against a benchmark profit figure",
+        "parameter_schema": {
+            "mapping": {"type": "dict", "label": "Column Mapping"},
+            "benchmark_profit_column": {"type": "column", "required": False, "label": "Benchmark Profit Column (optional)"},
+            "benchmark_profit_value": {"type": "number", "required": False, "label": "Benchmark Profit Value (optional)"},
+            "flag_threshold_pct": {"type": "number", "default": 20.0, "label": "Flag Threshold (% above benchmark)"}
+        },
+        "creates_columns": ["ias12_required_annual_taxable_profit", "ias12_benchmark_profit",
+                             "ias12_shortfall_pct", "ias12_recoverability_flag"],
+        "requires_specific_dialog": True
+    },
 
     # =========================================================================
     # SOX OPERATIONS
@@ -564,6 +716,20 @@ OPERATION_REGISTRY = {
             "conflicts": {"type": "list", "label": "Conflict Rules"}
         },
         "creates_columns": ["sod_conflict_found", "sod_conflict_detail"],
+        "requires_specific_dialog": True
+    },
+    "sox_access_review": {
+        "display_name": "SOX Access Review",
+        "type": TransformationStepType.AUDIT_FLAG,
+        "category": "audit",
+        "description": "Flag activity by a terminated/inactive user (ITGC user access review)",
+        "parameter_schema": {
+            "status_column": {"type": "column", "label": "User Status Column"},
+            "terminated_values": {"type": "list", "label": "Status Values Meaning Terminated/Inactive"},
+            "activity_date_column": {"type": "column", "required": False, "label": "Activity Date Column"},
+            "termination_date_column": {"type": "column", "required": False, "label": "Termination Date Column"}
+        },
+        "creates_columns": ["access_review_flag"],
         "requires_specific_dialog": True
     },
 

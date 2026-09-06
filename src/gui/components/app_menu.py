@@ -132,6 +132,7 @@ REPORTS_MENU = [
     ("Audit Reports", [
         ("Generate Audit Report...", "fa5s.clipboard-check", "report_audit"),
         ("LLM Analysis...", "fa5s.brain", "report_llm"),
+        ("Numeric Disclosure Reconciliation...", "fa5s.calculator", "report_disclosure_recon"),
     ]),
     ("System Reports", [
         ("Data Profile Report", "fa5s.chart-bar", "report_profile"),

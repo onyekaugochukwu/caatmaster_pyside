@@ -11,6 +11,8 @@ from PySide6.QtGui import QFont
 
 from gui.theme import Colors
 from gui.components.common_modals import create_primary_button, create_secondary_button, create_success_button
+from gui.dialogs.rule_library_dialog import RuleLibraryMappingDialog, CosoHeatmapDialog
+from core import compliance_rule_library as rule_library
 
 
 class ComplianceReportDialog(QDialog):
@@ -68,6 +70,11 @@ class ComplianceReportDialog(QDialog):
         self.df = self.selected_dataframes[checked[0]]
         self.generator = compliance_generator
         self.report = None
+        # Accumulates {"coso_component", "severity", "affected_pct", "title"}
+        # dicts across every rule-library run this dialog session, so "View
+        # COSO Heatmap" can aggregate across SOX/COSO/IFRS libraries run
+        # back to back rather than just the last one.
+        self._coso_findings_pool: list = []
         # Thread pool for async operations (no parent to avoid thread issues)
         from PySide6.QtCore import QThreadPool
         self.thread_pool = QThreadPool()
@@ -513,6 +520,43 @@ class ComplianceReportDialog(QDialog):
         rules_layout.addWidget(self.rules_edit)
 
         layout.addWidget(rules_group)
+
+        # Rule Libraries - pre-built SOX/COSO/IFRS-adjacent rules that run
+        # fully deterministically (no AI call, no AI provider required) via
+        # core.compliance_rule_library. Separate from the free-text rules
+        # box above, which still needs AI to translate a typed rule into a
+        # condition.
+        library_group = QGroupBox("Rule Libraries (no AI required)")
+        library_layout = QVBoxLayout(library_group)
+
+        library_hint = QLabel(
+            "Pre-built SOX/COSO/IFRS-adjacent checks. These run as real Polars filters against "
+            "your complete dataset with no AI call involved — only field mapping is needed."
+        )
+        library_hint.setWordWrap(True)
+        library_hint.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
+        library_layout.addWidget(library_hint)
+
+        library_row = QHBoxLayout()
+        self.library_combo = QComboBox()
+        self._libraries = rule_library.list_libraries()
+        for lib in self._libraries:
+            self.library_combo.addItem(f"{lib['display_name']} ({lib['framework']})", lib["id"])
+        library_row.addWidget(self.library_combo, 1)
+
+        run_library_btn = create_secondary_button("Configure & Run")
+        run_library_btn.setCursor(Qt.PointingHandCursor)
+        run_library_btn.clicked.connect(self.run_rule_library)
+        library_row.addWidget(run_library_btn)
+
+        self.view_coso_heatmap_btn = create_secondary_button("View COSO Heatmap")
+        self.view_coso_heatmap_btn.setCursor(Qt.PointingHandCursor)
+        self.view_coso_heatmap_btn.setEnabled(False)
+        self.view_coso_heatmap_btn.clicked.connect(self.view_coso_heatmap)
+        library_row.addWidget(self.view_coso_heatmap_btn)
+
+        library_layout.addLayout(library_row)
+        layout.addWidget(library_group)
 
         # Sample rules - NOT italic: an italicized "|" reads too much like
         # a "/" and can mislead users about the required pipe-delimited
@@ -1035,6 +1079,119 @@ Key Findings:
                 loop.close()
 
         self.thread_pool.start(run_async)
+
+    def run_rule_library(self):
+        """Run a canned rule library (deterministic, no AI call) against
+        every currently checked dataset, using the same result-rendering
+        path as free-text Rule Detection above. Field mapping is confirmed
+        once via RuleLibraryMappingDialog, against the first checked
+        dataset's columns, then applied to every checked dataset — a rule
+        whose mapped field doesn't exist in a particular dataset is simply
+        reported as not-computable for that dataset rather than guessed at.
+        """
+        library_id = self.library_combo.currentData()
+        if not library_id:
+            return
+        library = rule_library.get_library(library_id)
+        field_specs = rule_library.get_field_specs(library_id)
+
+        targets = dict(self.selected_dataframes)
+        first_df = next(iter(targets.values()))
+        suggested = rule_library.suggest_mapping(
+            first_df.columns, field_specs["required_fields"], field_specs["optional_fields"]
+        )
+
+        dialog = RuleLibraryMappingDialog(
+            df_columns=first_df.columns, library=library, field_specs=field_specs,
+            suggested_mapping=suggested, parent=self,
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return
+        mapping = dialog.get_mapping()
+        params = dialog.get_params()
+
+        from services.ai_service import ComplianceFinding
+
+        multi = len(targets) > 1
+        sections = []
+        all_findings = []  # (dataset_name, ComplianceFinding)
+
+        for name, df in targets.items():
+            try:
+                results = rule_library.apply_library(df, library_id, mapping, params)
+            except Exception as e:
+                sections.append(f"{f'=== {name} ===' if multi else ''}\nError running library: {e}")
+                continue
+
+            section = f"{f'=== {name} ===' if multi else ''}\n"
+            section += f"Library: {library['display_name']}  |  Rows in dataset: {len(df):,}\n"
+
+            for i, entry in enumerate(results, 1):
+                rule = entry["rule"]
+                result = entry["result"]
+                title = rule["name"]
+                citation = rule.get("citation", "")
+
+                if not result["computable"]:
+                    section += f"\n{i}. {title} — NOT COMPUTABLE\n   Reason: {result['reason']}\n"
+                    finding = ComplianceFinding(
+                        title=title, severity="info", policy_requirement=citation,
+                        finding=f"Not computable: {result['reason']}", evidence=[],
+                        recommendation=rule.get("recommendation", ""), computable=False,
+                    )
+                else:
+                    severity = rule.get("severity", "medium") if result["affected_count"] > 0 else "info"
+                    finding_text = (
+                        f"{result['affected_count']} of {result['total_count']} rows "
+                        f"({result['affected_pct']}%) match: {rule['description']}"
+                    )
+                    section += (
+                        f"\n{i}. {title} (Severity: {severity.upper()}) — {citation}\n"
+                        f"   Finding: {finding_text}\n"
+                        f"   Affected: {result['affected_count']} of {result['total_count']} ({result['affected_pct']}%)\n"
+                        f"   Dollar Impact: ${result['affected_amount']:,.2f}\n"
+                        f"   Evidence (actual matching rows): {', '.join(result['evidence'][:5]) or 'none'}\n"
+                        f"   Recommendation: {rule.get('recommendation', '')}\n"
+                    )
+                    finding = ComplianceFinding(
+                        title=title, severity=severity, policy_requirement=citation,
+                        finding=finding_text, evidence=result["evidence"],
+                        recommendation=rule.get("recommendation", ""),
+                        affected_count=result["affected_count"], affected_amount=result["affected_amount"],
+                        total_count=result["total_count"], affected_pct=result["affected_pct"],
+                        computable=True, matched_df=result["matched_df"], mask=result["mask"],
+                    )
+                    if rule.get("coso_component"):
+                        self._coso_findings_pool.append({
+                            "coso_component": rule["coso_component"], "severity": severity,
+                            "affected_pct": result["affected_pct"], "title": title,
+                        })
+
+                all_findings.append((name, finding))
+
+            sections.append(section)
+
+        results_text = "RULE LIBRARY RESULTS (deterministic — no AI call)\n\n" + "\n".join(sections)
+        self._on_detection_report_ready(results_text)
+        self._on_detection_findings_ready(all_findings)
+        self._on_detection_status_ready("Rule library check complete!")
+
+        if self._coso_findings_pool:
+            self.view_coso_heatmap_btn.setEnabled(True)
+
+    def view_coso_heatmap(self):
+        """Show the COSO component heatmap built from every COSO-tagged
+        rule-library finding run so far in this dialog session."""
+        from services.coso_service import CosoService
+
+        heatmap_df = CosoService().build_heatmap_from_findings(self._coso_findings_pool)
+        if heatmap_df.height == 0:
+            QMessageBox.information(
+                self, "COSO Heatmap", "No COSO-tagged findings yet — run a rule library first."
+            )
+            return
+        dialog = CosoHeatmapDialog(heatmap_df, parent=self)
+        dialog.exec()
 
     def generate_compliance_report(self):
         """Generate a compliance report"""

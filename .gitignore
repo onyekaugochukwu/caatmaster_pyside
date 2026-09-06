@@ -37,6 +37,19 @@ env/
 .DS_Store
 Thumbs.db
 
+# Local databases and secrets - the real app database now lives under
+# ~/.caatmaster/ (see src/core/database.py), never inside the repo, but
+# these patterns stay as a defense-in-depth backstop against a database,
+# backup, or secret ever landing in the working tree again.
+data/*.db
+data/*.db-journal
+data/*.sqlite
+data/*.sqlite3
+data/caatmaster_backup_*.db
+*.pem
+*.key
+secret_key
+
 # Markdown (except README.md)
 *.md
 !README.md

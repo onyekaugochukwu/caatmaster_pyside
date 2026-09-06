@@ -68,8 +68,15 @@ CONCEPT_DETECTION_PATTERNS: Dict[str, List[str]] = {
     ],
     "total_equity": [
         r"total.?equit", r"equit.?total",
-        r"shareholder", r"stockholder",
-        r"reserve", r"retained.?earn"
+        r"shareholder", r"stockholder"
+        # Deliberately NOT "reserve" or "retained.?earn": "reserve" alone
+        # also appears in non-equity contexts ("Inventory Reserve",
+        # "Warranty Reserve" are contra-asset/liability accounts, not
+        # equity), and "retained earnings" already has its own dedicated
+        # concept below - having the same pattern under both meant
+        # "Retained Earnings" always matched total_equity first (dict
+        # iteration order), so the retained_earnings concept could never
+        # actually be reached for the one line item it exists to detect.
     ],
     "interest_expense": [
         r"interest.?expense", r"finance.?cost",
@@ -77,12 +84,21 @@ CONCEPT_DETECTION_PATTERNS: Dict[str, List[str]] = {
     ],
     # Profitability
     "revenue": [
-        r"revenue", r"sale", r"turnover",
-        r"income.?from.?oper", r"operating.?income"
+        r"revenue", r"sale", r"turnover"
+        # Deliberately NOT "operating.?income" - that pattern already
+        # belongs to "ebit" below (operating income/profit IS
+        # essentially EBIT), and having it duplicated here meant
+        # "Operating Income" always matched revenue first (dict
+        # iteration order), silently feeding an EBIT-sized number into
+        # every ratio that uses top-line revenue - gross margin, net
+        # margin, asset turnover, all wrong at once.
     ],
     "net_income": [
         r"net.?income", r"profit.?after.?tax",
-        r"profit.?for.?year", r"earn"
+        r"profit.?for.?(the.?)?year"
+        # Deliberately NOT a bare "earn": it matches "Earnings Per
+        # Share", "Retained Earnings", and any other line that merely
+        # contains the substring "earn", none of which are Net Income.
     ],
     "gross_profit": [
         r"gross.?profit", r"gross.?margin"
@@ -100,7 +116,7 @@ CONCEPT_DETECTION_PATTERNS: Dict[str, List[str]] = {
         r"operating.?profit", r"earning.?before.?interest.?tax"
     ],
     "retained_earnings": [
-        r"retained.?earn", r"accumulate.?profit"
+        r"retained.?earn", r"accumulat\w*.?profit"
     ],
     # Cash Flow
     "depreciation_amortization": [
@@ -119,16 +135,38 @@ _TOTAL_ROW_PATTERN = re.compile(r"total|net\s|^net$", re.IGNORECASE)
 def suggest_concept_for_text(text: str) -> Optional[str]:
     """Suggest which financial concept a piece of text - a column name or
     an account/line-item label - most likely represents. Returns None if
-    nothing matches. This is a suggestion only; callers should always let
-    the user confirm/override rather than treating it as authoritative."""
+    nothing matches, OR if two DIFFERENT concepts match equally
+    specifically - picking one arbitrarily in a genuine tie is worse than
+    admitting the ambiguity, since a silently wrong guess here feeds
+    straight into every ratio built from it. This is a suggestion only in
+    any case; callers should always let the user confirm/override rather
+    than treating it as authoritative.
+
+    Ranks by the length of the matching pattern as a specificity proxy -
+    a longer, more qualified pattern ("total.?current.?asset") beats a
+    shorter, more generic one ("total.?asset") for the same text, which
+    is what correctly prefers current_assets over total_assets for a
+    label like "Total Current Assets" without needing the two concepts'
+    patterns to be manually ordered against each other.
+    """
     if not text:
         return None
     text_lower = str(text).lower()
+
+    best_len_by_concept: Dict[str, int] = {}
     for concept, patterns in CONCEPT_DETECTION_PATTERNS.items():
         for pattern in patterns:
             if re.search(pattern, text_lower):
-                return concept
-    return None
+                best_len_by_concept[concept] = max(best_len_by_concept.get(concept, 0), len(pattern))
+                break
+
+    if not best_len_by_concept:
+        return None
+
+    ranked = sorted(best_len_by_concept.items(), key=lambda item: item[1], reverse=True)
+    if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
+        return None  # genuine tie between two different concepts - don't guess
+    return ranked[0][0]
 
 
 def is_likely_total_row(text: str) -> bool:

@@ -26,6 +26,7 @@ from gui.dialogs.project_dialog import NewProjectDialog, OpenProjectDialog, Save
 from gui.dialogs.ai_settings_dialog import AISettingsDialog
 from gui.dialogs.column_generator_dialog import ColumnGeneratorDialog
 from gui.dialogs.compliance_report_dialog import ComplianceReportDialog
+from gui.dialogs.numeric_disclosure_dialog import NumericDisclosureDialog
 
 # Import the sidebar, menu/toolbar chrome, and backstage
 from gui.components.sidebar import Sidebar
@@ -840,6 +841,28 @@ class MainWindow(QMainWindow):
         )
         dialog.createDatasetFromFindingRequested.connect(self._on_compliance_create_dataset)
         dialog.addColumnFromFindingRequested.connect(self._on_compliance_add_column)
+        dialog.exec()
+
+    @Slot()
+    def _on_numeric_disclosure_reconciliation(self):
+        """Open the Numeric Disclosure Reconciliation dialog. Every project
+        dataset is made available as a reconciliation target, the same way
+        _on_ai_compliance_check offers every dataset for Policy Check."""
+        if not self._check_ai_available():
+            return
+
+        dataframes = {}
+        if self.current_project and hasattr(self.current_project, 'datasets'):
+            for ds in self.current_project.datasets.values():
+                dataframes[ds.name] = ds.get_current_dataframe()
+        elif self.current_dataset:
+            dataframes[self.current_dataset.name] = self.current_dataset.get_current_dataframe()
+
+        if not dataframes:
+            QMessageBox.warning(self, "No Data", "No data available for reconciliation.")
+            return
+
+        dialog = NumericDisclosureDialog(dataframes, self.ai_manager, self)
         dialog.exec()
 
     def _find_project_dataset(self, name: str):
@@ -2811,6 +2834,7 @@ class MainWindow(QMainWindow):
             # Report operations
             "report_audit": self._on_report_audit,
             "report_llm": self._on_ai_compliance_check,
+            "report_disclosure_recon": self._on_numeric_disclosure_reconciliation,
             "report_profile": self._on_col_profile,
             "report_quality": self._on_col_quality,
             "report_transformation": self._on_report_transformation_log,

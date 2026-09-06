@@ -96,7 +96,19 @@ def _numeric_like_columns(df: pl.DataFrame) -> Dict[str, pl.Series]:
     anything that's been through promote_row_header, which casts every
     column to String) never arrives already numeric-typed, so relying on
     dtype.is_numeric() alone would mean this never matches in practice.
-    Returns {column: cast_to_float64_series} for every match."""
+    Returns {column: cast_to_float64_series} for every match.
+
+    Uses core.numeric_parsing.clean_numeric_series, not a bare cast() -
+    a real financial statement export's numbers routinely carry thousands
+    separators, a currency symbol, or parentheses for a negative
+    ("1,234,567", "$(50,000)"), every one of which a plain cast() treats
+    as a parse failure. Before this, a column where EVERY value had a
+    comma failed 100% of the time and was excluded from being considered
+    numeric at all - meaning a "Total Assets" column formatted the way
+    every real spreadsheet formats one was invisible to this detector.
+    """
+    from core.numeric_parsing import clean_numeric_series
+
     result = {}
     for col in df.columns:
         s = df[col]
@@ -106,9 +118,9 @@ def _numeric_like_columns(df: pl.DataFrame) -> Dict[str, pl.Series]:
         non_null = s.drop_nulls()
         if non_null.len() == 0:
             continue
-        cast = non_null.cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False)
+        cast = clean_numeric_series(non_null)
         if (cast.null_count() / non_null.len()) <= 0.05:
-            result[col] = s.cast(pl.Utf8).str.strip_chars().cast(pl.Float64, strict=False)
+            result[col] = clean_numeric_series(s)
     return result
 
 

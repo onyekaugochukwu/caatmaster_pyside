@@ -6,14 +6,18 @@ from PySide6.QtWidgets import (
     QPushButton, QGroupBox, QGridLayout, QTableWidget, 
     QTableWidgetItem, QHeaderView, QWidget, QMessageBox
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 import polars as pl
 
 from ..components.common_modals import BaseModal, create_primary_button
 
 class CosoDialog(BaseModal):
     """Dialog for COSO Risk Mapping"""
-    
+
+    # See sox_dialog.py's SoxSodDialog for why this is needed - without it,
+    # self.transformation_applied.emit(...) below raises AttributeError.
+    transformation_applied = Signal(str, dict)  # operation_id, parameters
+
     def __init__(self, dataframe: pl.DataFrame, parent=None):
         super().__init__("COSO Risk Heatmap", dataframe, parent)
         self.resize(700, 500)

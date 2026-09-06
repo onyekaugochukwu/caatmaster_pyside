@@ -2740,6 +2740,85 @@ Only respond with valid JSON.
 
 
 # =============================================================================
+# Numeric Disclosure Extractor
+# =============================================================================
+
+class NumericDisclosureExtractor:
+    """Extracts numbered disclosures (rates, useful lives, discount rates,
+    etc.) from free-text narrative (e.g. notes to the financial statements)
+    so they can be reconciled against real figures computed from structured
+    data - the "numeric-text reconciliation" idea, scoped to what an LLM is
+    actually reliable at.
+
+    Follows the same split as ComplianceReportGenerator: the AI's job ends
+    at finding and transcribing what the text states - it is never asked
+    to compute, estimate, or judge whether a figure is correct. The actual
+    comparison against structured data (core.numeric_disclosure_reconciliation)
+    is pure Python/Polars arithmetic over values the auditor explicitly maps,
+    never an LLM guess. Every extracted item carries a verbatim context_snippet
+    so a reviewer can check it against the source text directly, the same
+    role evidence_column/matched_df plays for a ComplianceFinding.
+    """
+
+    def __init__(self, ai_manager: AIManager):
+        self.ai = ai_manager
+
+    async def extract_disclosed_figures(self, document_text: str) -> List[Dict[str, Any]]:
+        """Extract discrete numeric disclosures from narrative text.
+
+        Returns a list of dicts, each with:
+            label: short description of what the figure represents
+                   (e.g. "Depreciation rate - Plant and Equipment")
+            value_text: the figure exactly as it appears in the text
+                        (e.g. "20%", "5 years", "$1,234,000")
+            unit: "percent", "years", "currency", or "count"
+            context_snippet: the verbatim sentence the figure was found in,
+                              so it can be checked against the source text
+        Never computes, infers, or rounds a figure not actually stated in
+        the text - a figure that only appears as a range or is ambiguous is
+        still extracted verbatim (e.g. "3 to 5 years"), left for the human
+        reviewer to judge, rather than the model picking a value for it.
+        """
+        if not document_text or not document_text.strip():
+            return []
+
+        prompt = f"""
+You are extracting discrete NUMERIC disclosures from a financial statement note or similar
+narrative text, so they can be checked against the underlying accounting records separately.
+You are NOT being asked to verify, compute, or judge any figure - only to find and transcribe
+each one exactly as it appears in the text.
+
+Extract figures like: depreciation/amortization rates, useful lives, discount rates, provision
+percentages, revenue recognition timeframes, or any other rate/period/amount the text explicitly
+states as a policy or estimate. Skip page numbers, dates, and any number that is not itself a
+disclosed policy figure or estimate.
+
+TEXT:
+{document_text[:8000]}
+
+For each figure found, transcribe the value EXACTLY as written (e.g. "20%", "5 years",
+"3 to 5 years", "$1,234,000") - do not convert units, round, or average a range yourself.
+Include the exact sentence it came from as context_snippet, so it can be verified against the
+source text directly.
+
+Return JSON:
+{{
+    "figures": [
+        {{
+            "label": "short description of what this figure represents",
+            "value_text": "the figure exactly as written in the text",
+            "unit": "percent | years | currency | count | other",
+            "context_snippet": "the exact sentence this figure appears in"
+        }}
+    ]
+}}
+If no genuine numeric disclosures are found, return {{"figures": []}}. Only respond with valid JSON.
+"""
+        result = await self.ai.structured_complete(prompt=prompt, task_type="compliance", response_format="json")
+        return result.get("figures", [])
+
+
+# =============================================================================
 # Report Assistant
 # =============================================================================
 
