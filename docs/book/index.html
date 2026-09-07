@@ -561,6 +561,37 @@
     margin: 0 auto;
     border-top: 1px solid var(--rule);
   }
+
+  @media print {
+    :root {
+      --bg: #FFFFFF;
+      --bg-raised: #FFFFFF;
+      --ink: #16201C;
+      --ink-secondary: #4B5750;
+      --ink-faint: #6B756A;
+    }
+
+    .sidebar, .toc-toggle { display: none !important; }
+
+    .shell { display: block; }
+
+    main { max-width: none; }
+
+    .cover, .page { max-width: none; padding: 0 0.25in; }
+
+    .part-opener { break-before: page; }
+    .part-opener:first-of-type { break-before: avoid; }
+
+    .chapter { break-before: page; padding-top: 0; }
+
+    figure.screenshot, table, .callout, .case-study, .interpret, .steps {
+      break-inside: avoid;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .book-status { break-before: page; }
+  }
 </style>
 
 <div class="shell">
