@@ -562,6 +562,8 @@
     border-top: 1px solid var(--rule);
   }
 
+  .toc-print { display: none; }
+
   @media print {
     :root {
       --bg: #FFFFFF;
@@ -580,17 +582,84 @@
     .cover, .page { max-width: none; padding: 0 0.25in; }
 
     .part-opener { break-before: page; }
-    .part-opener:first-of-type { break-before: avoid; }
 
     .chapter { break-before: page; padding-top: 0; }
 
-    figure.screenshot, table, .callout, .case-study, .interpret, .steps {
+    figure.screenshot, .callout, .case-study, .interpret, .steps {
       break-inside: avoid;
     }
 
     a { color: inherit; text-decoration: none; }
 
     .book-status { break-before: page; }
+
+    /* Tables must fit the printed page width - the on-screen
+       horizontal-scroll affordance has no equivalent on a fixed page. */
+    .table-wrap { overflow: visible; border: none; }
+
+    table { table-layout: fixed; font-size: 0.72rem; }
+
+    table th, table td {
+      white-space: normal;
+      overflow-wrap: break-word;
+      word-break: break-word;
+      padding: 0.4rem 0.5rem;
+    }
+
+    table tr, thead { break-inside: avoid; }
+
+    .toc-print { display: block; break-before: page; break-after: page; }
+  }
+
+  /* ---------- print-only table of contents ---------- */
+
+  .toc-print-title {
+    font-size: clamp(1.6rem, 3.5vw, 2.1rem);
+    margin: 0 0 2rem;
+  }
+
+  .toc-print-part { margin: 0 0 1.35rem; }
+
+  .toc-print-part-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 0.45rem;
+  }
+
+  .toc-print-list { list-style: none; margin: 0; padding: 0; }
+
+  .toc-print-list li {
+    display: flex;
+    align-items: baseline;
+    font-size: 0.92rem;
+    padding: 0.2rem 0;
+  }
+
+  .toc-print-num {
+    flex: 0 0 auto;
+    width: 1.8em;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.82rem;
+    color: var(--ink-faint);
+  }
+
+  .toc-print-name { flex: 0 0 auto; white-space: nowrap; }
+
+  .toc-print-leader {
+    flex: 1 1 auto;
+    border-bottom: 1px dotted var(--rule-strong);
+    margin: 0 0.5em;
+    transform: translateY(-0.3em);
+  }
+
+  .toc-print-page {
+    flex: 0 0 auto;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--ink-secondary);
   }
 </style>
 
@@ -685,6 +754,93 @@
         <span>Parts I&ndash;VIII: Complete</span>
         <span>32 Chapters</span>
         <span>Companion to CaatMaster</span>
+      </div>
+    </div>
+
+    <div class="toc-print" id="toc-print">
+      <h1 class="toc-print-title">Contents</h1>
+
+      <div class="toc-print-part">
+        <p class="toc-print-part-label">Part I &mdash; Foundations</p>
+        <ul class="toc-print-list">
+          <li><span class="toc-print-num">1</span><span class="toc-print-name">What This Book Is About</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch1">5</span></li>
+          <li><span class="toc-print-num">2</span><span class="toc-print-name">Getting to Know CaatMaster</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch2">9</span></li>
+          <li><span class="toc-print-num">3</span><span class="toc-print-name">Getting Your Data In Correctly</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch3">15</span></li>
+          <li><span class="toc-print-num">4</span><span class="toc-print-name">Deterministic Math, AI Where It Belongs</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch4">21</span></li>
+        </ul>
+      </div>
+
+      <div class="toc-print-part">
+        <p class="toc-print-part-label">Part II &mdash; Classic CAATs</p>
+        <ul class="toc-print-list">
+          <li><span class="toc-print-num">5</span><span class="toc-print-name">Data Profiling and Descriptive Statistics</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch5">25</span></li>
+          <li><span class="toc-print-num">6</span><span class="toc-print-name">Completeness and Integrity</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch6">31</span></li>
+          <li><span class="toc-print-num">7</span><span class="toc-print-name">Cross-Tabulation and Grouping</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch7">36</span></li>
+          <li><span class="toc-print-num">8</span><span class="toc-print-name">Benford&#8217;s Law</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch8">41</span></li>
+          <li><span class="toc-print-num">9</span><span class="toc-print-name">Ratio and Trend Analysis</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch9">47</span></li>
+          <li><span class="toc-print-num">10</span><span class="toc-print-name">Outlier and Anomaly Detection</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch10">55</span></li>
+          <li><span class="toc-print-num">11</span><span class="toc-print-name">Sampling and Stratification</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch11">62</span></li>
+        </ul>
+      </div>
+
+      <div class="toc-print-part">
+        <p class="toc-print-part-label">Part III &mdash; Internal Controls</p>
+        <ul class="toc-print-list">
+          <li><span class="toc-print-num">12</span><span class="toc-print-name">Segregation of Duties and Access Review</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch12">73</span></li>
+          <li><span class="toc-print-num">13</span><span class="toc-print-name">Mapping Findings to COSO</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch13">80</span></li>
+          <li><span class="toc-print-num">14</span><span class="toc-print-name">Deterministic Rule Libraries</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch14">85</span></li>
+        </ul>
+      </div>
+
+      <div class="toc-print-part">
+        <p class="toc-print-part-label">Part IV &mdash; IFRS Assertions</p>
+        <ul class="toc-print-list">
+          <li><span class="toc-print-num">15</span><span class="toc-print-name">Revenue Recognition (IFRS 15)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch15">91</span></li>
+          <li><span class="toc-print-num">16</span><span class="toc-print-name">Expected Credit Losses (IFRS 9)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch16">96</span></li>
+          <li><span class="toc-print-num">17</span><span class="toc-print-name">Leases (IFRS 16)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch17">101</span></li>
+          <li><span class="toc-print-num">18</span><span class="toc-print-name">Impairment (IAS 36)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch18">105</span></li>
+          <li><span class="toc-print-num">19</span><span class="toc-print-name">Provisions and Inventory (IAS 37, IAS 2)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch19">110</span></li>
+          <li><span class="toc-print-num">20</span><span class="toc-print-name">Tax and Currency (IAS 12, IAS 21)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch20">114</span></li>
+        </ul>
+      </div>
+
+      <div class="toc-print-part">
+        <p class="toc-print-part-label">Part V &mdash; Source Data</p>
+        <ul class="toc-print-list">
+          <li><span class="toc-print-num">21</span><span class="toc-print-name">Ratio Analysis Done Right</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch21">120</span></li>
+          <li><span class="toc-print-num">22</span><span class="toc-print-name">Reading XBRL Directly</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch22">127</span></li>
+        </ul>
+      </div>
+
+      <div class="toc-print-part">
+        <p class="toc-print-part-label">Part VI &mdash; AI, Used Responsibly</p>
+        <ul class="toc-print-list">
+          <li><span class="toc-print-num">23</span><span class="toc-print-name">The Grounded AI Pattern</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch23">133</span></li>
+          <li><span class="toc-print-num">24</span><span class="toc-print-name">AI-Assisted Text and Document Analysis</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch24">138</span></li>
+          <li><span class="toc-print-num">25</span><span class="toc-print-name">Numeric Disclosure Reconciliation</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch25">143</span></li>
+          <li><span class="toc-print-num">26</span><span class="toc-print-name">Conversational Analysis</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch26">148</span></li>
+        </ul>
+      </div>
+
+      <div class="toc-print-part">
+        <p class="toc-print-part-label">Part VII &mdash; Results</p>
+        <ul class="toc-print-list">
+          <li><span class="toc-print-num">27</span><span class="toc-print-name">Visualizing Findings</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch27">153</span></li>
+          <li><span class="toc-print-num">28</span><span class="toc-print-name">Building the Audit Report</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch28">157</span></li>
+          <li><span class="toc-print-num">29</span><span class="toc-print-name">Reusable Audit Programs</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch29">159</span></li>
+          <li><span class="toc-print-num">30</span><span class="toc-print-name">Managing Projects and Sessions</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch30">162</span></li>
+        </ul>
+      </div>
+
+      <div class="toc-print-part">
+        <p class="toc-print-part-label">Part VIII &mdash; Judgment</p>
+        <ul class="toc-print-list">
+          <li><span class="toc-print-num">31</span><span class="toc-print-name">Every Flag Is a Question</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch31">165</span></li>
+          <li><span class="toc-print-num">32</span><span class="toc-print-name">Governance, Security, and Limits</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch32">168</span></li>
+          <li><span class="toc-print-num">A</span><span class="toc-print-name">Operation Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appa">171</span></li>
+          <li><span class="toc-print-num">B</span><span class="toc-print-name">Dataset Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appb">187</span></li>
+          <li><span class="toc-print-num">C</span><span class="toc-print-name">Default Thresholds Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appc">190</span></li>
+        </ul>
       </div>
     </div>
 
