@@ -629,13 +629,18 @@
     margin: 0 0 0.45rem;
   }
 
+  .toc-print-part-label a { color: inherit; text-decoration: none; }
+
   .toc-print-list { list-style: none; margin: 0; padding: 0; }
 
-  .toc-print-list li {
+  .toc-print-list li { padding: 0.2rem 0; }
+
+  .toc-print-row {
     display: flex;
     align-items: baseline;
     font-size: 0.92rem;
-    padding: 0.2rem 0;
+    color: inherit;
+    text-decoration: none;
   }
 
   .toc-print-num {
@@ -761,92 +766,92 @@
       <h1 class="toc-print-title">Contents</h1>
 
       <div class="toc-print-part">
-        <p class="toc-print-part-label">Part I &mdash; Foundations</p>
+        <p class="toc-print-part-label"><a href="#part1">Part I &mdash; Foundations</a></p>
         <ul class="toc-print-list">
-          <li><span class="toc-print-num">1</span><span class="toc-print-name">What This Book Is About</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch1">5</span></li>
-          <li><span class="toc-print-num">2</span><span class="toc-print-name">Getting to Know CaatMaster</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch2">9</span></li>
-          <li><span class="toc-print-num">3</span><span class="toc-print-name">Getting Your Data In Correctly</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch3">15</span></li>
-          <li><span class="toc-print-num">4</span><span class="toc-print-name">Deterministic Math, AI Where It Belongs</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch4">21</span></li>
+          <li><a class="toc-print-row" href="#ch1"><span class="toc-print-num">1</span><span class="toc-print-name">What This Book Is About</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch1">5</span></a></li>
+          <li><a class="toc-print-row" href="#ch2"><span class="toc-print-num">2</span><span class="toc-print-name">Getting to Know CaatMaster</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch2">9</span></a></li>
+          <li><a class="toc-print-row" href="#ch3"><span class="toc-print-num">3</span><span class="toc-print-name">Getting Your Data In Correctly</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch3">15</span></a></li>
+          <li><a class="toc-print-row" href="#ch4"><span class="toc-print-num">4</span><span class="toc-print-name">Deterministic Math, AI Where It Belongs</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch4">21</span></a></li>
         </ul>
       </div>
 
       <div class="toc-print-part">
-        <p class="toc-print-part-label">Part II &mdash; Classic CAATs</p>
+        <p class="toc-print-part-label"><a href="#part2">Part II &mdash; Classic CAATs</a></p>
         <ul class="toc-print-list">
-          <li><span class="toc-print-num">5</span><span class="toc-print-name">Data Profiling and Descriptive Statistics</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch5">25</span></li>
-          <li><span class="toc-print-num">6</span><span class="toc-print-name">Completeness and Integrity</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch6">31</span></li>
-          <li><span class="toc-print-num">7</span><span class="toc-print-name">Cross-Tabulation and Grouping</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch7">36</span></li>
-          <li><span class="toc-print-num">8</span><span class="toc-print-name">Benford&#8217;s Law</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch8">41</span></li>
-          <li><span class="toc-print-num">9</span><span class="toc-print-name">Ratio and Trend Analysis</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch9">47</span></li>
-          <li><span class="toc-print-num">10</span><span class="toc-print-name">Outlier and Anomaly Detection</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch10">55</span></li>
-          <li><span class="toc-print-num">11</span><span class="toc-print-name">Sampling and Stratification</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch11">62</span></li>
+          <li><a class="toc-print-row" href="#ch5"><span class="toc-print-num">5</span><span class="toc-print-name">Data Profiling and Descriptive Statistics</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch5">25</span></a></li>
+          <li><a class="toc-print-row" href="#ch6"><span class="toc-print-num">6</span><span class="toc-print-name">Completeness and Integrity</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch6">31</span></a></li>
+          <li><a class="toc-print-row" href="#ch7"><span class="toc-print-num">7</span><span class="toc-print-name">Cross-Tabulation and Grouping</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch7">36</span></a></li>
+          <li><a class="toc-print-row" href="#ch8"><span class="toc-print-num">8</span><span class="toc-print-name">Benford&#8217;s Law</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch8">41</span></a></li>
+          <li><a class="toc-print-row" href="#ch9"><span class="toc-print-num">9</span><span class="toc-print-name">Ratio and Trend Analysis</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch9">47</span></a></li>
+          <li><a class="toc-print-row" href="#ch10"><span class="toc-print-num">10</span><span class="toc-print-name">Outlier and Anomaly Detection</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch10">55</span></a></li>
+          <li><a class="toc-print-row" href="#ch11"><span class="toc-print-num">11</span><span class="toc-print-name">Sampling and Stratification</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch11">62</span></a></li>
         </ul>
       </div>
 
       <div class="toc-print-part">
-        <p class="toc-print-part-label">Part III &mdash; Internal Controls</p>
+        <p class="toc-print-part-label"><a href="#part3">Part III &mdash; Internal Controls</a></p>
         <ul class="toc-print-list">
-          <li><span class="toc-print-num">12</span><span class="toc-print-name">Segregation of Duties and Access Review</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch12">73</span></li>
-          <li><span class="toc-print-num">13</span><span class="toc-print-name">Mapping Findings to COSO</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch13">80</span></li>
-          <li><span class="toc-print-num">14</span><span class="toc-print-name">Deterministic Rule Libraries</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch14">85</span></li>
+          <li><a class="toc-print-row" href="#ch12"><span class="toc-print-num">12</span><span class="toc-print-name">Segregation of Duties and Access Review</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch12">73</span></a></li>
+          <li><a class="toc-print-row" href="#ch13"><span class="toc-print-num">13</span><span class="toc-print-name">Mapping Findings to COSO</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch13">80</span></a></li>
+          <li><a class="toc-print-row" href="#ch14"><span class="toc-print-num">14</span><span class="toc-print-name">Deterministic Rule Libraries</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch14">85</span></a></li>
         </ul>
       </div>
 
       <div class="toc-print-part">
-        <p class="toc-print-part-label">Part IV &mdash; IFRS Assertions</p>
+        <p class="toc-print-part-label"><a href="#part4">Part IV &mdash; IFRS Assertions</a></p>
         <ul class="toc-print-list">
-          <li><span class="toc-print-num">15</span><span class="toc-print-name">Revenue Recognition (IFRS 15)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch15">91</span></li>
-          <li><span class="toc-print-num">16</span><span class="toc-print-name">Expected Credit Losses (IFRS 9)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch16">96</span></li>
-          <li><span class="toc-print-num">17</span><span class="toc-print-name">Leases (IFRS 16)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch17">101</span></li>
-          <li><span class="toc-print-num">18</span><span class="toc-print-name">Impairment (IAS 36)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch18">105</span></li>
-          <li><span class="toc-print-num">19</span><span class="toc-print-name">Provisions and Inventory (IAS 37, IAS 2)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch19">110</span></li>
-          <li><span class="toc-print-num">20</span><span class="toc-print-name">Tax and Currency (IAS 12, IAS 21)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch20">114</span></li>
+          <li><a class="toc-print-row" href="#ch15"><span class="toc-print-num">15</span><span class="toc-print-name">Revenue Recognition (IFRS 15)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch15">91</span></a></li>
+          <li><a class="toc-print-row" href="#ch16"><span class="toc-print-num">16</span><span class="toc-print-name">Expected Credit Losses (IFRS 9)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch16">96</span></a></li>
+          <li><a class="toc-print-row" href="#ch17"><span class="toc-print-num">17</span><span class="toc-print-name">Leases (IFRS 16)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch17">101</span></a></li>
+          <li><a class="toc-print-row" href="#ch18"><span class="toc-print-num">18</span><span class="toc-print-name">Impairment (IAS 36)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch18">105</span></a></li>
+          <li><a class="toc-print-row" href="#ch19"><span class="toc-print-num">19</span><span class="toc-print-name">Provisions and Inventory (IAS 37, IAS 2)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch19">110</span></a></li>
+          <li><a class="toc-print-row" href="#ch20"><span class="toc-print-num">20</span><span class="toc-print-name">Tax and Currency (IAS 12, IAS 21)</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch20">114</span></a></li>
         </ul>
       </div>
 
       <div class="toc-print-part">
-        <p class="toc-print-part-label">Part V &mdash; Source Data</p>
+        <p class="toc-print-part-label"><a href="#part5">Part V &mdash; Source Data</a></p>
         <ul class="toc-print-list">
-          <li><span class="toc-print-num">21</span><span class="toc-print-name">Ratio Analysis Done Right</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch21">120</span></li>
-          <li><span class="toc-print-num">22</span><span class="toc-print-name">Reading XBRL Directly</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch22">127</span></li>
+          <li><a class="toc-print-row" href="#ch21"><span class="toc-print-num">21</span><span class="toc-print-name">Ratio Analysis Done Right</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch21">120</span></a></li>
+          <li><a class="toc-print-row" href="#ch22"><span class="toc-print-num">22</span><span class="toc-print-name">Reading XBRL Directly</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch22">127</span></a></li>
         </ul>
       </div>
 
       <div class="toc-print-part">
-        <p class="toc-print-part-label">Part VI &mdash; AI, Used Responsibly</p>
+        <p class="toc-print-part-label"><a href="#part6">Part VI &mdash; AI, Used Responsibly</a></p>
         <ul class="toc-print-list">
-          <li><span class="toc-print-num">23</span><span class="toc-print-name">The Grounded AI Pattern</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch23">133</span></li>
-          <li><span class="toc-print-num">24</span><span class="toc-print-name">AI-Assisted Text and Document Analysis</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch24">138</span></li>
-          <li><span class="toc-print-num">25</span><span class="toc-print-name">Numeric Disclosure Reconciliation</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch25">143</span></li>
-          <li><span class="toc-print-num">26</span><span class="toc-print-name">Conversational Analysis</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch26">148</span></li>
+          <li><a class="toc-print-row" href="#ch23"><span class="toc-print-num">23</span><span class="toc-print-name">The Grounded AI Pattern</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch23">133</span></a></li>
+          <li><a class="toc-print-row" href="#ch24"><span class="toc-print-num">24</span><span class="toc-print-name">AI-Assisted Text and Document Analysis</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch24">138</span></a></li>
+          <li><a class="toc-print-row" href="#ch25"><span class="toc-print-num">25</span><span class="toc-print-name">Numeric Disclosure Reconciliation</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch25">143</span></a></li>
+          <li><a class="toc-print-row" href="#ch26"><span class="toc-print-num">26</span><span class="toc-print-name">Conversational Analysis</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch26">148</span></a></li>
         </ul>
       </div>
 
       <div class="toc-print-part">
-        <p class="toc-print-part-label">Part VII &mdash; Results</p>
+        <p class="toc-print-part-label"><a href="#part7">Part VII &mdash; Results</a></p>
         <ul class="toc-print-list">
-          <li><span class="toc-print-num">27</span><span class="toc-print-name">Visualizing Findings</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch27">153</span></li>
-          <li><span class="toc-print-num">28</span><span class="toc-print-name">Building the Audit Report</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch28">157</span></li>
-          <li><span class="toc-print-num">29</span><span class="toc-print-name">Reusable Audit Programs</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch29">159</span></li>
-          <li><span class="toc-print-num">30</span><span class="toc-print-name">Managing Projects and Sessions</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch30">162</span></li>
+          <li><a class="toc-print-row" href="#ch27"><span class="toc-print-num">27</span><span class="toc-print-name">Visualizing Findings</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch27">153</span></a></li>
+          <li><a class="toc-print-row" href="#ch28"><span class="toc-print-num">28</span><span class="toc-print-name">Building the Audit Report</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch28">157</span></a></li>
+          <li><a class="toc-print-row" href="#ch29"><span class="toc-print-num">29</span><span class="toc-print-name">Reusable Audit Programs</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch29">159</span></a></li>
+          <li><a class="toc-print-row" href="#ch30"><span class="toc-print-num">30</span><span class="toc-print-name">Managing Projects and Sessions</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch30">162</span></a></li>
         </ul>
       </div>
 
       <div class="toc-print-part">
-        <p class="toc-print-part-label">Part VIII &mdash; Judgment</p>
+        <p class="toc-print-part-label"><a href="#part8">Part VIII &mdash; Judgment</a></p>
         <ul class="toc-print-list">
-          <li><span class="toc-print-num">31</span><span class="toc-print-name">Every Flag Is a Question</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch31">165</span></li>
-          <li><span class="toc-print-num">32</span><span class="toc-print-name">Governance, Security, and Limits</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch32">168</span></li>
-          <li><span class="toc-print-num">A</span><span class="toc-print-name">Operation Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appa">171</span></li>
-          <li><span class="toc-print-num">B</span><span class="toc-print-name">Dataset Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appb">187</span></li>
-          <li><span class="toc-print-num">C</span><span class="toc-print-name">Default Thresholds Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appc">190</span></li>
+          <li><a class="toc-print-row" href="#ch31"><span class="toc-print-num">31</span><span class="toc-print-name">Every Flag Is a Question</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch31">165</span></a></li>
+          <li><a class="toc-print-row" href="#ch32"><span class="toc-print-num">32</span><span class="toc-print-name">Governance, Security, and Limits</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch32">168</span></a></li>
+          <li><a class="toc-print-row" href="#appa"><span class="toc-print-num">A</span><span class="toc-print-name">Operation Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appa">171</span></a></li>
+          <li><a class="toc-print-row" href="#appb"><span class="toc-print-num">B</span><span class="toc-print-name">Dataset Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appb">187</span></a></li>
+          <li><a class="toc-print-row" href="#appc"><span class="toc-print-num">C</span><span class="toc-print-name">Default Thresholds Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appc">190</span></a></li>
         </ul>
       </div>
     </div>
 
     <div class="page">
 
-      <div class="part-opener">
+      <div class="part-opener" id="part1">
         <p class="part-label">Part I</p>
         <h2 class="part-title">Foundations</h2>
       </div>
@@ -1090,7 +1095,7 @@
 
       </section>
 
-      <div class="part-opener">
+      <div class="part-opener" id="part2">
         <p class="part-label">Part II</p>
         <h2 class="part-title">Classic CAATs</h2>
       </div>
@@ -1584,7 +1589,7 @@
 
       </section>
 
-      <div class="part-opener">
+      <div class="part-opener" id="part3">
         <p class="part-label">Part III</p>
         <h2 class="part-title">Internal Controls</h2>
       </div>
@@ -1808,7 +1813,7 @@
 
       </section>
 
-      <div class="part-opener">
+      <div class="part-opener" id="part4">
         <p class="part-label">Part IV</p>
         <h2 class="part-title">IFRS Assertions</h2>
       </div>
@@ -2155,7 +2160,7 @@
 
       </section>
 
-      <div class="part-opener">
+      <div class="part-opener" id="part5">
         <p class="part-label">Part V</p>
         <h2 class="part-title">Source Data</h2>
       </div>
@@ -2300,7 +2305,7 @@
 
       </section>
 
-      <div class="part-opener">
+      <div class="part-opener" id="part6">
         <p class="part-label">Part VI</p>
         <h2 class="part-title">AI, Used Responsibly</h2>
       </div>
@@ -2491,7 +2496,7 @@
 
       </section>
 
-      <div class="part-opener">
+      <div class="part-opener" id="part7">
         <p class="part-label">Part VII</p>
         <h2 class="part-title">Results</h2>
       </div>
@@ -2638,7 +2643,7 @@
 
       </section>
 
-      <div class="part-opener">
+      <div class="part-opener" id="part8">
         <p class="part-label">Part VIII</p>
         <h2 class="part-title">Judgment</h2>
       </div>
