@@ -22,103 +22,6 @@ class DataProcessor:
     The methods in this class are called by the TransformationPipeline.
     """
 
-    # Mapping from operation_id to method name (for parameter validation)
-    _OPERATION_METHODS = {
-        'text_uppercase': 'uppercase',
-        'text_lowercase': 'lowercase',
-        'text_titlecase': 'titlecase',
-        'text_trim': 'trim',
-        'text_extract_numbers': 'extract_numbers',
-        'text_extract_text': 'extract_text',
-        'text_reverse': 'reverse_text',
-        'text_length': 'text_length',
-        'text_hash_md5': 'hash_md5',
-        'text_soundex': 'soundex',
-        'math_round': 'round',
-        'math_ceil': 'ceil',
-        'math_floor': 'floor',
-        'math_abs': 'abs',
-        'math_sqrt': 'sqrt',
-        'math_square': 'square',
-        'math_log': 'log',
-        'math_log10': 'log10',
-        'math_exp': 'exp',
-        'datetime_year': 'year',
-        'datetime_month': 'month',
-        'datetime_day': 'day',
-        'datetime_hour': 'hour',
-        'datetime_minute': 'minute',
-        'datetime_second': 'second',
-        'datetime_weekday': 'weekday',
-        'datetime_quarter': 'quarter',
-        'datetime_age_days': 'age_days',
-        'datetime_age_years': 'age_years',
-        'datetime_is_weekend': 'is_weekend',
-        'datetime_is_leap_year': 'is_leap_year',
-        'datetime_days_in_month': 'days_in_month',
-        'stat_zscore': 'zscore',
-        'stat_percent_rank': 'percent_rank',
-        'stat_rank': 'rank',
-        'column_rename': 'rename_column',
-        'column_change_dtype': 'change_dtype',
-        'split_comma': 'split_by_comma',
-        'split_space': 'split_by_space',
-        'split_semicolon': 'split_by_semicolon',
-        'split_pipe': 'split_by_pipe',
-        'split_custom': 'split_by_custom',
-        'pivot_table': 'pivot_table',
-        'unpivot_table': 'unpivot_table',
-        'ml_anomaly_iforest': 'anomaly_iforest',
-        'ml_anomaly_zscore': 'anomaly_zscore',
-        'ml_anomaly_iqr': 'anomaly_iqr',
-        'ml_anomaly_lof': 'anomaly_lof',
-        'ml_outlier': 'outlier_detection',
-        'ml_cluster': 'kmeans_cluster',
-        'ml_forecast': 'forecast',
-        'ml_train': 'train_model',
-        'audit_benford_law': 'benford_law',
-        'ai_explain': 'explain_column',
-        'ai_sentiment': 'sentiment_analysis',
-        'ai_extract': 'extract_entities',
-        'ai_pattern_learn': 'ai_pattern_learn',
-        'stat_quick_stats': 'quick_stats',
-        'stat_group_stats': 'group_stats',
-        'ml_classify': 'ml_classify',
-        'ml_risk_score': 'ml_risk_score',
-        'ml_predict': 'ml_predict',
-        'ml_linear_regression': 'ml_linear_regression',
-        'ml_glm': 'ml_glm',
-        'ml_decision_tree': 'ml_decision_tree',
-        'ml_random_forest': 'ml_random_forest',
-        'ml_gradient_boosting': 'ml_gradient_boosting',
-        'ml_xgboost': 'ml_xgboost',
-        'ml_lightgbm': 'ml_lightgbm',
-        'ml_dbscan': 'ml_dbscan',
-        'ml_gmm': 'ml_gmm',
-        'ml_arima': 'ml_arima',
-        'ml_ets': 'ml_ets',
-        'ai_classify': 'ai_classify',
-        'ai_summarize': 'ai_summarize',
-        'ai_enrich': 'ai_enrich',
-        'ai_generate_column': 'ai_generate_column',
-        'audit_duplicate_detection': 'duplicate_detection',
-        'audit_gap_analysis': 'gap_analysis',
-        'audit_outlier_detection': 'audit_outlier_detection',
-        'audit_round_numbers': 'round_number_detection',
-        'stat_add_group_stats': 'add_group_stats',
-
-        # New operations added to registry
-        'text_extract_first': 'extract_first_chars',
-        'text_extract_last': 'extract_last_chars',
-        'text_extract_middle': 'extract_middle_chars',
-        'math_modulo': 'modulo',
-        'math_power': 'power',
-        'text_add_prefix': 'add_prefix',
-        'text_add_suffix': 'add_suffix',
-        'replace_values': 'replace_values',
-        'standardize_minmax': 'minmax_normalize',
-    }
-
     def _format_column_template(self, template: str, params: Dict[str, Any]) -> str:
         """Format a column name template with parameters.
 
@@ -352,8 +255,6 @@ class DataProcessor:
             return self._call_mapped_method(self.ml_outlier_detection, df, params)
         elif operation_id == 'ml_cluster':
             return self._call_mapped_method(self.ml_cluster, df, params, metrics_sink=params.get('_metrics_sink'))
-        elif operation_id == 'ml_forecast':
-            return self._call_mapped_method(self.ml_forecast, df, params, metrics_sink=params.get('_metrics_sink'))
 
         # ML Training operations
         elif operation_id == 'ml_train':
@@ -916,7 +817,8 @@ class DataProcessor:
     # ML TRANSFORMATION IMPLEMENTATIONS
     # ============================================================================
 
-    def ml_anomaly_iforest(self, df: pl.DataFrame, column: str, contamination: float = 0.1) -> pl.DataFrame:
+    def ml_anomaly_iforest(self, df: pl.DataFrame, column: str, contamination: float = 0.1,
+                            n_estimators: int = 100, max_samples="auto") -> pl.DataFrame:
         """Anomaly detection using a genuine Isolation Forest (scikit-learn) -
         the algorithm this operation's own name promises. An earlier version
         of this method computed a distance-from-mean heuristic instead, under
@@ -935,7 +837,8 @@ class DataProcessor:
                 pl.lit(None, dtype=pl.Float64).alias(f"{column}_anomaly_score"),
             ])
 
-        model = IsolationForest(contamination=contamination, random_state=42)
+        model = IsolationForest(contamination=contamination, n_estimators=n_estimators,
+                                 max_samples=max_samples, random_state=42)
         predictions = model.fit_predict(col_data)
         # score_samples is lower for more anomalous points; negate so this
         # column keeps the same "higher = more anomalous" convention every
@@ -947,8 +850,16 @@ class DataProcessor:
             pl.Series(name=f"{column}_anomaly_score", values=scores)
         ])
 
-    def ml_anomaly_zscore(self, df: pl.DataFrame, column: str, threshold: float = 3.0) -> pl.DataFrame:
-        """Anomaly detection using Z-score"""
+    def ml_anomaly_zscore(self, df: pl.DataFrame, column: str, threshold: float = 3.0,
+                           direction: str = "both") -> pl.DataFrame:
+        """Anomaly detection using Z-score. direction narrows which side of
+        the mean counts as anomalous - "above" flags only unusually large
+        values (e.g. inflated expense claims), "below" only unusually small
+        ones, "both" (the default) either. The dialog exposed this choice
+        before the underlying method actually implemented it, which meant
+        picking "Above Mean Only" silently had no effect on the value
+        actually written to the dataset - the same class of mismatch fixed
+        for Isolation Forest and LOF elsewhere in this file."""
         import numpy as np
         col_data = df[column].to_numpy()
         mean = np.mean(col_data)
@@ -956,7 +867,12 @@ class DataProcessor:
         if std == 0:
             std = 1
         zscore = (col_data - mean) / std
-        is_outlier = np.abs(zscore) > threshold
+        if direction == "above":
+            is_outlier = zscore > threshold
+        elif direction == "below":
+            is_outlier = zscore < -threshold
+        else:
+            is_outlier = np.abs(zscore) > threshold
         return df.with_columns([
             pl.Series(name=f"{column}_is_outlier", values=is_outlier),
             pl.Series(name=f"{column}_zscore", values=zscore)
@@ -977,7 +893,8 @@ class DataProcessor:
             pl.Series(name=f"{column}_iqr_distance", values=iqr_distance)
         ])
 
-    def ml_anomaly_lof(self, df: pl.DataFrame, column: str, n_neighbors: int = 20) -> pl.DataFrame:
+    def ml_anomaly_lof(self, df: pl.DataFrame, column: str, n_neighbors: int = 20,
+                        contamination: float = 0.1) -> pl.DataFrame:
         """Local Outlier Factor via scikit-learn - the genuine, density-based
         algorithm this operation's name promises, not the distance-from-mean
         heuristic an earlier version of this method computed under the same
@@ -989,7 +906,11 @@ class DataProcessor:
         population size, since scikit-learn requires strictly fewer
         neighbors than there are samples; a small population still runs,
         with fewer neighbors than requested, rather than raising an error
-        the reviewer has no obvious way to resolve from this dialog."""
+        the reviewer has no obvious way to resolve from this dialog.
+        contamination sets the expected flagged fraction, same meaning and
+        default as Isolation Forest's own parameter above, rather than
+        scikit-learn's own 'auto' default, so the two tabs behave
+        predictably the same way when left untouched."""
         from sklearn.neighbors import LocalOutlierFactor
         col_data = df[column].to_numpy().reshape(-1, 1)
         n = len(col_data)
@@ -1000,7 +921,7 @@ class DataProcessor:
             ])
 
         k = max(1, min(n_neighbors, n - 1))
-        model = LocalOutlierFactor(n_neighbors=k)
+        model = LocalOutlierFactor(n_neighbors=k, contamination=contamination)
         predictions = model.fit_predict(col_data)
         # negative_outlier_factor_ is lower (more negative) for more
         # anomalous points; negate so this column keeps the same
@@ -1050,27 +971,6 @@ class DataProcessor:
         labels = np.argmin(distances, axis=1)
 
         return df.with_columns(pl.Series(name=output_col, values=labels))
-
-    def ml_forecast(self, df: pl.DataFrame, column: str, output_col: str, periods: int = 12,
-                     metrics_sink: Optional[dict] = None, **kwargs) -> pl.DataFrame:
-        """Simple time series forecast using exponential smoothing"""
-        import numpy as np
-        values = df[column].to_numpy()
-        if len(values) == 0:
-            return df.with_columns(pl.lit(None).alias(output_col))
-
-        alpha = 0.3
-        n = len(values)
-        smoothed = np.zeros(n)
-
-        smoothed[0] = values[0]
-        for i in range(1, n):
-            smoothed[i] = alpha * values[i] + (1 - alpha) * smoothed[i - 1]
-
-        self._capture_forecast_metrics(metrics_sink, "Exponential Smoothing (simple)", values, smoothed,
-                                        model_params={'alpha': alpha})
-
-        return df.with_columns(pl.Series(name=output_col, values=smoothed))
 
     def ml_train_model(self, df: pl.DataFrame, model_name: str, algorithm: str, features: List[str],
                       target: str, test_split: float = 0.2, random_seed: int = 42,
@@ -3854,14 +3754,82 @@ class DataProcessor:
     # PIVOT/UNPIVOT IMPLEMENTATIONS
     # ============================================================================
 
-    def pivot(self, df: pl.DataFrame, index: List[str], columns: str, values: str, aggregate: str = 'first') -> pl.DataFrame:
-        """Create pivot table"""
+    def pivot(self, df: pl.DataFrame, index: List[str], columns, values, aggregate: str = 'first') -> pl.DataFrame:
+        """Create pivot table.
+
+        index/columns/values each accept either a single column name or a
+        list of them - Polars' own pivot() supports both natively (a list
+        of `values` produces one set of pivoted columns per value column;
+        a list of `columns` produces a composite/tuple column header), and
+        PivotTableDialog's drag-and-drop zones let a reviewer drop more
+        than one column into any of the three, so this must not silently
+        assume a single string the way an incomplete type hint once did.
+
+        aggregate maps to Polars' own aggregate_function values, with two
+        corrections found by tracing an actual crash and an actual wrong
+        result back to this method: "average" (what the dialog's combo
+        box text becomes) is not itself a valid Polars aggregate_function
+        literal (only "mean" is) and silently fell through to this
+        method's own now-removed default of 'first' - selecting Average
+        in the dialog quietly computed the FIRST value per group instead,
+        with no error to reveal it. "distinct_count" has no matching
+        Polars string literal at all; Polars' own pivot() only accepts an
+        aggregation *expression* for anything outside its fixed set of
+        literals, so that one case is handled separately below.
+
+        columns/on is empty precisely when the dialog's COLUMNS drop zone
+        is left empty - a genuine, validated use case in the dialog (a
+        plain group-by summary rather than a cross-tab), not an error
+        case, but Polars' own pivot() requires a non-empty `on` and
+        raises if given one. Falls back to an equivalent group_by/agg in
+        that case instead, using the exact same aggregate mapping so the
+        two code paths can't silently disagree on what "Average" means.
+        """
+        index_cols = index if isinstance(index, list) else [index]
+        value_cols = values if isinstance(values, list) else [values]
+        if not columns:
+            return df.group_by(index_cols, maintain_order=True).agg([
+                self._pivot_aggregate_expr(aggregate, v).alias(f"{v}_{aggregate}") for v in value_cols
+            ])
+        return df.pivot(
+            on=columns, index=index, values=values,
+            aggregate_function=self._pivot_aggregate_function(aggregate),
+        )
+
+    @staticmethod
+    def _pivot_aggregate_function(aggregate: str):
+        """The aggregate_function value Polars' own pivot() expects for
+        one of PivotTableDialog's aggregation choices - see pivot()'s
+        docstring for why "average" and "distinct_count" need special
+        handling rather than a plain string-literal lookup."""
         agg_map = {
-            'sum': 'sum', 'mean': 'mean', 'min': 'min', 'max': 'max',
-            'count': 'count', 'first': 'first', 'last': 'last'
+            'sum': 'sum', 'mean': 'mean', 'average': 'mean', 'median': 'median',
+            'min': 'min', 'max': 'max', 'count_rows': 'len',
+            'first': 'first', 'last': 'last',
         }
-        agg_func = agg_map.get(aggregate, 'first')
-        return df.pivot(values=values, index=index, columns=columns, aggregate_function=agg_func)
+        if aggregate == 'distinct_count':
+            return pl.element().n_unique()
+        if aggregate == 'count':
+            # Excel/pandas convention: "Count" excludes nulls, "Count
+            # Rows" doesn't - Polars' only matching string literal, "len",
+            # is the latter, so "count" needs its own expression.
+            return pl.element().count()
+        return agg_map.get(aggregate, 'first')
+
+    @staticmethod
+    def _pivot_aggregate_expr(aggregate: str, column: str) -> pl.Expr:
+        """The equivalent of _pivot_aggregate_function(), as a plain
+        pl.col(column).<method>() expression for the group_by/agg
+        fallback path above, since that path can't use pl.element()."""
+        col = pl.col(column)
+        expr_map = {
+            'sum': col.sum(), 'mean': col.mean(), 'average': col.mean(),
+            'median': col.median(), 'min': col.min(), 'max': col.max(),
+            'count': col.count(), 'count_rows': col.len(),
+            'distinct_count': col.n_unique(),
+            'first': col.first(), 'last': col.last(),
+        }
+        return expr_map.get(aggregate, col.first())
 
     def unpivot(self, df: pl.DataFrame, id_vars: List[str], value_vars: List[str] = None, var_name: str = "variable", value_name: str = "value") -> pl.DataFrame:
         """Unpivot (melt) a DataFrame."""
@@ -4103,7 +4071,8 @@ class DataProcessor:
     # =========================================================================
 
     def replace_values(self, df: pl.DataFrame, column: str, find_value: str, replace_value: str = None,
-                       case_sensitive: bool = True, replace_with_null: bool = False, output_col: str = None) -> pl.DataFrame:
+                       case_sensitive: bool = True, replace_with_null: bool = False, output_col: str = None,
+                       use_regex: bool = False, whole_word: bool = False) -> pl.DataFrame:
         """Find and replace values in a column.
 
         replace_with_null=True treats find_value as an exact, whole-value
@@ -4112,7 +4081,32 @@ class DataProcessor:
         ("???", "-", "N/A") into real nulls, which a numeric cast can then
         handle instead of choking on leftover text. Without it, this
         behaves as before: find_value is a substring/regex pattern
-        replaced within each string value."""
+        replaced within each string value.
+
+        Three corrections found by tracing the Find and Replace dialog's
+        own exposed controls back to what this method actually did with
+        them:
+
+        - The dialog's primary button reads "Replace All", but this used
+          Polars' str.replace(), which - unlike its name suggests -
+          replaces only the FIRST match in each cell by default; a value
+          containing the search text more than once kept every match
+          after the first. Now uses str.replace_all().
+        - case_sensitive changed nothing: neither branch here ever added
+          a case-insensitivity flag, so a search for "hello" already
+          failed to match "Hello" regardless of what the checkbox said.
+        - use_regex and whole_word were collected by the dialog's
+          get_parameters() but never reached this method at all - two
+          real, exposed controls with zero effect on the applied result.
+          Since Polars' str.replace_all() always treats its pattern as a
+          regex, use_regex=False (the sensible default for a "find text"
+          box) now escapes find_value first, so a search string
+          containing a genuine regex metacharacter (".", "$", "100%",
+          "user.name") is matched literally instead of as a pattern -
+          another real, silent bug this fixes as a side effect: every
+          find/replace before this fix was implicitly running in regex
+          mode with no way to turn it off.
+        """
         output_col = output_col or f"{column}_replaced"
 
         if replace_with_null:
@@ -4122,14 +4116,16 @@ class DataProcessor:
                 pl.when(match_expr).then(None).otherwise(pl.col(column)).alias(output_col)
             )
 
-        if case_sensitive:
-            return df.with_columns(
-                pl.col(column).str.replace(find_value, replace_value).alias(output_col)
-            )
-        else:
-            return df.with_columns(
-                pl.col(column).str.replace(find_value, replace_value, literal=False).alias(output_col)
-            )
+        import re as _re
+        pattern = find_value if use_regex else _re.escape(find_value)
+        if whole_word:
+            pattern = rf"\b{pattern}\b"
+        if not case_sensitive:
+            pattern = f"(?i){pattern}"
+
+        return df.with_columns(
+            pl.col(column).str.replace_all(pattern, replace_value or "", literal=False).alias(output_col)
+        )
 
     def standardize_missing_values(self, df: pl.DataFrame, column: str, markers: List[str],
                                    case_sensitive: bool = False) -> pl.DataFrame:
@@ -5126,7 +5122,8 @@ class LegacyDataProcessor:
     # ML OPERATIONS (Simplified implementations)
     # =========================================================================
 
-    def ml_anomaly_iforest(self, df: pl.DataFrame, column: str, contamination: float = 0.1) -> pl.DataFrame:
+    def ml_anomaly_iforest(self, df: pl.DataFrame, column: str, contamination: float = 0.1,
+                            n_estimators: int = 100, max_samples="auto") -> pl.DataFrame:
         """Anomaly detection using scikit-learn's real Isolation Forest.
         This class's copy is unreachable via the live Transform dispatch
         (see DataProcessor.ml_anomaly_iforest, which the pipeline actually
@@ -5134,7 +5131,8 @@ class LegacyDataProcessor:
         implementation is left lying around under the same method name."""
         from sklearn.ensemble import IsolationForest
         col_data = df[column].to_numpy().reshape(-1, 1)
-        model = IsolationForest(contamination=contamination, random_state=42)
+        model = IsolationForest(contamination=contamination, n_estimators=n_estimators,
+                                 max_samples=max_samples, random_state=42)
         predictions = model.fit_predict(col_data)
         scores = -model.score_samples(col_data)
 
@@ -5143,17 +5141,26 @@ class LegacyDataProcessor:
             pl.Series(name=f"{column}_anomaly_score", values=scores)
         ])
 
-    def ml_anomaly_zscore(self, df: pl.DataFrame, column: str, threshold: float = 3.0) -> pl.DataFrame:
-        """Anomaly detection using Z-score"""
+    def ml_anomaly_zscore(self, df: pl.DataFrame, column: str, threshold: float = 3.0,
+                           direction: str = "both") -> pl.DataFrame:
+        """Anomaly detection using Z-score. Kept in sync with
+        DataProcessor.ml_anomaly_zscore's direction parameter - see there
+        for why it exists."""
         col = pl.col(column)
         mean = df[column].mean()
         std = df[column].std()
         if std == 0:
             std = 1
         zscore = (col - mean) / std
+        if direction == "above":
+            is_outlier = zscore > threshold
+        elif direction == "below":
+            is_outlier = zscore < -threshold
+        else:
+            is_outlier = zscore.abs() > threshold
         return df.with_columns([
             zscore.alias(f"{column}_zscore"),
-            (zscore.abs() > threshold).alias(f"{column}_is_outlier")
+            is_outlier.alias(f"{column}_is_outlier")
         ])
 
     def ml_anomaly_iqr(self, df: pl.DataFrame, column: str, multiplier: float = 1.5) -> pl.DataFrame:
@@ -5168,7 +5175,8 @@ class LegacyDataProcessor:
             (pl.col(column) - (Q3 + Q1) / 2).abs().alias(f"{column}_iqr_distance")
         ])
 
-    def ml_anomaly_lof(self, df: pl.DataFrame, column: str, n_neighbors: int = 20) -> pl.DataFrame:
+    def ml_anomaly_lof(self, df: pl.DataFrame, column: str, n_neighbors: int = 20,
+                        contamination: float = 0.1) -> pl.DataFrame:
         """Local Outlier Factor via scikit-learn's real, density-based
         algorithm. This class's copy is unreachable via the live Transform
         dispatch (see DataProcessor.ml_anomaly_lof, which the pipeline
@@ -5184,7 +5192,7 @@ class LegacyDataProcessor:
             ])
 
         k = max(1, min(n_neighbors, n - 1))
-        model = LocalOutlierFactor(n_neighbors=k)
+        model = LocalOutlierFactor(n_neighbors=k, contamination=contamination)
         predictions = model.fit_predict(col_data)
         scores = -model.negative_outlier_factor_
 
@@ -5219,29 +5227,6 @@ class LegacyDataProcessor:
         labels = np.argmin(distances, axis=1)
 
         return df.with_columns(pl.Series(name="cluster", values=labels))
-
-    def ml_forecast(self, df: pl.DataFrame, column: str, periods: int = 12) -> pl.DataFrame:
-        """Simple time series forecast using exponential smoothing"""
-        values = df[column].to_numpy()
-        if len(values) == 0:
-            return df.with_columns(pl.lit(None).alias(f"{column}_forecast"))
-
-        alpha = 0.3
-        n = len(values)
-        smoothed = np.zeros(n + periods)
-
-        # Calculate smoothed values
-        smoothed[0] = values[0]
-        for i in range(1, n):
-            smoothed[i] = alpha * values[i] + (1 - alpha) * smoothed[i - 1]
-
-        # Extend with last smoothed value (naive forecast)
-        for i in range(n, n + periods):
-            smoothed[i] = smoothed[i - 1]
-
-        return df.with_columns(
-            pl.Series(name=f"{column}_forecast", values=smoothed[:n])
-        )
 
     # =========================================================================
     # AUDIT OPERATIONS
@@ -5435,8 +5420,16 @@ class LegacyDataProcessor:
             pl.col(column).str.split(delimiter).list.to_struct(fields=fields)
         ).unnest(column)
 
-    def replace_values(self, df: pl.DataFrame, old_value: Any, new_value: Any) -> pl.DataFrame:
-        """Replace values in column"""
+    def replace_values(self, df: pl.DataFrame, column: str, old_value: Any, new_value: Any) -> pl.DataFrame:
+        """Replace values in column.
+
+        This class's copy is unreachable via the live Transform dispatch
+        (see DataProcessor.replace_values, which the pipeline actually
+        calls) and had never worked at all - `column` was referenced
+        without ever being a parameter of this method, so any call would
+        have raised NameError immediately. Given a real signature here so
+        a future caller gets a working method instead of the same
+        instant crash."""
         return df.with_columns(
             pl.when(pl.col(column) == old_value)
             .then(new_value)

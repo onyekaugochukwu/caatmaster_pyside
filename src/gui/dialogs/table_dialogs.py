@@ -284,17 +284,6 @@ class TransposeDialog(BaseModal):
     def get_parameters(self) -> dict:
         return getattr(self, 'current_params', {})
 
-    def apply_analysis(self, df: pl.DataFrame) -> pl.DataFrame:
-        params = self.get_parameters()
-        cols = params["columns_to_transpose"]
-
-        # Transpose using polars
-        transposed = df.select(cols).transpose(
-            include_header=params["include_index"],
-            header_name=params.get("index_column", "index") if params["include_index"] else None
-        )
-        return transposed
-
 
 class JoinDatasetsDialog(BaseModal):
     """Dialog for joining two datasets using various join types"""
@@ -1173,105 +1162,6 @@ class AppendDatasetsDialog(BaseModal):
         return getattr(self, 'current_params', {})
 
 
-class CombineSheetsDialog(BaseModal):
-    """Dialog for combining/unioning multiple worksheets"""
-
-    def __init__(self, dataframe: pl.DataFrame, parent=None):
-        self.original_df = dataframe
-        super().__init__("Combine Worksheets", dataframe, parent)
-        self.setMinimumSize(600, 400)
-
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(15)
-
-        # Source datasets
-        source_group = QGroupBox("Source Datasets")
-        source_layout = QVBoxLayout(source_group)
-
-        self.datasets_edit = QLineEdit()
-        self.datasets_edit.setPlaceholderText("Enter dataset names separated by commas")
-        source_layout.addWidget(QLabel("Datasets to Combine:"))
-        source_layout.addWidget(self.datasets_edit)
-
-        help_label = QLabel("Enter the names of datasets in your project to combine")
-        help_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
-        source_layout.addWidget(help_label)
-
-        layout.addWidget(source_group)
-
-        # Options
-        options_group = QGroupBox("Options")
-        options_layout = QVBoxLayout(options_group)
-
-        self.align_check = QCheckBox("Auto-align columns by name")
-        self.align_check.setChecked(True)
-        options_layout.addWidget(self.align_check)
-
-        self.fill_check = QCheckBox("Fill missing columns with null")
-        options_layout.addWidget(self.fill_check)
-
-        layout.addWidget(options_group)
-
-        # Preview
-        preview_group = QGroupBox("Current Dataset Preview")
-        preview_layout = QVBoxLayout(preview_group)
-
-        self.preview_label = QLabel(f"Current dataset: {len(self.original_df)} rows, {len(self.original_df.columns)} columns")
-        self.preview_label.setStyleSheet(f"""
-            QLabel {{
-                background-color: {Colors.BG_SECONDARY};
-                padding: 10px;
-                border-radius: 4px;
-            }}
-        """)
-        preview_layout.addWidget(self.preview_label)
-
-        layout.addWidget(preview_group)
-
-        # Button row
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-
-        self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(self.cancel_btn)
-
-        self.apply_btn = create_primary_button("Combine")
-        self.apply_btn.clicked.connect(self._apply_combine)
-        btn_layout.addWidget(self.apply_btn)
-
-        layout.addLayout(btn_layout)
-
-    def _apply_combine(self):
-        """Validate and accept combine"""
-        datasets_text = self.datasets_edit.text().strip()
-        if not datasets_text:
-            QMessageBox.warning(self, "Warning", "Please enter dataset names.")
-            return
-
-        datasets = [d.strip() for d in datasets_text.split(",") if d.strip()]
-        if not datasets:
-            QMessageBox.warning(self, "Warning", "Please enter valid dataset names.")
-            return
-
-        self.current_params = {
-            "source_datasets": datasets,
-            "align_columns": self.align_check.isChecked(),
-            "fill_missing": self.fill_check.isChecked()
-        }
-        self.accept()
-
-    def get_parameters(self) -> dict:
-        return getattr(self, 'current_params', {})
-
-    def apply_analysis(self, df: pl.DataFrame) -> pl.DataFrame:
-        params = self.get_parameters()
-        # This would need access to other datasets - for now return original
-        # In full implementation, this would union multiple datasets
-        return df
-
-
 class QuerySheetDialog(BaseModal):
     """Dialog for creating filtered/transformed views with formulas"""
 
@@ -1424,28 +1314,6 @@ class QuerySheetDialog(BaseModal):
     def get_parameters(self) -> dict:
         return getattr(self, 'current_params', {})
 
-    def apply_analysis(self, df: pl.DataFrame) -> pl.DataFrame:
-        params = self.get_parameters()
-        result_df = df.clone()
-
-        # Apply filter
-        if params.get("condition"):
-            try:
-                result_df = result_df.filter(eval(params["condition"]))
-            except Exception:
-                pass
-
-        # Apply sort
-        if params.get("sort_by"):
-            result_df = result_df.sort(params["sort_by"],
-                                       descending=(params.get("sort_order") == "desc"))
-
-        # Select columns
-        if params.get("select_columns"):
-            result_df = result_df.select(params["select_columns"])
-
-        return result_df
-
 
 class SelectNRowsDialog(BaseModal):
     """Dialog for selecting first N, last N, or random N rows"""
@@ -1567,20 +1435,3 @@ class SelectNRowsDialog(BaseModal):
     def get_parameters(self) -> dict:
         return getattr(self, 'current_params', {})
 
-    def apply_analysis(self, df: pl.DataFrame) -> pl.DataFrame:
-        params = self.get_parameters()
-        n = params["n"]
-
-        if params.get("is_percentage"):
-            n = int(len(df) * params["percentage"] / 100)
-
-        if params["selection_type"] == "first":
-            return df.head(n)
-        elif params["selection_type"] == "last":
-            return df.tail(n)
-        else:  # random
-            seed = int(params["random_seed"]) if params["random_seed"] else None
-            if seed:
-                np.random.seed(seed)
-            indices = np.random.choice(len(df), size=min(n, len(df)), replace=False)
-            return df[indices]

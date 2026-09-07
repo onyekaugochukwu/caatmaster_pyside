@@ -550,7 +550,6 @@ ML_REPORT_BUILDERS_WITH_METRICS = {
     "ml_train": build_train_model_report,
     "ml_risk_score": build_risk_score_report,
     "ml_predict": build_predict_report,
-    "ml_forecast": build_forecast_report,
     "ml_arima": build_forecast_report,
     "ml_ets": build_forecast_report,
 }

@@ -791,7 +791,9 @@ OPERATION_REGISTRY = {
         "description": "Detects anomalies using Isolation Forest algorithm",
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"},
-            "contamination": {"type": "float", "required": False, "default": 0.1, "label": "Contamination"}
+            "contamination": {"type": "float", "required": False, "default": 0.1, "label": "Contamination"},
+            "n_estimators": {"type": "int", "required": False, "default": 100, "label": "Number of Trees"},
+            "max_samples": {"type": "string", "required": False, "default": "auto", "label": "Max Samples"}
         },
         "creates_columns": ["{column}_is_anomaly", "{column}_anomaly_score"]
     },
@@ -802,7 +804,9 @@ OPERATION_REGISTRY = {
         "description": "Detects anomalies using Z-Score method",
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"},
-            "threshold": {"type": "float", "required": False, "default": 3.0, "label": "Threshold (std devs)"}
+            "threshold": {"type": "float", "required": False, "default": 3.0, "label": "Threshold (std devs)"},
+            "direction": {"type": "string", "required": False, "default": "both",
+                          "options": ["both", "above", "below"], "label": "Direction"}
         },
         "creates_columns": ["{column}_is_outlier", "{column}_zscore"]
     },
@@ -824,7 +828,8 @@ OPERATION_REGISTRY = {
         "description": "Detects anomalies using Local Outlier Factor",
         "parameter_schema": {
             "column": {"type": "column", "required": True, "label": "Column"},
-            "n_neighbors": {"type": "int", "required": False, "default": 20, "label": "Number of Neighbors"}
+            "n_neighbors": {"type": "int", "required": False, "default": 20, "label": "Number of Neighbors"},
+            "contamination": {"type": "float", "required": False, "default": 0.1, "label": "Contamination"}
         },
         "creates_columns": ["{column}_is_outlier", "{column}_lof_score"]
     },
@@ -851,19 +856,6 @@ OPERATION_REGISTRY = {
         },
         "creates_columns": ["cluster"]
     },
-    "ml_forecast": {
-        "display_name": "Time Series Forecast",
-        "type": TransformationStepType.ML_PREDICT,
-        "category": "ml",
-        "description": "Forecasts future values using exponential smoothing",
-        "parameter_schema": {
-            "column": {"type": "column", "required": True, "label": "Value Column"},
-            "periods": {"type": "int", "required": False, "default": 12, "label": "Periods to Forecast"}
-        },
-        "creates_columns": True,
-        "column_naming_pattern": "{column}_forecast"
-    },
-
     # =========================================================================
     # ML TRAINING OPERATIONS
     # =========================================================================
@@ -1478,7 +1470,10 @@ OPERATION_REGISTRY = {
                               "description": "Ignored if Replace With Null is checked"},
             "replace_with_null": {"type": "bool", "required": False, "default": False, "label": "Replace With Null",
                                   "description": "Treat Find as an exact whole-value match and replace it with a true null, instead of a text substitution"},
-            "case_sensitive": {"type": "bool", "required": False, "default": True, "label": "Case Sensitive"}
+            "case_sensitive": {"type": "bool", "required": False, "default": True, "label": "Case Sensitive"},
+            "use_regex": {"type": "bool", "required": False, "default": False, "label": "Use Regular Expression",
+                         "description": "Treat Find as a regex pattern instead of literal text"},
+            "whole_word": {"type": "bool", "required": False, "default": False, "label": "Whole Word Only"}
         },
         "creates_columns": True,
         "column_naming_pattern": "{column}_replaced"

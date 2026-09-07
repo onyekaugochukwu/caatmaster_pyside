@@ -2796,6 +2796,8 @@ class MainWindow(QMainWindow):
             # Split operations
             "split_comma": lambda: self._on_transform("split_comma"),
             "split_space": lambda: self._on_transform("split_space"),
+            "split_semicolon": lambda: self._on_transform("split_semicolon"),
+            "split_pipe": lambda: self._on_transform("split_pipe"),
             "split_custom": lambda: self._on_transform("split_custom"),
 
             # Date/Time operations
@@ -2842,7 +2844,6 @@ class MainWindow(QMainWindow):
             "ml_anomaly_zscore": lambda: self._on_transform("ml_anomaly_zscore"),
             "ml_anomaly_iqr": lambda: self._on_transform("ml_anomaly_iqr"),
             "ml_kmeans": lambda: self._on_transform("ml_cluster"),
-            "ml_forecast": lambda: self._on_transform("ml_forecast"),
             "ml_lof": lambda: self._on_transform("ml_anomaly_lof"),
             "ml_train": self._on_ml_train,
             "ml_classify": lambda: self._on_transform("ml_classify"),
@@ -2877,6 +2878,7 @@ class MainWindow(QMainWindow):
             "audit_gaps": lambda: self._on_transform("audit_gap_analysis"),
             "audit_outliers": lambda: self._on_transform("audit_outlier_detection"),
             "audit_round_numbers": lambda: self._on_transform("audit_round_numbers"),
+            "sox_sod_analysis": lambda: self._on_transform("sox_sod_analysis"),
 
             # Statistics operations
             "stat_group_stats": lambda: self._on_transform("stat_add_group_stats"),

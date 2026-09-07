@@ -238,11 +238,7 @@ class PivotTableDialog(BaseModal):
 
         # Values drop zone
         self.values_zone = DropZone("VALUES (Drag columns here)")
-        zones_layout.addWidget(self.values_zone, 1, 0)
-
-        # Filters drop zone
-        self.filters_zone = DropZone("FILTERS (Drag columns here)")
-        zones_layout.addWidget(self.filters_zone, 1, 1)
+        zones_layout.addWidget(self.values_zone, 1, 0, 1, 2)
 
         top_layout.addWidget(zones_frame, 2)
 
@@ -256,19 +252,6 @@ class PivotTableDialog(BaseModal):
         self.agg_combo = QComboBox()
         self.agg_combo.addItems(["Sum", "Count", "Average", "Min", "Max", "Count Rows", "Distinct Count"])
         agg_layout.addWidget(self.agg_combo)
-
-        agg_layout.addWidget(QLabel("Show Values As:"))
-        self.show_as_combo = QComboBox()
-        self.show_as_combo.addItems([
-            "No Calculation",
-            "% of Grand Total",
-            "% of Row Total",
-            "% of Column Total",
-            "% of Parent Row",
-            "% of Parent Column",
-            "Running Total"
-        ])
-        agg_layout.addWidget(self.show_as_combo)
 
         agg_layout.addStretch()
         splitter.addWidget(agg_frame)
@@ -339,14 +322,20 @@ class PivotTableDialog(BaseModal):
         self._populate_columns(text)
 
     def get_parameters(self) -> dict:
-        """Get the pivot table parameters"""
+        """The parameters actually sent to DataProcessor.pivot() - both
+        for this dialog's own preview() below and, via
+        TransformView.apply_transformation, for the real applied
+        operation. Key names match pivot()'s own signature exactly
+        ("index"/"aggregate", not "rows"/"aggregation") - an earlier
+        mismatch here meant every real "Generate Pivot Table" click
+        raised TypeError: pivot() missing 1 required positional
+        argument: 'index', while this dialog's own preview, built from a
+        second, independent implementation below, worked fine."""
         return {
-            "rows": self.rows_zone.get_columns(),
+            "index": self.rows_zone.get_columns(),
             "columns": self.columns_zone.get_columns(),
             "values": self.values_zone.get_columns(),
-            "filters": self.filters_zone.get_columns(),
-            "aggregation": self.agg_combo.currentText().lower().replace(" ", "_"),
-            "show_as": self.show_as_combo.currentText().lower().replace(" ", "_").replace("%", "pct"),
+            "aggregate": self.agg_combo.currentText().lower().replace(" ", "_"),
         }
 
     def validate(self) -> bool:
@@ -367,92 +356,27 @@ class PivotTableDialog(BaseModal):
         return True
 
     def preview(self):
-        """Generate preview of pivot table"""
+        """Generate a preview by calling the exact same DataProcessor.pivot()
+        that Run/Apply will call - see get_parameters()'s docstring for
+        why that used not to be true."""
+        from core.data_processor import DataProcessor
+
         try:
             params = self.get_parameters()
-            rows = params["rows"]
-            columns = params["columns"]
+            index = params["index"]
             values = params["values"]
-            agg = params["aggregation"]
 
-            if not rows or not values:
+            if not index or not values:
                 self.preview_table.clear()
                 return
 
-            # Build pivot table
-            if columns:
-                # Pivot with column headers
-                pivot_df = self.original_df.pivot(
-                    values=values[0],
-                    index=rows,
-                    columns=columns[0],
-                    aggregate_function=agg
-                )
-            else:
-                # Simple aggregation without column headers
-                agg_map = {
-                    "sum": pl.sum,
-                    "count": pl.count,
-                    "average": pl.mean,
-                    "min": pl.min,
-                    "max": pl.max,
-                    "count_rows": pl.count,
-                    "distinct_count": pl.n_unique,
-                }
-                agg_func = agg_map.get(agg, pl.sum)
-                pivot_df = self.original_df.group_by(rows).agg(
-                    agg_func(values[0]).alias(f"{values[0]}_{agg}")
-                )
-
-            # Apply filters if any
-            filters = params.get("filters", [])
-            if filters:
-                for f_col in filters:
-                    # For preview, just show top rows
-                    pivot_df = pivot_df.head(100)
-
-            self.preview_table.load_dataframe(pivot_df)
+            pivot_df = DataProcessor().pivot(
+                self.original_df, index=index, columns=params["columns"],
+                values=values, aggregate=params["aggregate"],
+            )
+            self.preview_table.load_dataframe(pivot_df.head(100))
 
         except Exception as e:
             QMessageBox.warning(self, "Preview Error",
                               f"Could not generate preview:\n{str(e)}")
 
-    def get_pivot_result(self) -> pl.DataFrame:
-        """Get the pivot table result after dialog is accepted"""
-        params = self.get_parameters()
-        rows = params["rows"]
-        columns = params["columns"]
-        values = params["values"]
-        agg = params["aggregation"]
-
-        if not rows or not values:
-            return None
-
-        try:
-            if columns:
-                pivot_df = self.original_df.pivot(
-                    values=values[0],
-                    index=rows,
-                    columns=columns[0],
-                    aggregate_function=agg
-                )
-            else:
-                agg_map = {
-                    "sum": pl.sum,
-                    "count": pl.count,
-                    "average": pl.mean,
-                    "min": pl.min,
-                    "max": pl.max,
-                    "count_rows": pl.count,
-                    "distinct_count": pl.n_unique,
-                }
-                agg_func = agg_map.get(agg, pl.sum)
-                pivot_df = self.original_df.group_by(rows).agg(
-                    agg_func(values[0]).alias(f"{values[0]}_{agg}")
-                )
-
-            return pivot_df
-
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to create pivot table:\n{str(e)}")
-            return None

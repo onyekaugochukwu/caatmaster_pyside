@@ -85,6 +85,59 @@ class TestSpecificityRanking:
         assert suggest_concept_for_text("Total Current Liabilities") == "current_liabilities"
 
 
+class TestCompactIdentifiersDoNotMatchInsideAnotherWord:
+    """Regression tests, found against a real filing (Apple's FY2025
+    10-K, parsed through the actual XBRL import path from SEC EDGAR):
+    every pattern here used to be unanchored, so a short common-English-
+    word pattern like "sale" matched anywhere it appeared as a substring
+    - including inside an unrelated XBRL element name/label built by
+    concatenating several GAAP terms with no separator. This summed four
+    unrelated facts into "revenue" and inflated a real company's actual
+    ~$416B reported annual revenue to a nonsensical ~$1.75T."""
+
+    def test_available_for_sale_is_not_revenue(self):
+        assert suggest_concept_for_text(
+            "Payments to Acquire Debt Securities, Available-for-Sale"
+        ) is None
+        assert suggest_concept_for_text(
+            "PaymentsToAcquireAvailableForSaleSecuritiesDebt"
+        ) is None
+
+    def test_held_for_sale_is_not_revenue(self):
+        assert suggest_concept_for_text("Assets Held-for-Sale") is None
+
+    def test_contract_liability_revenue_recognized_is_not_revenue(self):
+        # A deferred-revenue BALANCE SHEET LIABILITY, not the period's
+        # recognized top-line revenue.
+        assert suggest_concept_for_text(
+            "Contract with Customer, Liability, Revenue Recognized"
+        ) is None
+
+    def test_oci_reclassification_for_sale_of_securities_is_not_revenue(self):
+        assert suggest_concept_for_text(
+            "Other Comprehensive Income (Loss), Reclassification Adjustment "
+            "from AOCI for Sale of Securities, Net of Tax"
+        ) is None
+
+    def test_genuine_revenue_labels_still_match(self):
+        assert suggest_concept_for_text("Revenue") == "revenue"
+        assert suggest_concept_for_text("Net Sales") == "revenue"
+        assert suggest_concept_for_text("Total Revenues") == "revenue"
+        assert suggest_concept_for_text("Turnover") == "revenue"
+
+    def test_stockholders_equity_is_not_inventory(self):
+        # Bare "stock" (kept because "Stock" alone is genuine IFRS/UK
+        # terminology for inventory) must not match inside "Stockholders"
+        # or "TreasuryStock" - both equity, not inventory.
+        assert suggest_concept_for_text("StockholdersEquity") != "inventory"
+        assert suggest_concept_for_text("TreasuryStockValue") != "inventory"
+        assert suggest_concept_for_text("Stock") == "inventory"
+
+    def test_bankruptcy_is_not_cash(self):
+        assert suggest_concept_for_text("LiabilitiesSubjectToCompromiseBankruptcy") != "cash"
+        assert suggest_concept_for_text("Cash and Cash Equivalents") == "cash"
+
+
 class TestNoMatchAndAmbiguity:
     def test_unrelated_text_returns_none(self):
         assert suggest_concept_for_text("Employee Headcount") is None

@@ -8,25 +8,21 @@ from PySide6.QtWidgets import QWidget
 
 from .generic_transformation_dialog import GenericTransformationDialog
 from .pivot_dialog import PivotTableDialog
-from .unpivot_dialog import UnpivotDialog, PivotColumnDialog
+from .unpivot_dialog import UnpivotDialog
 from .filter_dialog import FilterDialog, AuditFlagDialog
 from .anomaly_dialog import AnomalyDetectionDialog
-from .kmeans_dialog import KMeansDialog
 from .benford_dialog import BenfordDialog
 from .duplicate_detection_dialog import DuplicateDetectionDialog
-from .forecast_dialog import ForecastDialog
-from .split_dialog import SplitColumnDialog
 from .extract_dialog import ExtractDialog
 from .standardize_dialog import StandardizeDialog
 from .ml_training_dialog import MLTrainingDialog
 from .number_transform_dialog import NumberTransformDialog
 from .prefix_suffix_dialog import PrefixSuffixDialog
 from .replace_values_dialog import ReplaceValuesDialog
-from .group_stats_dialog import GroupStatsDialog
 from .ai_dialogs import AIExplainDialog, AISentimentDialog, AIEntityExtractionDialog
 from .column_dialogs import RenameColumnsDialog, ChooseColumnsDialog, ChangeDataTypeDialog
 from .table_dialogs import (
-    SplitSheetDialog, TransposeDialog, CombineSheetsDialog,
+    TransposeDialog,
     QuerySheetDialog, SelectNRowsDialog, JoinDatasetsDialog,
     AppendDatasetsDialog, CompareDatasetsDialog, FuzzyMatchDatasetsDialog
 )
@@ -65,7 +61,6 @@ class TransformationDialogFactory:
         # Pivot operations
         'pivot_table': PivotTableDialog,
         'unpivot_table': UnpivotDialog,
-        'pivot_single': PivotColumnDialog,
 
         # Filter operations
         'filter_advanced': FilterDialog,
@@ -95,21 +90,15 @@ class TransformationDialogFactory:
         'ml_anomaly_zscore': AnomalyDetectionDialog,
         'ml_anomaly_iqr': AnomalyDetectionDialog,
         'ml_anomaly_lof': AnomalyDetectionDialog,
-        'ml_cluster_kmeans': KMeansDialog,
-        'ml_forecast': ForecastDialog,
 
         # Audit Operations
         'audit_benford_law': BenfordDialog,
         'audit_duplicate_detection': DuplicateDetectionDialog,
 
         # Text operations
-        'text_split_delimiter': SplitColumnDialog,
         'text_extract_first': ExtractDialog,
         'text_extract_last': ExtractDialog,
         'text_extract_middle': ExtractDialog,
-        'date_extract_year': ExtractDialog,
-        'date_extract_month': ExtractDialog,
-        'date_extract_day': ExtractDialog,
 
         # Number transformations
         'math_modulo': NumberTransformDialog,
@@ -206,13 +195,33 @@ class TransformationDialogFactory:
                 import inspect
                 sig = inspect.signature(dialog_class.__init__)
 
-                # Special handling for NumberTransformDialog - needs transform_type
+                # Special handling for dialogs shared by more than one
+                # operation_id via a transform_type constructor kwarg
+                # rather than operation_id itself - each needs to know
+                # which was actually requested to open on (and lock to)
+                # the matching tab, the same reason AnomalyDetectionDialog
+                # needs operation_id below. Without this, PrefixSuffixDialog
+                # opened for 'text_add_suffix' silently defaulted to (and
+                # could only ever preview) "Add Prefix" instead.
                 if dialog_class.__name__ == 'NumberTransformDialog':
                     transform_type = 'modulo' if operation_id == 'math_modulo' else 'power'
                     if 'selected_column' in sig.parameters:
                         dialog = dialog_class(dataframe, parent, selected_column=selected_column, transform_type=transform_type)
                     else:
                         dialog = dialog_class(dataframe, parent, transform_type=transform_type)
+                elif dialog_class.__name__ == 'PrefixSuffixDialog':
+                    transform_type = 'prefix' if operation_id == 'text_add_prefix' else 'suffix'
+                    if 'selected_column' in sig.parameters:
+                        dialog = dialog_class(dataframe, parent, selected_column=selected_column, transform_type=transform_type)
+                    else:
+                        dialog = dialog_class(dataframe, parent, transform_type=transform_type)
+                elif 'selected_column' in sig.parameters and 'operation_id' in sig.parameters:
+                    # AnomalyDetectionDialog: several operation_ids share this
+                    # one class, so it needs to know which was actually
+                    # requested to open on the matching tab (e.g.
+                    # 'ml_anomaly_lof' should land on the LOF tab, not
+                    # whatever tab happens to be first).
+                    dialog = dialog_class(dataframe, parent, selected_column=selected_column, operation_id=operation_id)
                 elif 'selected_column' in sig.parameters:
                     dialog = dialog_class(dataframe, parent, selected_column=selected_column)
                 else:

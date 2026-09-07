@@ -611,6 +611,78 @@ class TestDataProcessor:
         assert "full_name" in result.columns
 
 
+class TestReplaceValues:
+    """Regression tests for real bugs found by tracing the Find and
+    Replace dialog's own exposed controls (case_sensitive, use_regex,
+    whole_word, and the "Replace All" button label) back to what
+    replace_values actually did with them - none of the three
+    checkboxes had any effect on the real result, and "Replace All"
+    only replaced the first match per cell."""
+
+    def test_replace_all_replaces_every_occurrence_not_just_the_first(self):
+        from core.data_processor import DataProcessor
+
+        processor = DataProcessor()
+        df = pl.DataFrame({"value": ["aa bb aa cc aa"]})
+        result = processor.replace_values(df, column="value", find_value="aa", replace_value="X")
+        assert result["value_replaced"][0] == "X bb X cc X"
+
+    def test_case_sensitive_true_does_not_match_different_case(self):
+        from core.data_processor import DataProcessor
+
+        processor = DataProcessor()
+        df = pl.DataFrame({"value": ["Hello World"]})
+        result = processor.replace_values(
+            df, column="value", find_value="hello", replace_value="X", case_sensitive=True
+        )
+        assert result["value_replaced"][0] == "Hello World"
+
+    def test_case_sensitive_false_matches_different_case(self):
+        from core.data_processor import DataProcessor
+
+        processor = DataProcessor()
+        df = pl.DataFrame({"value": ["Hello World"]})
+        result = processor.replace_values(
+            df, column="value", find_value="hello", replace_value="X", case_sensitive=False
+        )
+        assert result["value_replaced"][0] == "X World"
+
+    def test_regex_metacharacters_are_literal_by_default(self):
+        """find_value is a plain search string by default, not a regex
+        pattern - "100%" must not act as "100 followed by any repetition
+        of the preceding token", and "." must not match every character."""
+        from core.data_processor import DataProcessor
+
+        processor = DataProcessor()
+        df = pl.DataFrame({"value": ["Revenue up 100%", "abc"]})
+        result = processor.replace_values(df, column="value", find_value="100%", replace_value="X")
+        assert result["value_replaced"][0] == "Revenue up X"
+
+        df2 = pl.DataFrame({"value": ["a.b.c"]})
+        result2 = processor.replace_values(df2, column="value", find_value=".", replace_value="-")
+        assert result2["value_replaced"][0] == "a-b-c"
+
+    def test_use_regex_true_treats_find_value_as_a_pattern(self):
+        from core.data_processor import DataProcessor
+
+        processor = DataProcessor()
+        df = pl.DataFrame({"value": ["abc123def456"]})
+        result = processor.replace_values(
+            df, column="value", find_value=r"\d+", replace_value="#", use_regex=True
+        )
+        assert result["value_replaced"][0] == "abc#def#"
+
+    def test_whole_word_does_not_match_inside_a_longer_word(self):
+        from core.data_processor import DataProcessor
+
+        processor = DataProcessor()
+        df = pl.DataFrame({"value": ["cat catalog concatenate"]})
+        result = processor.replace_values(
+            df, column="value", find_value="cat", replace_value="X", whole_word=True
+        )
+        assert result["value_replaced"][0] == "X catalog concatenate"
+
+
 class TestTransformationPipeline:
     """Test cases for the TransformationPipeline class"""
 

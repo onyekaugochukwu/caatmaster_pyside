@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
     QPushButton, QSpinBox, QDoubleSpinBox, QCheckBox, QRadioButton,
     QButtonGroup, QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView,
-    QWidget, QMessageBox, QLineEdit, QTabWidget, QWidget, QScrollArea
+    QWidget, QMessageBox, QTabWidget, QWidget, QScrollArea
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 
@@ -25,10 +25,27 @@ class AnomalyDetectionDialog(BaseModal):
     Anomaly Detection dialog with multiple method options
     """
 
-    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None):
+    # Every one of the four "ml_anomaly_*" operation ids maps to this
+    # same dialog class (see TransformationDialogFactory.DIALOG_MAPPING) -
+    # this tells __init__ which tab actually corresponds to the specific
+    # one the user picked, whether from the right-click "Machine
+    # Learning" submenu or the top menu bar's ML > Anomaly Detection
+    # submenu. Without it, choosing "Local Outlier Factor" by name still
+    # opened on the Isolation Forest tab every time.
+    _TAB_BY_OPERATION_ID = {
+        "ml_anomaly_iforest": 0,
+        "ml_anomaly_zscore": 1,
+        "ml_anomaly_iqr": 2,
+        "ml_anomaly_lof": 3,
+    }
+
+    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None,
+                 operation_id: str = None):
         self.original_df = dataframe
         super().__init__("Anomaly Detection", dataframe, parent, selected_column=selected_column)
         self.setMinimumSize(700, 650)
+        if operation_id in self._TAB_BY_OPERATION_ID:
+            self.tabs.setCurrentIndex(self._TAB_BY_OPERATION_ID[operation_id])
         self.set_selected_column(selected_column) if selected_column else None
 
     def set_selected_column(self, column_name: str):
@@ -75,17 +92,26 @@ class AnomalyDetectionDialog(BaseModal):
 
         layout.addWidget(self.tabs)
 
-        # Output columns
+        # Output columns - read-only, since every method here always names
+        # its own output columns from the source column
+        # ({column}_is_anomaly, {column}_zscore, ...), the same convention
+        # every other operation in this application uses. Earlier versions
+        # of this box were editable QLineEdits that fed only this dialog's
+        # own dead apply_detection() method - a reviewer could type a
+        # custom name here, watch it appear to accept the change, and get
+        # the default name anyway once Run Detection actually applied the
+        # operation. These labels show the real name instead of promising
+        # a rename that never happened.
         output_group = QGroupBox("Output Columns")
         output_layout = QGridLayout(output_group)
 
         output_layout.addWidget(QLabel("Anomaly Flag Column:"), 0, 0)
-        self.anomaly_col_edit = QLineEdit("is_anomaly")
-        output_layout.addWidget(self.anomaly_col_edit, 0, 1)
+        self.output_flag_label = QLabel("-")
+        output_layout.addWidget(self.output_flag_label, 0, 1)
 
         output_layout.addWidget(QLabel("Score Column:"), 1, 0)
-        self.score_col_edit = QLineEdit("anomaly_score")
-        output_layout.addWidget(self.score_col_edit, 1, 1)
+        self.output_score_label = QLabel("-")
+        output_layout.addWidget(self.output_score_label, 1, 1)
 
         layout.addWidget(output_group)
 
@@ -262,13 +288,16 @@ class AnomalyDetectionDialog(BaseModal):
         self.lof_neighbors.setValue(20)
         params_layout.addWidget(self.lof_neighbors, 0, 1)
 
-        # Threshold
-        params_layout.addWidget(QLabel("Outlier Threshold:"), 1, 0)
-        self.lof_threshold = QDoubleSpinBox()
-        self.lof_threshold.setRange(0.1, 5.0)
-        self.lof_threshold.setValue(0.3)
-        self.lof_threshold.setSingleStep(0.1)
-        params_layout.addWidget(self.lof_threshold, 1, 1)
+        # Contamination - same meaning as the Isolation Forest tab's own
+        # Contamination control above, so the two behave predictably the
+        # same way when left at their defaults.
+        params_layout.addWidget(QLabel("Contamination:"), 1, 0)
+        self.lof_contamination = QDoubleSpinBox()
+        self.lof_contamination.setRange(0.01, 0.5)
+        self.lof_contamination.setValue(0.1)
+        self.lof_contamination.setSingleStep(0.01)
+        self.lof_contamination.setSuffix(" (1-50%)")
+        params_layout.addWidget(self.lof_contamination, 1, 1)
 
         layout.addWidget(params_group)
         layout.addStretch()
@@ -286,34 +315,44 @@ class AnomalyDetectionDialog(BaseModal):
         return method_map.get(self.tabs.currentIndex(), "iforest")
 
     def get_parameters(self) -> dict:
-        """Get the anomaly detection parameters"""
+        """The parameters actually sent to DataProcessor - both for this
+        dialog's own preview() below and, via
+        TransformView.apply_transformation, for the real applied
+        operation. One dict feeds both, by construction, so a preview can
+        no longer promise a result the real run does not deliver, the way
+        an earlier version of this dialog did: its own preview()
+        recomputed every method as a local distance-from-mean heuristic
+        while the real applied operation called scikit-learn directly, and
+        its "Direction" and "Detection Mode" dropdowns adjusted only that
+        local preview, silently doing nothing to the value actually
+        written to the dataset once Run Detection was clicked."""
         method = self.get_method()
-        anomaly_col = self.anomaly_col_edit.text() or "is_anomaly"
-        score_col = self.score_col_edit.text() or "anomaly_score"
-
-        params = {
-            "method": method,
-            "output_anomaly_col": anomaly_col,
-            "output_score_col": score_col,
-        }
+        params = {"method": method}
 
         if method == "iforest":
             params["column"] = self.iforest_col.get_column()
             params["contamination"] = self.iforest_contamination.value()
             params["n_estimators"] = self.iforest_trees.value()
-            params["max_samples"] = self.iforest_max_samples.value()
+            max_samples_value = self.iforest_max_samples.value()
+            params["max_samples"] = "auto" if max_samples_value == 0 else max_samples_value
         elif method == "zscore":
             params["column"] = self.zscore_col.get_column()
             params["threshold"] = self.zscore_threshold.value()
-            params["direction"] = self.zscore_direction.currentText()
+            direction_map = {"Both": "both", "Above Mean Only": "above", "Below Mean Only": "below"}
+            params["direction"] = direction_map.get(self.zscore_direction.currentText(), "both")
         elif method == "iqr":
             params["column"] = self.iqr_col.get_column()
-            params["multiplier"] = self.iqr_multiplier.value()
-            params["mode"] = "extreme" if self.iqr_mode.currentIndex() == 1 else "outer"
+            base_multiplier = self.iqr_multiplier.value()
+            # "Extreme Bounds" is a preset that doubles the multiplier
+            # rather than a separate parameter - ml_anomaly_iqr only ever
+            # took one multiplier, so folding the preset in here keeps
+            # that single value the one truth both preview and apply share,
+            # instead of two controls that could disagree.
+            params["multiplier"] = base_multiplier * 2 if self.iqr_mode.currentIndex() == 1 else base_multiplier
         elif method == "lof":
             params["column"] = self.lof_col.get_column()
             params["n_neighbors"] = self.lof_neighbors.value()
-            params["threshold"] = self.lof_threshold.value()
+            params["contamination"] = self.lof_contamination.value()
 
         return params
 
@@ -326,92 +365,78 @@ class AnomalyDetectionDialog(BaseModal):
             return False
         return True
 
+    # The real output column names each method actually creates - the
+    # same convention DataProcessor uses everywhere, {column}_suffix.
+    _OUTPUT_COLUMNS = {
+        "iforest": ("_is_anomaly", "_anomaly_score"),
+        "zscore": ("_is_outlier", "_zscore"),
+        "iqr": ("_is_outlier", "_iqr_distance"),
+        "lof": ("_is_outlier", "_lof_score"),
+    }
+
     def preview(self):
-        """Generate preview of anomaly detection"""
+        """Generate a preview by calling the exact same DataProcessor
+        method, with the exact same parameters, that Run Detection will
+        call to actually apply the operation - see get_parameters()'s
+        docstring for why that used not to be true."""
+        from core.data_processor import DataProcessor
+
         try:
             params = self.get_parameters()
-            column = params["column"]
+            column = params.get("column")
             method = params["method"]
 
-            # Get column data
-            col_data = self.original_df[column].to_numpy()
-            valid_mask = ~np.isnan(col_data.astype(float))
-            valid_data = col_data[valid_mask]
-
-            if len(valid_data) == 0:
+            if not column:
                 self.stats_label.setStatus("error")
-                self.stats_label.setText("No valid numeric data in selected column")
+                self.stats_label.setText("Please select a column to analyze.")
                 return
 
-            # Apply detection based on method
+            flag_suffix, score_suffix = self._OUTPUT_COLUMNS[method]
+            flag_col = f"{column}{flag_suffix}"
+            score_col = f"{column}{score_suffix}"
+
+            processor = DataProcessor()
             if method == "iforest":
-                mean_val = np.mean(valid_data)
-                std_val = np.std(valid_data)
-                if std_val == 0:
-                    std_val = 1
-                distances = np.abs(valid_data - mean_val) / std_val
-                threshold = 2.5
-                is_anomaly = distances > threshold
-                scores = 1 - (1 / (1 + distances))
-
+                result = processor.ml_anomaly_iforest(
+                    self.original_df, column=column,
+                    contamination=params["contamination"],
+                    n_estimators=params["n_estimators"],
+                    max_samples=params["max_samples"],
+                )
             elif method == "zscore":
-                mean_val = np.mean(valid_data)
-                std_val = np.std(valid_data)
-                if std_val == 0:
-                    std_val = 1
-                zscore = (valid_data - mean_val) / std_val
-                direction = params.get("direction", "Both")
-
-                if direction == "Above Mean Only":
-                    is_anomaly = zscore > params["threshold"]
-                elif direction == "Below Mean Only":
-                    is_anomaly = zscore < -params["threshold"]
-                else:
-                    is_anomaly = np.abs(zscore) > params["threshold"]
-                scores = np.abs(zscore)
-
+                result = processor.ml_anomaly_zscore(
+                    self.original_df, column=column,
+                    threshold=params["threshold"], direction=params["direction"],
+                )
             elif method == "iqr":
-                Q1 = np.percentile(valid_data, 25)
-                Q3 = np.percentile(valid_data, 75)
-                IQR = Q3 - Q1
-                mode = params.get("mode", "outer")
-                multiplier = params["multiplier"]
-                if mode == "extreme":
-                    multiplier = multiplier * 2
-
-                lower_bound = Q1 - multiplier * IQR
-                upper_bound = Q3 + multiplier * IQR
-                is_anomaly = (valid_data < lower_bound) | (valid_data > upper_bound)
-
-                distances = np.zeros_like(valid_data, dtype=float)
-                distances[valid_data < lower_bound] = lower_bound - valid_data[valid_data < lower_bound]
-                distances[valid_data > upper_bound] = valid_data[valid_data > upper_bound] - upper_bound
-                scores = distances / max(IQR, 1)
-
+                result = processor.ml_anomaly_iqr(
+                    self.original_df, column=column, multiplier=params["multiplier"],
+                )
             elif method == "lof":
-                mean_val = np.mean(valid_data)
-                distances = np.abs(valid_data - mean_val)
-                max_dist = np.max(distances)
-                if max_dist == 0:
-                    max_dist = 1
-                scores = 1 - (distances / max_dist)
-                is_anomaly = scores < params["threshold"]
+                result = processor.ml_anomaly_lof(
+                    self.original_df, column=column,
+                    n_neighbors=params["n_neighbors"], contamination=params["contamination"],
+                )
+            else:
+                return
 
-            # Count anomalies
-            n_anomalies = np.sum(is_anomaly)
+            self.output_flag_label.setText(flag_col)
+            self.output_score_label.setText(score_col)
+
+            is_anomaly = result[flag_col].to_numpy()
+            scores = result[score_col].to_numpy()
+            n_anomalies = int(np.sum(is_anomaly))
             total = len(is_anomaly)
             percentage = (n_anomalies / total * 100) if total > 0 else 0
 
-            # Show stats
             self.stats_label.setStatus("warning" if n_anomalies > 0 else "success")
             self.stats_label.setText(
                 f"Total rows: {total:,} | Anomalies found: {n_anomalies:,} ({percentage:.1f}%)"
             )
 
-            # Show sample anomalies
             anomaly_indices = np.where(is_anomaly)[0][:10]
             if len(anomaly_indices) > 0:
-                preview_df = self.original_df[anomaly_indices].select([column]).clone()
+                preview_df = self.original_df[anomaly_indices.tolist()].select([column]).clone()
                 preview_df = preview_df.with_columns(
                     pl.Series(name="Anomaly Score", values=scores[anomaly_indices])
                 )
@@ -422,83 +447,3 @@ class AnomalyDetectionDialog(BaseModal):
         except Exception as e:
             QMessageBox.warning(self, "Preview Error",
                               f"Could not generate preview:\n{str(e)}")
-
-    def apply_detection(self, df: pl.DataFrame) -> pl.DataFrame:
-        """Apply anomaly detection to dataframe"""
-        params = self.get_parameters()
-        column = params["column"]
-        method = params["method"]
-        output_anomaly = params["output_anomaly_col"]
-        output_score = params["output_score_col"]
-
-        col_data = df[column].to_numpy()
-        valid_mask = ~np.isnan(col_data.astype(float))
-        valid_data = col_data[valid_mask]
-
-        if len(valid_data) == 0:
-            return df.with_columns([
-                pl.lit(False).alias(output_anomaly),
-                pl.lit(0.0).alias(output_score)
-            ])
-
-        # Apply detection
-        if method == "iforest":
-            mean_val = np.mean(valid_data)
-            std_val = np.std(valid_data)
-            if std_val == 0:
-                std_val = 1
-            distances = np.abs(valid_data - mean_val) / std_val
-            threshold = 2.5
-            is_anomaly = distances > threshold
-            scores = 1 - (1 / (1 + distances))
-
-        elif method == "zscore":
-            mean_val = np.mean(valid_data)
-            std_val = np.std(valid_data)
-            if std_val == 0:
-                std_val = 1
-            zscore = (valid_data - mean_val) / std_val
-            scores = np.abs(zscore)
-            direction = params.get("direction", "Both")
-
-            if direction == "Above Mean Only":
-                is_anomaly = zscore > params["threshold"]
-            elif direction == "Below Mean Only":
-                is_anomaly = zscore < -params["threshold"]
-            else:
-                is_anomaly = np.abs(zscore) > params["threshold"]
-
-        elif method == "iqr":
-            Q1 = np.percentile(valid_data, 25)
-            Q3 = np.percentile(valid_data, 75)
-            IQR = Q3 - Q1
-            multiplier = params["multiplier"]
-            lower_bound = Q1 - multiplier * IQR
-            upper_bound = Q3 + multiplier * IQR
-            is_anomaly = (valid_data < lower_bound) | (valid_data > upper_bound)
-
-            distances = np.zeros_like(valid_data, dtype=float)
-            distances[valid_data < lower_bound] = lower_bound - valid_data[valid_data < lower_bound]
-            distances[valid_data > upper_bound] = valid_data[valid_data > upper_bound] - upper_bound
-            scores = distances / max(IQR, 1)
-
-        elif method == "lof":
-            mean_val = np.mean(valid_data)
-            distances = np.abs(valid_data - mean_val)
-            max_dist = np.max(distances)
-            if max_dist == 0:
-                max_dist = 1
-            scores = 1 - (distances / max_dist)
-            is_anomaly = scores < params["threshold"]
-
-        # Create result columns
-        anomaly_series = np.full(len(df), False, dtype=bool)
-        score_series = np.full(len(df), 0.0, dtype=float)
-
-        anomaly_series[valid_mask] = is_anomaly
-        score_series[valid_mask] = scores
-
-        return df.with_columns([
-            pl.Series(name=output_anomaly, values=anomaly_series),
-            pl.Series(name=output_score, values=score_series)
-        ])

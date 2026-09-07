@@ -84,6 +84,17 @@ class NumberTransformDialog(BaseModal):
         self.tabs.addTab(self.modulo_tab, "Modulo")
         self.tabs.addTab(self.power_tab, "Power")
 
+        # operation_id ('math_modulo'/'math_power') is what actually
+        # decides which real method runs on Apply Transform, regardless
+        # of which tab is showing - switching tabs only changes this
+        # dialog's own preview. Pre-selecting AND disabling the other tab
+        # keeps the dialog from implying a choice that Apply won't honor
+        # (a real bug: opening this dialog for "Power" used to still
+        # default to and preview the Modulo tab).
+        modulo_index, power_index = 0, 1
+        self.tabs.setCurrentIndex(modulo_index if self.transform_type == "modulo" else power_index)
+        self.tabs.setTabEnabled(power_index if self.transform_type == "modulo" else modulo_index, False)
+
         scroll_layout.addWidget(self.tabs)
 
         # Output options
@@ -230,7 +241,19 @@ class NumberTransformDialog(BaseModal):
         return True
 
     def preview(self):
-        """Generate preview of transformation"""
+        """Generate a preview by calling the exact same DataProcessor
+        method Apply Transform will call, against just the first 10 rows.
+        An earlier version recomputed the transform locally against the
+        WHOLE dataframe's valid (non-NaN) values, then tried to splice
+        the first 10 of those results back into a fixed 10-row preview
+        via valid_mask[:10] - which raised a numpy boolean-index-size
+        error and hung this dialog (QMessageBox.warning blocks
+        indefinitely with no user present to dismiss it under a headless
+        Qt platform) on any real dataset with fewer than 10 rows, and
+        even on larger datasets misaligned results with rows whenever a
+        NaN appeared before row 10."""
+        from core.data_processor import DataProcessor
+
         try:
             params = self.get_parameters()
             column = params["column"]
@@ -239,33 +262,19 @@ class NumberTransformDialog(BaseModal):
             if not column:
                 return
 
-            # Get data
-            col_data = self.original_df[column].to_numpy()
-            valid_mask = ~np.isnan(col_data.astype(float))
-            valid_data = col_data[valid_mask]
-
-            # Apply transformation
+            preview_slice = self.original_df.head(10)
+            processor = DataProcessor()
             if params["transform_type"] == "modulo":
-                divisor = params["divisor"]
-                if divisor == 0:
-                    divisor = 1
-                result = valid_data % divisor
+                divisor = params["divisor"] or 1
+                result = processor.modulo(preview_slice, column=column, divisor=divisor, output_col=output_col)
             else:  # power
-                exponent = params["exponent"]
-                result = np.power(valid_data, exponent)
+                result = processor.power(preview_slice, column=column, exponent=params["exponent"], output_col=output_col)
 
-            # Update preview
-            preview_df = self.original_df[:10].clone()
-            result_series = np.full(10, np.nan)
-            result_series[valid_mask[:10]] = result[:10]
-            preview_df = preview_df.with_columns(
-                pl.Series(name=output_col, values=result_series)
-            )
-            self.preview_table.load_dataframe(preview_df)
+            self.preview_table.load_dataframe(result)
 
-            # Update stats
-            mean_val = np.mean(result)
-            self.stats_label.setText(f"Sample mean: {mean_val:.4f}")
+            mean_val = result[output_col].mean()
+            if mean_val is not None:
+                self.stats_label.setText(f"Sample mean: {mean_val:.4f}")
 
         except Exception as e:
             QMessageBox.warning(self, "Preview Error",

@@ -245,12 +245,6 @@ class RenameColumnsDialog(BaseModal):
         """Validate parameters"""
         return bool(self.mapping_table.rowCount() > 0)
 
-    def apply_analysis(self, df: pl.DataFrame) -> pl.DataFrame:
-        """Apply renames to dataframe"""
-        params = self.get_parameters()
-        renames = {r["old_name"]: r["new_name"] for r in params["renames"]}
-        return df.rename(renames)
-
 
 class ChooseColumnsDialog(BaseModal):
     """Dialog for selecting, removing, or reordering columns"""
@@ -516,17 +510,6 @@ class ChooseColumnsDialog(BaseModal):
             return len(params.get("column_order", [])) > 0
         return True
 
-    def apply_analysis(self, df: pl.DataFrame) -> pl.DataFrame:
-        """Apply column selection to dataframe"""
-        params = self.get_parameters()
-        if params["action"] == "keep":
-            return df.select(params["columns_to_keep"])
-        elif params["action"] == "remove":
-            remaining = [c for c in df.columns if c not in params["columns_to_remove"]]
-            return df.select(remaining)
-        else:  # reorder
-            return df.select(params["column_order"])
-
 
 class ChangeDataTypeDialog(BaseModal):
     """Dialog for converting column data types"""
@@ -739,29 +722,3 @@ class ChangeDataTypeDialog(BaseModal):
         """Validate parameters"""
         return bool(self.column_selector.get_column())
 
-    def apply_analysis(self, df: pl.DataFrame) -> pl.DataFrame:
-        """Apply type conversion to dataframe"""
-        params = self.get_parameters()
-        column = params["column"]
-        dtype_str = params["new_dtype"]
-
-        # Exact-match lookup, not substring matching - "Date" is a substring
-        # of "Datetime" so a substring check would misclassify Datetime.
-        type_map = {
-            "Int8": pl.Int8, "Int16": pl.Int16, "Int32": pl.Int32, "Int64": pl.Int64,
-            "Float32": pl.Float32, "Float64": pl.Float64,
-            "Utf8": pl.Utf8, "Boolean": pl.Boolean,
-            "Date": pl.Date, "Datetime": pl.Datetime, "Categorical": pl.Categorical,
-        }
-        new_dtype = type_map.get(dtype_str)
-
-        if new_dtype == pl.Date and params.get("format_string"):
-            return df.with_columns(
-                pl.col(column).str.to_date(format=params["format_string"]).alias(column)
-            )
-        elif new_dtype == pl.Datetime and params.get("format_string"):
-            return df.with_columns(
-                pl.col(column).str.to_datetime(format=params["format_string"]).alias(column)
-            )
-        else:
-            return df.with_columns(pl.col(column).cast(new_dtype))

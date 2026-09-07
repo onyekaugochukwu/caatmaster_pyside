@@ -1,6 +1,6 @@
 """
 Replace Values Dialog for CAATmaster
-Find and replace values in columns
+Find and replace values in a text column.
 """
 import polars as pl
 from typing import Optional, List, Dict, Any
@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
     QPushButton, QGroupBox, QWidget, QMessageBox, QLineEdit,
-    QCheckBox, QTextEdit, QTabWidget, QScrollArea
+    QCheckBox, QScrollArea
 )
 from PySide6.QtCore import Qt, QTimer
 
@@ -18,13 +18,27 @@ from ..theme import Colors
 
 class ReplaceValuesDialog(BaseModal):
     """
-    Dialog for find and replace operations in columns
+    Dialog for find-and-replace in a column, backed by
+    DataProcessor.replace_values().
+
+    Used to also offer a "Bulk Replace" tab (a multi-line old_value,
+    new_value list) with no backend behind it at all - previewable
+    (its own local Python loop), but replace_values() has no parameter
+    for a list of pairs, so every real "Replace All" click on that tab
+    silently ran a single-pair replacement using whatever was left in
+    the Simple tab's own Find/Replace fields instead. Removed rather
+    than given a new backend operation, since the real, narrower gap
+    this dialog needs fixed is that its three real checkboxes
+    (Case sensitive, Whole word only, Use regular expression) were all
+    silently ignored by replace_values() itself - see that method's own
+    docstring for the specifics, including a "Replace All" that only
+    replaced the first match per cell.
     """
 
     def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None):
         self.original_df = dataframe
         super().__init__("Replace Values", dataframe, parent, selected_column=selected_column)
-        self.setMinimumSize(600, 500)
+        self.setMinimumSize(600, 480)
         self.set_selected_column(selected_column) if selected_column else None
 
     def set_selected_column(self, column_name: str):
@@ -33,14 +47,10 @@ class ReplaceValuesDialog(BaseModal):
         if hasattr(self, 'column_selector') and column_name:
             self.column_selector.set_current_column(column_name)
             self.output_col_edit.setText(f"{column_name}_replaced")
-            QTimer.singleShot(100, self._load_unique_values)
+            self._load_unique_values()
 
     def _on_column_selected(self, column_name: str):
-        """Called when column is selected from context menu"""
-        if hasattr(self, 'column_selector'):
-            self.column_selector.set_current_column(column_name)
-            self.output_col_edit.setText(f"{column_name}_replaced")
-            QTimer.singleShot(100, self._load_unique_values)
+        self.set_selected_column(column_name)
 
     def _load_unique_values(self):
         """Load unique values from selected column"""
@@ -85,19 +95,32 @@ class ReplaceValuesDialog(BaseModal):
 
         scroll_layout.addWidget(col_group)
 
-        # Replace options tabs
-        self.tabs = QTabWidget()
+        # Find and replace
+        options_group = QGroupBox("Find and Replace")
+        options_layout = QGridLayout(options_group)
 
-        # Simple replace tab
-        self._create_simple_tab()
+        options_layout.addWidget(QLabel("Find:"), 0, 0)
+        self.find_combo = QComboBox()
+        self.find_combo.setEditable(True)
+        self.find_combo.setPlaceholderText("Value to find...")
+        options_layout.addWidget(self.find_combo, 0, 1)
 
-        # Advanced replace tab
-        self._create_advanced_tab()
+        options_layout.addWidget(QLabel("Replace with:"), 1, 0)
+        self.replace_edit = QLineEdit()
+        self.replace_edit.setPlaceholderText("Replacement value...")
+        options_layout.addWidget(self.replace_edit, 1, 1)
 
-        self.tabs.addTab(self.simple_tab, "Simple Replace")
-        self.tabs.addTab(self.advanced_tab, "Advanced")
+        self.case_sensitive = QCheckBox("Case sensitive")
+        self.case_sensitive.setChecked(True)
+        options_layout.addWidget(self.case_sensitive, 2, 0, 1, 2)
 
-        scroll_layout.addWidget(self.tabs)
+        self.whole_word = QCheckBox("Whole word only")
+        options_layout.addWidget(self.whole_word, 3, 0, 1, 2)
+
+        self.regex_check = QCheckBox("Use regular expression")
+        options_layout.addWidget(self.regex_check, 4, 0, 1, 2)
+
+        scroll_layout.addWidget(options_group)
 
         # Output options
         output_group = QGroupBox("Output Column")
@@ -106,9 +129,6 @@ class ReplaceValuesDialog(BaseModal):
         output_layout.addWidget(QLabel("New Column Name:"), 0, 0)
         self.output_col_edit = QLineEdit("replaced")
         output_layout.addWidget(self.output_col_edit, 0, 1)
-
-        self.remove_original = QCheckBox("Remove original column")
-        output_layout.addWidget(self.remove_original, 1, 0, 1, 2)
 
         scroll_layout.addWidget(output_group)
 
@@ -148,79 +168,21 @@ class ReplaceValuesDialog(BaseModal):
 
         layout.addLayout(btn_layout)
 
-    def _create_simple_tab(self):
-        """Create simple replace tab"""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setSpacing(15)
-
-        options_group = QGroupBox("Find and Replace")
-        options_layout = QGridLayout(options_group)
-
-        options_layout.addWidget(QLabel("Find:"), 0, 0)
-        self.find_combo = QComboBox()
-        self.find_combo.setEditable(True)
-        self.find_combo.setPlaceholderText("Value to find...")
-        options_layout.addWidget(self.find_combo, 0, 1)
-
-        options_layout.addWidget(QLabel("Replace with:"), 1, 0)
-        self.replace_edit = QLineEdit()
-        self.replace_edit.setPlaceholderText("Replacement value...")
-        options_layout.addWidget(self.replace_edit, 1, 1)
-
-        # Options
-        self.case_sensitive = QCheckBox("Case sensitive")
-        options_layout.addWidget(self.case_sensitive, 2, 0, 1, 2)
-
-        self.whole_word = QCheckBox("Whole word only")
-        options_layout.addWidget(self.whole_word, 3, 0, 1, 2)
-
-        self.regex_check = QCheckBox("Use regular expression")
-        options_layout.addWidget(self.regex_check, 4, 0, 1, 2)
-
-        layout.addWidget(options_group)
-        layout.addStretch()
-
-        self.simple_tab = tab
-
-    def _create_advanced_tab(self):
-        """Create advanced replace tab"""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setSpacing(15)
-
-        options_group = QGroupBox("Bulk Replace")
-        options_layout = QVBoxLayout(options_group)
-
-        help_label = QLabel("Enter replacements in format: old_value,new_value (one per line)")
-        help_label.setStyleSheet(f"color: {Colors.TEXT_SECONDARY}; font-size: 11px;")
-        options_layout.addWidget(help_label)
-
-        self.bulk_edit = QTextEdit()
-        self.bulk_edit.setPlaceholderText("apple,green\nbanana,yellow\norange,orange")
-        self.bulk_edit.setMaximumHeight(150)
-        options_layout.addWidget(self.bulk_edit)
-
-        layout.addWidget(options_group)
-        layout.addStretch()
-
-        self.advanced_tab = tab
-
     def get_parameters(self) -> dict:
-        """Get the replace parameters"""
-        tab_index = self.tabs.currentIndex()
-
+        """The parameters actually sent to DataProcessor.replace_values() -
+        both for this dialog's own preview() below and, via
+        TransformView.apply_transformation, for the real applied
+        operation. Key names match replace_values()'s own signature
+        exactly, including case_sensitive/use_regex/whole_word, which an
+        earlier version of that method silently accepted and ignored."""
         return {
             "column": self.column_selector.get_column(),
             "output_column": self.output_col_edit.text() or "replaced",
-            "remove_original": self.remove_original.isChecked(),
-            "replace_type": "simple" if tab_index == 0 else "bulk",
             "find_value": self.find_combo.currentText(),
             "replace_value": self.replace_edit.text(),
             "case_sensitive": self.case_sensitive.isChecked(),
             "whole_word": self.whole_word.isChecked(),
             "use_regex": self.regex_check.isChecked(),
-            "bulk_replacements": self.bulk_edit.toPlainText(),
         }
 
     def validate(self) -> bool:
@@ -231,93 +193,48 @@ class ReplaceValuesDialog(BaseModal):
                               "Please select a column.")
             return False
 
-        tab_index = self.tabs.currentIndex()
-        if tab_index == 0:
-            if not self.find_combo.currentText():
-                QMessageBox.warning(self, "Validation Error",
-                                  "Please enter a value to find.")
-                return False
-        else:
-            if not self.bulk_edit.toPlainText().strip():
-                QMessageBox.warning(self, "Validation Error",
-                                  "Please enter bulk replacements.")
-                return False
+        if not self.find_combo.currentText():
+            QMessageBox.warning(self, "Validation Error",
+                              "Please enter a value to find.")
+            return False
 
         return True
 
     def preview(self):
-        """Generate preview of replacement"""
+        """Generate a preview by calling the exact same DataProcessor.replace_values()
+        that Replace All will call - see get_parameters()'s docstring for
+        why that used not to be true."""
+        from core.data_processor import DataProcessor
+
         try:
             params = self.get_parameters()
             column = params["column"]
-            output_col = params["output_column"]
 
-            if not column:
+            if not column or not params["find_value"]:
                 return
 
-            # Get data
+            processor = DataProcessor()
+            try:
+                # _call_mapped_method (not a direct keyword call) - the
+                # same param-name mapping (output_column -> output_col)
+                # and filtering the real apply path uses via
+                # TransformView.apply_transformation, so preview can't
+                # drift from apply by calling the method differently.
+                result = processor._call_mapped_method(processor.replace_values, self.original_df, params)
+            except Exception as regex_error:
+                if params["use_regex"]:
+                    self.stats_label.setText(f"Invalid regular expression: {regex_error}")
+                    self.preview_table.clear()
+                    return
+                raise
+
+            output_col = params["output_column"]
             col_data = self.original_df[column].to_list()
+            replaced_data = result[output_col].to_list()
+            replacement_count = sum(1 for v, r in zip(col_data, replaced_data) if str(v) != str(r))
 
-            # Apply replacement
-            if params["replace_type"] == "simple":
-                find_val = str(params["find_value"])
-                replace_val = str(params["replace_value"])
-
-                result = []
-                for val in col_data:
-                    val_str = str(val) if val is not None else ""
-                    if params["use_regex"]:
-                        import re
-                        try:
-                            result.append(re.sub(find_val, replace_val, val_str,
-                                                flags=0 if params["case_sensitive"] else re.IGNORECASE))
-                        except re.error:
-                            result.append(val_str)
-                    elif params["case_sensitive"]:
-                        result.append(val_str.replace(find_val, replace_val))
-                    else:
-                        # Case insensitive replace - need to preserve original case
-                        # Find position of match and replace preserving case
-                        find_lower = find_val.lower()
-                        val_lower = val_str.lower()
-                        replace_lower = replace_val.lower()
-                        idx = val_lower.find(find_lower)
-                        if idx != -1:
-                            # Replace at the found position
-                            result.append(val_str[:idx] + replace_val + val_str[idx + len(find_val):])
-                        else:
-                            result.append(val_str)
-                replacement_count = sum(1 for v, r in zip(col_data, result) if str(v) != r)
-            else:
-                # Bulk replace
-                bulk_lines = params["bulk_replacements"].strip().split('\n')
-                replacements = {}
-                for line in bulk_lines:
-                    if ',' in line:
-                        old, new = line.split(',', 1)
-                        replacements[old.strip()] = new.strip()
-
-                result = []
-                replacement_count = 0
-                for val in col_data:
-                    val_str = str(val) if val is not None else ""
-                    original = val_str
-                    for old, new in replacements.items():
-                        val_str = val_str.replace(old, new)
-                    result.append(val_str)
-                    if original != val_str:
-                        replacement_count += 1
-
-            # Update preview
-            preview_df = self.original_df[:10].clone()
-            preview_df = preview_df.with_columns(
-                pl.Series(name=output_col, values=result[:10])
-            )
-            self.preview_table.load_dataframe(preview_df)
-
-            # Update stats
-            total = len(col_data)
-            self.stats_label.setText(f"Found {replacement_count} matches in {total} rows")
+            self.preview_table.load_dataframe(result.head(10))
+            self.stats_label.setText(f"Found {replacement_count} changed value(s) in {len(col_data)} row(s)")
 
         except Exception as e:
             QMessageBox.warning(self, "Preview Error",

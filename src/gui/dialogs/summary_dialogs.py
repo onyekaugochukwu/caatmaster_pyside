@@ -131,32 +131,6 @@ class GroupSummaryDialog(BaseModal):
     def get_parameters(self) -> dict:
         return getattr(self, 'current_params', {})
 
-    def apply_analysis(self, df: pl.DataFrame) -> pl.DataFrame:
-        params = self.get_parameters()
-        group_cols = params["group_columns"]
-        value_col = params["value_column"]
-        aggregations = params["aggregations"]
-
-        # Build aggregation expressions
-        agg_exprs = []
-        for agg in aggregations:
-            if agg == "sum":
-                agg_exprs.append(pl.col(value_col).sum().alias(f"{value_col}_sum"))
-            elif agg == "mean":
-                agg_exprs.append(pl.col(value_col).mean().alias(f"{value_col}_mean"))
-            elif agg == "count":
-                agg_exprs.append(pl.count().alias("count"))
-            elif agg == "min":
-                agg_exprs.append(pl.col(value_col).min().alias(f"{value_col}_min"))
-            elif agg == "max":
-                agg_exprs.append(pl.col(value_col).max().alias(f"{value_col}_max"))
-            elif agg == "std":
-                agg_exprs.append(pl.col(value_col).std().alias(f"{value_col}_std"))
-            elif agg == "median":
-                agg_exprs.append(pl.col(value_col).median().alias(f"{value_col}_median"))
-
-        return df.group_by(group_cols).agg(*agg_exprs)
-
 
 class TopBottomDialog(BaseModal):
     """Dialog for showing top/bottom N items"""
@@ -243,14 +217,6 @@ class TopBottomDialog(BaseModal):
 
     def get_parameters(self) -> dict:
         return getattr(self, 'current_params', {})
-
-    def apply_analysis(self, df: pl.DataFrame) -> pl.DataFrame:
-        params = self.get_parameters()
-        col = params["column"]
-        n = params["n"]
-        ascending = params["rank_type"] == "bottom"
-
-        return df.sort(col, descending=not ascending).head(n)
 
 
 class StratificationDialog(BaseModal):
@@ -368,40 +334,6 @@ class StratificationDialog(BaseModal):
 
     def get_parameters(self) -> dict:
         return getattr(self, 'current_params', {})
-
-    def apply_analysis(self, df: pl.DataFrame) -> pl.DataFrame:
-        params = self.get_parameters()
-        col = params["column"]
-        strata = params["strata"]
-
-        # Create stratum labels
-        total = len(df)
-        results = []
-
-        for i in range(len(strata) - 1):
-            lower = strata[i]
-            upper = strata[i + 1]
-
-            if lower == float("-inf"):
-                mask = pl.col(col) < upper
-                label = f"< {upper}"
-            elif upper == float("inf"):
-                mask = pl.col(col) >= lower
-                label = f">= {lower}"
-            else:
-                mask = (pl.col(col) >= lower) & (pl.col(col) < upper)
-                label = f"{lower} - {upper}"
-
-            stratum_df = df.filter(mask)
-            count = len(stratum_df)
-
-            row = {"stratum": label, "min": lower, "max": upper, "count": count}
-            if params.get("include_percentages"):
-                row["percentage"] = (count / total * 100) if total > 0 else 0
-
-            results.append(row)
-
-        return pl.DataFrame(results)
 
 
 class AgingAnalysisDialog(BaseModal):
@@ -703,43 +635,6 @@ class SamplingDialog(BaseModal):
     def get_parameters(self) -> dict:
         return getattr(self, 'current_params', {})
 
-    def apply_analysis(self, df: pl.DataFrame) -> pl.DataFrame:
-        params = self.get_parameters()
-        total = len(df)
-
-        if params.get("percentage"):
-            n = int(total * params["percentage"] / 100)
-        elif params.get("sample_size"):
-            n = min(params["sample_size"], total)
-        else:
-            n = int(total * 0.1)  # Default 10%
-
-        seed = int(params["random_seed"]) if params.get("random_seed") else None
-        if seed:
-            np.random.seed(seed)
-
-        if params["method"] == "random":
-            indices = np.random.choice(total, size=n, replace=False)
-            return df[indices]
-
-        elif params["method"] == "stratified":
-            strat_col = params.get("stratify_column")
-            if not strat_col:
-                return df.head(n)
-            # Stratified sampling
-            strata = df.group_by(strat_col)
-            sample_dfs = []
-            for group_df in strata:
-                group_n = max(1, int(len(group_df) * n / total))
-                indices = np.random.choice(len(group_df), size=min(group_n, len(group_df)), replace=False)
-                sample_dfs.append(group_df[indices])
-            return pl.concat(sample_dfs) if sample_dfs else df.head(n)
-
-        else:  # systematic
-            step = max(1, total // n)
-            indices = list(range(0, total, step))[:n]
-            return df[indices]
-
 
 class CrossTabulationDialog(BaseModal):
     """Dialog for creating contingency tables (crosstabs)"""
@@ -834,33 +729,6 @@ class CrossTabulationDialog(BaseModal):
 
     def get_parameters(self) -> dict:
         return getattr(self, 'current_params', {})
-
-    def apply_analysis(self, df: pl.DataFrame) -> pl.DataFrame:
-        params = self.get_parameters()
-        row_var = params["rows"]
-        col_var = params["columns"]
-        value_var = params.get("values")
-
-        if value_var:
-            # Crosstab with values
-            agg = params["agg_function"]
-            if agg == "sum":
-                agg_expr = pl.col(value_var).sum()
-            elif agg == "mean":
-                agg_expr = pl.col(value_var).mean()
-            elif agg == "min":
-                agg_expr = pl.col(value_var).min()
-            elif agg == "max":
-                agg_expr = pl.col(value_var).max()
-            else:
-                agg_expr = pl.count()
-
-            result = df.group_by([row_var, col_var]).agg(agg_expr.alias("value"))
-            return result.pivot(values="value", on=col_var, index=row_var)
-        else:
-            # Simple frequency crosstab
-            result = df.group_by([row_var, col_var]).agg(pl.count().alias("count"))
-            return result.pivot(values="count", on=col_var, index=row_var, fill_value=0)
 
 
 class TrendAnalysisDialog(BaseModal):
@@ -1010,40 +878,3 @@ class TrendAnalysisDialog(BaseModal):
     def get_parameters(self) -> dict:
         return getattr(self, 'current_params', {})
 
-    def apply_analysis(self, df: pl.DataFrame) -> pl.DataFrame:
-        params = self.get_parameters()
-        date_col = params["date_column"]
-        value_col = params["value_column"]
-        period = params["period"]
-
-        # Create period column
-        period_df = df.with_columns(
-            pl.col(date_col).dt.truncate(period).alias("period")
-        )
-
-        # Build aggregation expressions
-        agg_exprs = []
-        for agg in params["aggregations"]:
-            if agg == "sum":
-                agg_exprs.append(pl.col(value_col).sum().alias(f"{value_col}_sum"))
-            elif agg == "mean":
-                agg_exprs.append(pl.col(value_col).mean().alias(f"{value_col}_mean"))
-            elif agg == "count":
-                agg_exprs.append(pl.count().alias("count"))
-            elif agg == "min":
-                agg_exprs.append(pl.col(value_col).min().alias(f"{value_col}_min"))
-            elif agg == "max":
-                agg_exprs.append(pl.col(value_col).max().alias(f"{value_col}_max"))
-
-        result = period_df.group_by("period").agg(*agg_exprs).sort("period")
-
-        # Add trend line if requested
-        if params.get("include_trendline"):
-            trend_type = params.get("trend_type", "linear")
-            if trend_type == "moving_average":
-                ma_period = params.get("ma_period", 3)
-                result = result.with_columns(
-                    pl.col(f"{value_col}_sum").rolling_mean(ma_period).alias(f"{value_col}_ma_{ma_period}")
-                )
-
-        return result

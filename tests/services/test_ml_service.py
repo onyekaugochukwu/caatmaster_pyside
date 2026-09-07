@@ -132,6 +132,70 @@ class TestMLAnomalyDetection:
         assert companioned_score < 2.0
         assert isolated_score > companioned_score * 50
 
+    def test_anomaly_zscore_direction_above_only_flags_fewer_than_both(self, numeric_data):
+        """Regression test: the anomaly detection dialog's Z-Score tab has
+        exposed a "Direction" dropdown (Both / Above Mean Only / Below
+        Mean Only) since before this fix, but ml_anomaly_zscore accepted
+        no such parameter - selecting "Above Mean Only" changed only the
+        dialog's own preview, and had no effect on the value actually
+        written to the dataset once Run Detection was clicked. "both"
+        must flag every point either direction would flag, so it can
+        never flag fewer than "above" alone."""
+        from core.data_processor import DataProcessor
+
+        processor = DataProcessor()
+        df = pl.DataFrame({"value": numeric_data})
+
+        both = processor.ml_anomaly_zscore(df, column="value", threshold=1.5, direction="both")
+        above = processor.ml_anomaly_zscore(df, column="value", threshold=1.5, direction="above")
+        below = processor.ml_anomaly_zscore(df, column="value", threshold=1.5, direction="below")
+
+        assert above["value_is_outlier"].sum() <= both["value_is_outlier"].sum()
+        assert below["value_is_outlier"].sum() <= both["value_is_outlier"].sum()
+        # This dataset's outliers include both very high (200, 250, 300)
+        # and very low (-100, -150) values, so each one-sided direction
+        # must find strictly fewer than "both" finds - proves direction
+        # is actually filtering, not silently ignored.
+        assert above["value_is_outlier"].sum() < both["value_is_outlier"].sum()
+        assert below["value_is_outlier"].sum() < both["value_is_outlier"].sum()
+        # A value flagged as "above" must be genuinely above the mean.
+        mean = df["value"].mean()
+        flagged_above = above.filter(pl.col("value_is_outlier"))["value"]
+        assert all(v > mean for v in flagged_above)
+
+    def test_anomaly_iforest_accepts_n_estimators_and_max_samples(self, numeric_data):
+        """Regression test: the Isolation Forest tab's "Number of Trees"
+        and "Max Samples" spinners were collected into params by the
+        dialog but silently dropped before reaching ml_anomaly_iforest,
+        which accepted only contamination. Asserts the real method now
+        accepts both without raising, matching what the dialog has always
+        exposed."""
+        from core.data_processor import DataProcessor
+
+        processor = DataProcessor()
+        df = pl.DataFrame({"value": numeric_data})
+        result = processor.ml_anomaly_iforest(
+            df, column="value", contamination=0.1, n_estimators=50, max_samples="auto"
+        )
+        assert "value_is_anomaly" in result.columns
+        assert "value_anomaly_score" in result.columns
+
+    def test_anomaly_lof_uses_real_contamination_parameter(self, numeric_data):
+        """Mirrors test_anomaly_iforest_uses_real_contamination_parameter -
+        LOF's contamination now controls the flagged fraction the same
+        way Isolation Forest's does, rather than scikit-learn's own
+        'auto' default that ignored the dialog's exposed contamination
+        control entirely (the LOF tab exposed it under the misleading
+        label "Outlier Threshold", tied to neither scikit-learn parameter
+        at all)."""
+        from core.data_processor import DataProcessor
+
+        processor = DataProcessor()
+        df = pl.DataFrame({"value": numeric_data})
+        low = processor.ml_anomaly_lof(df, column="value", n_neighbors=20, contamination=0.02)
+        high = processor.ml_anomaly_lof(df, column="value", n_neighbors=20, contamination=0.3)
+        assert low["value_is_outlier"].sum() < high["value_is_outlier"].sum()
+
     def test_outlier_detection_method_selection(self, numeric_data):
         """Test outlier detection with different methods.
 
@@ -212,62 +276,72 @@ class TestMLClustering:
 
 
 class TestMLForecasting:
-    """Test cases for ML forecasting operations"""
+    """Test cases for ML forecasting operations.
 
-    def test_simple_forecast(self):
-        """Test simple time series forecasting"""
+    ml_forecast/ForecastDialog (formerly tested here) were removed this
+    session: fully redundant with ml_arima/ml_ets below (both already
+    real, working, genuinely extending the dataset with forecasted rows
+    via statsmodels), while ml_forecast itself never did that at all -
+    it silently smoothed existing rows in place and ignored its own
+    `periods` parameter entirely, behind a dialog (date column, horizon,
+    confidence bounds, seasonal period, method choice) that promised
+    a feature no part of its real backend delivered. It had already been
+    removed from the right-click menu as a "no-op/duplicate" before this
+    session, and was not reachable from anywhere else in the UI.
+
+    ml_arima/ml_ets had no test coverage of their own before this change;
+    these replace what was removed instead of simply deleting it."""
+
+    def test_arima_extends_dataset_with_forecast_rows(self):
+        """ARIMA must genuinely forecast INTO THE FUTURE - add `steps` new
+        rows beyond the original data - not just smooth existing rows,
+        which is the exact gap that made the now-removed ml_forecast a
+        broken promise of this same behavior."""
         from core.data_processor import DataProcessor
 
-        # Create a simple trend
-        values = [10 + i * 0.5 + np.random.normal(0, 1) for i in range(50)]
-
+        np.random.seed(0)
+        values = [10 + i * 0.5 + np.random.normal(0, 0.5) for i in range(30)]
         df = pl.DataFrame({"value": values})
 
         processor = DataProcessor()
-        result = processor.ml_forecast(
-            df,
-            column="value",
-            output_col="forecast",
-            periods=12
-        )
+        result = processor.ml_arima(df, column="value", output_col="forecast", steps=5)
 
-        assert "forecast" in result.columns
-        assert len(result) == len(df)
+        assert len(result) == len(df) + 5
+        forecast_tail = result["forecast"].tail(5).to_list()
+        assert all(v is not None for v in forecast_tail)
 
-    def test_forecast_with_periods(self):
-        """Test forecasting with different period values"""
+    def test_ets_extends_dataset_with_forecast_rows(self):
+        """Mirrors the ARIMA test above for Exponential Smoothing."""
         from core.data_processor import DataProcessor
 
-        values = list(range(20))
-
+        np.random.seed(0)
+        values = [10 + i * 0.5 + np.random.normal(0, 0.5) for i in range(30)]
         df = pl.DataFrame({"value": values})
 
         processor = DataProcessor()
+        result = processor.ml_ets(df, column="value", output_col="forecast", steps=5)
 
-        for periods in [1, 5, 10, 20]:
-            result = processor.ml_forecast(
-                df,
-                column="value",
-                output_col="forecast",
-                periods=periods
-            )
-            assert "forecast" in result.columns
+        assert len(result) == len(df) + 5
+        forecast_tail = result["forecast"].tail(5).to_list()
+        assert all(v is not None for v in forecast_tail)
 
-    def test_forecast_empty_data(self):
-        """Test forecasting with empty data"""
+    def test_arima_forecast_values_are_reported_via_metrics_sink(self):
+        """The dialog path relies on metrics_sink to build the Analysis
+        Report shown after a forecast is applied (build_forecast_report,
+        shared by ml_arima/ml_ets) - confirms it actually gets populated
+        with a real model description, not left empty."""
         from core.data_processor import DataProcessor
 
-        df = pl.DataFrame({"value": []})
+        np.random.seed(0)
+        values = [10 + i * 0.3 for i in range(25)]
+        df = pl.DataFrame({"value": values})
 
         processor = DataProcessor()
-        result = processor.ml_forecast(
-            df,
-            column="value",
-            output_col="forecast",
-            periods=10
-        )
+        sink = {}
+        processor.ml_arima(df, column="value", output_col="forecast", steps=3, metrics_sink=sink)
 
-        assert "forecast" in result.columns
+        assert "ARIMA" in sink.get("model_type", "")
+        assert sink.get("task") == "forecasting"
 
 
 class TestMLClassification:

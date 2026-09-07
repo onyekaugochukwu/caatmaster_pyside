@@ -19,13 +19,46 @@ from ..theme import Colors
 
 class StandardizeDialog(BaseModal):
     """
-    Dialog for data standardization and normalization
+    Dialog for data standardization and normalization.
+
+    Shared by four operation_ids (stat_zscore, standardize_minmax,
+    stat_percent_rank, stat_rank), each dispatching to its own real
+    DataProcessor method - operation_id alone decides which one actually
+    runs on Apply, the same way AnomalyDetectionDialog's operation_id
+    decides which algorithm runs there. This dialog used to present four
+    ADDITIONAL method choices (Min-Max -1 to 1, Decimal Scaling, two rank
+    variants, Robust Z-Score) with no real operation behind any of them
+    at all - selectable, previewable, but Apply would silently run
+    whichever of the four real methods matched the operation_id it was
+    opened for regardless of what was selected. Removed rather than
+    wired up, since inventing new backend operations for them was a
+    larger change than fixing the actual reported gap.
     """
 
-    def __init__(self, dataframe: pl.DataFrame, parent=None):
+    _METHOD_BY_OPERATION_ID = {
+        "stat_zscore": "zscore",
+        "standardize_minmax": "minmax",
+        "stat_percent_rank": "percent_rank",
+        "stat_rank": "rank",
+    }
+
+    def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None,
+                 operation_id: str = None):
         self.original_df = dataframe
-        super().__init__("Standardize/Normalize", dataframe, parent)
+        self.locked_method = self._METHOD_BY_OPERATION_ID.get(operation_id, "zscore")
+        super().__init__("Standardize/Normalize", dataframe, parent, selected_column=selected_column)
         self.setMinimumSize(550, 500)
+        self.set_selected_column(selected_column) if selected_column else None
+
+    def set_selected_column(self, column_name: str):
+        """Auto-select the column when opened from a right-click/menu action."""
+        self.selected_column = column_name
+        if hasattr(self, "column_selector") and column_name:
+            self.column_selector.set_current_column(column_name)
+            self.preview()
+
+    def _on_column_selected(self, column_name: str):
+        self.set_selected_column(column_name)
 
     def _setup_ui(self):
         """Setup the standardize dialog UI"""
@@ -42,7 +75,9 @@ class StandardizeDialog(BaseModal):
 
         layout.addWidget(col_group)
 
-        # Method selection
+        # Method - locked to whichever operation_id this dialog was
+        # opened for (see class docstring): only one is ever real for a
+        # given menu action, so only that one is offered.
         method_group = QGroupBox("Standardization Method")
         method_layout = QVBoxLayout(method_group)
 
@@ -51,12 +86,8 @@ class StandardizeDialog(BaseModal):
         methods = [
             ("Z-Score (Standard Score)", "zscore"),
             ("Min-Max Normalization (0-1)", "minmax"),
-            ("Min-Max Normalization (-1 to 1)", "minmax_symmetric"),
-            ("Decimal Scaling", "decimal"),
             ("Percent Rank", "percent_rank"),
-            ("Rank (Dense)", "rank_dense"),
-            ("Rank (Ordinal)", "rank_ordinal"),
-            ("Robust Z-Score (Median)", "robust_zscore"),
+            ("Rank", "rank"),
         ]
 
         for label, value in methods:
@@ -64,8 +95,10 @@ class StandardizeDialog(BaseModal):
             radio.setProperty("method_value", value)
             self.method_group.addButton(radio)
             method_layout.addWidget(radio)
-            if value == "zscore":
+            if value == self.locked_method:
                 radio.setChecked(True)
+            else:
+                radio.setEnabled(False)
 
         layout.addWidget(method_group)
 
@@ -112,11 +145,11 @@ class StandardizeDialog(BaseModal):
         layout.addLayout(btn_layout)
 
     def get_parameters(self) -> dict:
-        """Get the standardization parameters"""
-        checked = self.method_group.checkedButton()
+        """The parameters actually sent to DataProcessor - both for this
+        dialog's own preview() below and, via operation_id-based
+        dispatch, for the real applied operation."""
         return {
             "column": self.column_selector.get_column(),
-            "method": checked.property("method_value") if checked else None,
             "output_column": self.output_col_edit.text() or "standardized",
         }
 
@@ -138,166 +171,40 @@ class StandardizeDialog(BaseModal):
         return True
 
     def preview(self):
-        """Generate preview of standardization"""
+        """Generate a preview by calling the exact same DataProcessor
+        method Apply will call - an earlier version of this method
+        recomputed each method locally (e.g. Percent Rank as 0-100 via
+        np.argsort), which for Percent Rank specifically did not even
+        match the real stat_percent_rank operation's own 0.0-1.0 scale,
+        regardless of which method was selected."""
+        from core.data_processor import DataProcessor
+
         try:
             params = self.get_parameters()
             column = params["column"]
-            method = params["method"]
+            output_column = params["output_column"]
 
             if not column:
                 return
 
-            # Get data
-            col_data = self.original_df[column].to_numpy()
-            valid_mask = ~np.isnan(col_data.astype(float))
-            valid_data = col_data[valid_mask]
-
-            if len(valid_data) == 0:
-                self.stats_label.setText("No valid numeric data")
-                return
-
-            # Apply standardization
+            processor = DataProcessor()
+            method = self.locked_method
             if method == "zscore":
-                result = self._zscore(valid_data)
+                result = processor.zscore_transform(self.original_df, column=column, output_col=output_column)
                 stats_text = "Mean=0, Std=1"
             elif method == "minmax":
-                result = self._minmax(valid_data, 0, 1)
+                result = processor.minmax_normalize(self.original_df, column=column, output_col=output_column)
                 stats_text = "Range: 0 to 1"
-            elif method == "minmax_symmetric":
-                result = self._minmax(valid_data, -1, 1)
-                stats_text = "Range: -1 to 1"
-            elif method == "decimal":
-                result = self._decimal_scaling(valid_data)
-                stats_text = "Decimal scaled"
             elif method == "percent_rank":
-                result = self._percent_rank(valid_data)
-                stats_text = "Range: 0% to 100%"
-            elif method == "rank_dense":
-                result = self._rank_dense(valid_data)
-                stats_text = "Dense ranking"
-            elif method == "rank_ordinal":
-                result = self._rank_ordinal(valid_data)
-                stats_text = "Ordinal ranking"
-            elif method == "robust_zscore":
-                result = self._robust_zscore(valid_data)
-                stats_text = "Median=0, MAD-based std"
-            else:
-                result = valid_data
-                stats_text = ""
+                result = processor.percent_rank_transform(self.original_df, column=column, output_col=output_column)
+                stats_text = "Range: 0.0 to 1.0"
+            else:  # rank
+                result = processor.rank_transform(self.original_df, column=column, output_col=output_column)
+                stats_text = "Average rank (ties share the mean rank)"
 
-            # Create preview dataframe
-            preview_df = self.original_df[:10].clone()
-            output_col = params["output_column"]
-
-            # Map results back to full data
-            full_result = np.full(len(self.original_df), np.nan)
-            full_result[valid_mask] = result
-
-            preview_df = preview_df.with_columns(
-                pl.Series(name=output_col, values=full_result[:10])
-            )
-
-            self.preview_table.load_dataframe(preview_df)
+            self.preview_table.load_dataframe(result.head(10))
             self.stats_label.setText(stats_text)
 
         except Exception as e:
             QMessageBox.warning(self, "Preview Error",
                               f"Could not generate preview:\n{str(e)}")
-
-    def _zscore(self, data: np.ndarray) -> np.ndarray:
-        """Calculate Z-scores"""
-        mean = np.mean(data)
-        std = np.std(data)
-        if std == 0:
-            std = 1
-        return (data - mean) / std
-
-    def _minmax(self, data: np.ndarray, min_val: float, max_val: float) -> np.ndarray:
-        """Min-Max normalization"""
-        data_min = np.min(data)
-        data_max = np.max(data)
-        data_range = data_max - data_min
-        if data_range == 0:
-            data_range = 1
-        return min_val + (data - data_min) / data_range * (max_val - min_val)
-
-    def _decimal_scaling(self, data: np.ndarray) -> np.ndarray:
-        """Decimal scaling normalization"""
-        max_abs = np.max(np.abs(data))
-        if max_abs == 0:
-            return data
-        n = len(str(int(max_abs)))
-        return data / (10 ** n)
-
-    def _percent_rank(self, data: np.ndarray) -> np.ndarray:
-        """Percent rank"""
-        sorted_indices = np.argsort(data)
-        ranks = np.zeros_like(sorted_indices, dtype=float)
-        ranks[sorted_indices] = np.arange(1, len(data) + 1) / len(data) * 100
-        return ranks
-
-    def _rank_dense(self, data: np.ndarray) -> np.ndarray:
-        """Dense ranking"""
-        unique_values = np.unique(data)
-        value_to_rank = {v: i + 1 for i, v in enumerate(unique_values)}
-        return np.array([value_to_rank[v] for v in data])
-
-    def _rank_ordinal(self, data: np.ndarray) -> np.ndarray:
-        """Ordinal ranking (competition ranking)"""
-        sorted_indices = np.argsort(data)
-        ranks = np.zeros_like(sorted_indices, dtype=int)
-        ranks[sorted_indices] = np.arange(1, len(data) + 1)
-        return ranks
-
-    def _robust_zscore(self, data: np.ndarray) -> np.ndarray:
-        """Robust Z-score using median and MAD"""
-        median = np.median(data)
-        mad = np.median(np.abs(data - median))
-        if mad == 0:
-            mad = 1
-        return (data - median) / (mad * 1.4826)
-
-    def apply_standardization(self, df: pl.DataFrame) -> pl.DataFrame:
-        """Apply standardization to dataframe"""
-        params = self.get_parameters()
-        column = params["column"]
-        method = params["method"]
-        output_col = params["output_column"]
-
-        # Get data
-        col_data = df[column].to_numpy()
-        valid_mask = ~np.isnan(col_data.astype(float))
-        valid_data = col_data[valid_mask]
-
-        if len(valid_data) == 0:
-            return df.with_columns(
-                pl.lit(np.nan).alias(output_col)
-            )
-
-        # Apply standardization
-        if method == "zscore":
-            result = self._zscore(valid_data)
-        elif method == "minmax":
-            result = self._minmax(valid_data, 0, 1)
-        elif method == "minmax_symmetric":
-            result = self._minmax(valid_data, -1, 1)
-        elif method == "decimal":
-            result = self._decimal_scaling(valid_data)
-        elif method == "percent_rank":
-            result = self._percent_rank(valid_data)
-        elif method == "rank_dense":
-            result = self._rank_dense(valid_data)
-        elif method == "rank_ordinal":
-            result = self._rank_ordinal(valid_data)
-        elif method == "robust_zscore":
-            result = self._robust_zscore(valid_data)
-        else:
-            result = valid_data
-
-        # Map back to full data
-        full_result = np.full(len(df), np.nan)
-        full_result[valid_mask] = result
-
-        return df.with_columns(
-            pl.Series(name=output_col, values=full_result)
-        )

@@ -455,13 +455,41 @@ def build_wide_concept_table(
         return pl.DataFrame()
 
     working = facts_df.filter(pl.col("app_concept").is_not_null())
+    aggregate_function = "sum"
     if not include_dimensional:
         working = working.filter(~pl.col("is_dimensional"))
+        # A real filing routinely tags the exact same whole-entity fact
+        # more than once - once in the primary statement, again in MD&A
+        # prose, a selected-financial-data table, a segment
+        # reconciliation's own "Total" row, ... - all non-dimensional,
+        # all the same period, all the same value. These are duplicate
+        # REPORTS of one real number, not separate additive quantities,
+        # and summing them (this function's behavior before this fix)
+        # multiplies a real figure by however many times the filing
+        # happens to repeat it. Confirmed against a real filing (Apple's
+        # FY2025 10-K, fetched from SEC EDGAR): revenue was tagged 4
+        # times for the same period at the identical value and summing
+        # inflated the real ~$416B to ~$1.66T; net income was tagged 4
+        # times the same way, cost of goods twice. Dropping exact
+        # (period, concept, value) duplicates first removes the multiple
+        # reports of the same number without needing to know in advance
+        # how many times any given filing happens to repeat a fact.
+        working = working.unique(subset=["period", "app_concept", "value"])
+        # If a genuine conflict remains after that (two DIFFERENT values
+        # for the same whole-entity concept and period - a restatement,
+        # or two distinct line items that both happened to map to the
+        # same concept), summing them is the same wrong assumption that
+        # caused the bug above: two different whole-entity totals for one
+        # period are not additive. Taking the first is not perfect, but a
+        # real reported number is always safer here than a manufactured
+        # sum that cannot correspond to anything the filer actually
+        # reported.
+        aggregate_function = "first"
     if periods:
         working = working.filter(pl.col("period").is_in(periods))
     if working.height == 0:
         return pl.DataFrame()
 
     return working.pivot(
-        index="period", on="app_concept", values="value", aggregate_function="sum"
+        index="period", on="app_concept", values="value", aggregate_function=aggregate_function
     ).sort("period")

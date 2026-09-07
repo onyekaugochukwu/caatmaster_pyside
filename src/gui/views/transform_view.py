@@ -579,7 +579,7 @@ class TransformView(QWidget):
     def _add_ml_submenu(self, parent_menu, operations, column_name):
         """Add ML operations with sub-submenus organized by category"""
         # Operations to exclude from the menu (no-ops or duplicates)
-        exclude_ops = {'ml_classify', 'ml_predict', 'ml_outlier', 'ml_forecast', 'ml_train'}
+        exclude_ops = {'ml_classify', 'ml_predict', 'ml_outlier', 'ml_train'}
 
         # Group ML operations by subcategory
         supervised_linear = []   # Linear Regression, GLM

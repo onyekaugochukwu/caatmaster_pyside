@@ -1434,7 +1434,7 @@
 
         <h2>Running a Segregation of Duties Scan</h2>
 
-        <p>Segregation of Duties Analysis is reached by right-clicking any column header and choosing <span class="ui">Audit &rarr; SOX SoD Analysis...</span>, which opens a dedicated dialog rather than the generic parameter form most audit operations use, since defining a set of toxic combinations benefits from a purpose-built table rather than a single-row parameter list. This operation has no shortcut on the top menu bar.</p>
+        <p>Segregation of Duties Analysis is reached by right-clicking any column header and choosing <span class="ui">Audit &rarr; SOX SoD Analysis...</span>, or from the top menu bar&#8217;s <span class="ui">Audit &rarr; Audit Checks</span> submenu. It opens a dedicated dialog rather than the generic parameter form most audit operations use, since defining a set of toxic combinations benefits from a purpose-built table rather than a single-row parameter list.</p>
 
         <div class="steps">
           <li>Right-click any column header in user_activity_log.csv and choose <span class="ui">Audit &rarr; SOX SoD Analysis...</span>.</li>
@@ -2531,7 +2531,7 @@
               <tr><td>Extract Middle Characters</td><td>Column (required); Start Position (1-indexed) (default: 1); Number of Characters (default: 1)</td><td>Extracts characters from the middle of text (MID-style)</td></tr>
               <tr><td>Extract Numbers</td><td>Column (required)</td><td>Extracts numbers from text</td></tr>
               <tr><td>Extract Text</td><td>Column (required)</td><td>Extracts alphabetic text from string</td></tr>
-              <tr><td>Find and Replace</td><td>Column (required); Find (required); Replace With; Replace With Null (default: False); Case Sensitive (default: True)</td><td>Finds and replaces values in a column</td></tr>
+              <tr><td>Find and Replace</td><td>Column (required); Find (required); Replace With; Replace With Null (default: False); Case Sensitive (default: True); Use Regular Expression (default: False); Whole Word Only (default: False)</td><td>Finds and replaces values in a column</td></tr>
               <tr><td>Hash (MD5)</td><td>Column (required)</td><td>Creates an MD5 hash of the text</td></tr>
               <tr><td>Lowercase</td><td>Column (required)</td><td>Converts all text to lowercase</td></tr>
               <tr><td>Reverse Text</td><td>Column (required)</td><td>Reverses the text string</td></tr>
@@ -2605,7 +2605,7 @@
           </table>
         </div>
         <h2>Split <span class="mono" style="font-size:0.6em; color: var(--ink-faint); font-weight: 400;">&middot; 5 operations</span></h2>
-        <p>Split by Comma, Split by Space, and Split by Custom Character are reached from the top menu bar&#8217;s Transform &rarr; Text &rarr; Split Column submenu. Split by Semicolon and Split by Pipe are not present there, and the Split category is not one of the groups the right-click menu lists, so these two cannot currently be reached from the interface.</p>
+        <p>All five reached from the top menu bar&#8217;s Transform &rarr; Text &rarr; Split Column submenu. The Split category is not one of the groups the right-click menu lists separately, so the top menu bar is the only path to any of these five.</p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Operation</th><th>Parameters</th><th>What It Computes</th></tr></thead>
@@ -2721,17 +2721,17 @@
             </tbody>
           </table>
         </div>
-        <h2>Machine Learning <span class="mono" style="font-size:0.6em; color: var(--ink-faint); font-weight: 400;">&middot; 22 operations</span></h2>
+        <h2>Machine Learning <span class="mono" style="font-size:0.6em; color: var(--ink-faint); font-weight: 400;">&middot; 21 operations</span></h2>
         <p>Reached by right-clicking any column header and choosing <span class="ui">Machine Learning</span>, or from the top menu bar&#8217;s ML menu. The four quick, single-column Anomaly Detection operations here, as discussed in Chapter 10, run against one column at a time; the genuine, multivariate, trainable versions of Isolation Forest and Local Outlier Factor are reached separately, through ML &rarr; Model Tools &rarr; Train Model.</p>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Operation</th><th>Parameters</th><th>What It Computes</th></tr></thead>
             <tbody>
               <tr><td>ARIMA Forecast</td><td>Value Column (required); Forecast Column (default: forecast); AR Order (p) (default: 1); Differencing (d) (default: 1); MA Order (q) (default: 1); Forecast Steps (default: 12)</td><td>Time series forecasting with ARIMA</td></tr>
-              <tr><td>Anomaly Detection (IQR)</td><td>Column (required); IQR Multiplier (default: 1.5)</td><td>Detects anomalies using Interquartile Range method</td></tr>
-              <tr><td>Anomaly Detection (Isolation Forest)</td><td>Column (required); Contamination (default: 0.1)</td><td>Detects anomalies using Isolation Forest algorithm</td></tr>
-              <tr><td>Anomaly Detection (Local Outlier Factor)</td><td>Column (required); Number of Neighbors (default: 20)</td><td>Detects anomalies using Local Outlier Factor</td></tr>
-              <tr><td>Anomaly Detection (Z-Score)</td><td>Column (required); Threshold (std devs) (default: 3.0)</td><td>Detects anomalies using Z-Score method</td></tr>
+              <tr><td>Anomaly Detection (IQR)</td><td>Column (required); IQR Multiplier (default: 1.5); Detection Mode (Outer/Extreme Bounds, doubles the multiplier)</td><td>Detects anomalies using Interquartile Range method</td></tr>
+              <tr><td>Anomaly Detection (Isolation Forest)</td><td>Column (required); Contamination (default: 0.1); Number of Trees (default: 100); Max Samples (default: auto)</td><td>Detects anomalies using Isolation Forest algorithm</td></tr>
+              <tr><td>Anomaly Detection (Local Outlier Factor)</td><td>Column (required); Number of Neighbors (default: 20); Contamination (default: 0.1)</td><td>Detects anomalies using Local Outlier Factor</td></tr>
+              <tr><td>Anomaly Detection (Z-Score)</td><td>Column (required); Threshold (std devs) (default: 3.0); Direction (Both/Above Mean Only/Below Mean Only, default: Both)</td><td>Detects anomalies using Z-Score method</td></tr>
               <tr><td>DBSCAN Clustering</td><td>Feature Columns (required); Cluster Column (default: cluster); Epsilon (neighborhood) (default: 0.5); Min Samples (default: 5)</td><td>Density-based spatial clustering</td></tr>
               <tr><td>Decision Tree</td><td>Feature Columns (required); Target Column (required); Prediction Column (default: prediction); Max Depth (default: 10); Min Samples Split (default: 2); Min Samples Leaf (default: 1)</td><td>Classification/regression using decision tree</td></tr>
               <tr><td>Exponential Smoothing</td><td>Value Column (required); Forecast Column (default: forecast); Trend (default: add); Seasonal; Forecast Steps (default: 12)</td><td>Exponential smoothing state space models</td></tr>
@@ -2746,7 +2746,6 @@
               <tr><td>ML Risk Score</td><td>Group Column (required); Feature Columns (required); Output Column (default: risk_score)</td><td>Calculates risk scores per group based on features</td></tr>
               <tr><td>Outlier Detection</td><td>Column (required); Method (default: iqr)</td><td>Detects statistical outliers</td></tr>
               <tr><td>Random Forest</td><td>Feature Columns (required); Target Column (required); Prediction Column (default: prediction); Number of Trees (default: 100); Max Depth (default: 10); Min Samples Split (default: 2); Min Samples Leaf (default: 1)</td><td>Ensemble learning with multiple decision trees</td></tr>
-              <tr><td>Time Series Forecast</td><td>Value Column (required); Periods to Forecast (default: 12)</td><td>Forecasts future values using exponential smoothing</td></tr>
               <tr><td>Train ML Model</td><td>Model Name (required); Algorithm (required); Feature Columns (required); Target Column (required); Test Split Ratio (default: 0.2); Random Seed (default: 42)</td><td>Train a machine learning model for later use in predictions</td></tr>
               <tr><td>XGBoost</td><td>Feature Columns (required); Target Column (required); Prediction Column (default: prediction); Number of Trees (default: 100); Learning Rate (default: 0.1); Max Depth (default: 6); Subsample (default: 0.8); Column Sample by Tree (default: 0.8)</td><td>Extreme Gradient Boosting for high performance</td></tr>
             </tbody>
@@ -2861,8 +2860,10 @@
               <tr><td>Profile Dataset &ndash; Benford screen</td><td>Minimum population; Nigrini MAD conformity threshold</td><td>100 non-zero values; 0.012</td><td>5, 8</td></tr>
               <tr><td>Benford&#8217;s Law Analysis</td><td>Minimum population, enforced by the dialog itself</td><td>100 valid, non-zero values</td><td>8</td></tr>
               <tr><td>Audit Outlier Detection</td><td>IQR fence; z-score threshold (both fixed, not configurable in this dialog)</td><td>1.5&times; IQR; 3.0 std dev</td><td>10</td></tr>
-              <tr><td>Anomaly Detection (IQR) &ndash; ML menu</td><td>IQR Multiplier</td><td>1.5</td><td>10</td></tr>
-              <tr><td>Anomaly Detection (Z-Score) &ndash; ML menu</td><td>Threshold (std devs)</td><td>3.0</td><td>10</td></tr>
+              <tr><td>Anomaly Detection (IQR) &ndash; ML menu</td><td>IQR Multiplier; Detection Mode</td><td>1.5; Outer Bounds (Extreme Bounds doubles the multiplier)</td><td>10</td></tr>
+              <tr><td>Anomaly Detection (Z-Score) &ndash; ML menu</td><td>Threshold (std devs); Direction</td><td>3.0; Both</td><td>10</td></tr>
+              <tr><td>Anomaly Detection (Isolation Forest) &ndash; ML menu</td><td>Contamination; Number of Trees; Max Samples</td><td>0.1; 100; auto</td><td>10</td></tr>
+              <tr><td>Anomaly Detection (Local Outlier Factor) &ndash; ML menu</td><td>Number of Neighbors; Contamination</td><td>20; 0.1</td><td>10</td></tr>
               <tr><td>Round Number Detection</td><td>Roundness Threshold</td><td>0.9</td><td>10</td></tr>
               <tr><td>Fuzzy Match Datasets</td><td>Similarity Threshold (0&ndash;1)</td><td>0.8</td><td>2</td></tr>
               <tr><td>Classical Variables Sampling</td><td>Confidence Level (and implied z-score)</td><td>90/95/97.5/99% &rarr; 1.645/1.960/2.240/2.576</td><td>11</td></tr>

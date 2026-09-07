@@ -56,7 +56,7 @@ class FinancialRatiosDialog(BaseModal):
         # reads self.dataset_map (via len(self.dataset_map) > 1) - setting
         # it afterward meant this dialog crashed with an AttributeError on
         # every single instantiation. Same ordering already used correctly
-        # elsewhere in this codebase (e.g. SplitColumnDialog).
+        # elsewhere in this codebase (e.g. AnomalyDetectionDialog).
         self.available_datasets = available_datasets or {}
         # Add primary dataset as default option
         self.dataset_map = {"Current Dataset": dataframe}

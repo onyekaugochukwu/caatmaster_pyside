@@ -53,6 +53,8 @@ TRANSFORM_MENU = [
         ("Split Column", [
             ("By Comma", "fa5s.columns", "split_comma"),
             ("By Space", "fa5s.columns", "split_space"),
+            ("By Semicolon", "fa5s.columns", "split_semicolon"),
+            ("By Pipe", "fa5s.columns", "split_pipe"),
             ("Custom...", "fa5s.columns", "split_custom"),
         ]),
         None,
@@ -94,6 +96,7 @@ AUDIT_MENU = [
         ("Outlier Detection...", "fa5s.exclamation-triangle", "audit_outliers"),
         ("Round Number Analysis", "fa5s.coins", "audit_round_numbers"),
         ("Flag Rows...", "fa5s.flag", "audit_flag"),
+        ("SOX SoD Analysis...", "fa5s.user-shield", "sox_sod_analysis"),
     ]),
     ("Statistical Flags", [
         ("Z-Score", "fa5s.chart-line", "stat_zscore"),

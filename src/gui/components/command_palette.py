@@ -60,11 +60,13 @@ RIBBON_ACTIONS = [
     ("IAS 2 Inventory NRV Write-Down", "ias2_nrv_writedown"), ("IAS 12 DTA Recoverability", "ias12_dta_recoverability"),
     ("IAS 21 FX Rate Consistency", "ias21_fx_rate_check"), ("IAS 36 Implied Growth Rate", "ias36_implied_growth_rate"),
     ("IAS 37 Provision Trend Break", "ias37_provision_trend"),
+    ("Split by Semicolon", "split_semicolon"), ("Split by Pipe", "split_pipe"),
+    ("SOX SoD Analysis", "sox_sod_analysis"),
 ]
 
 _CATEGORY_BY_PREFIX = [
     ("ml_", "ML"), ("ai_", "AI"), ("stat_", "Statistics"), ("report_", "Reports"),
-    ("audit_", "Audit"), ("benford", "Audit"), ("import_", "File"), ("export_", "File"),
+    ("audit_", "Audit"), ("benford", "Audit"), ("sox_sod", "Audit"), ("import_", "File"), ("export_", "File"),
     ("ifrs", "Financial"), ("ias", "Financial"), ("financial_ratios", "Financial"),
     ("reshape_statement_to_concepts", "Financial"),
     ("cross_tabulation", "Statistics"), ("sampling", "Statistics"), ("field_statistics", "Statistics"),
