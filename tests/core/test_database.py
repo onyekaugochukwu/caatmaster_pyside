@@ -148,6 +148,7 @@ class TestDatabaseContext:
         from core import database
 
         original_session = database.SessionLocal
+        original_engine = database.engine
         database.SessionLocal = test_session
         database.engine = test_engine
 
@@ -171,8 +172,19 @@ class TestDatabaseContext:
                 assert user is not None
                 assert user.email == "test@example.com"
         finally:
+            # Restore the REAL module-level engine, not test_engine - a
+            # copy-paste bug here (`database.engine = test_engine`) once
+            # left core.database.engine permanently pointing at this
+            # test's temp-file engine for the rest of the suite, since
+            # test files run in the same process share module state. It
+            # went unnoticed because nothing else in the suite queried
+            # the database through the module-level engine after this
+            # test ran - until a later test (test_menu_wiring.py, which
+            # constructs a real MainWindow) started depending on it and
+            # failed with "no such table: users" against this test's own
+            # already-deleted temp database.
             database.SessionLocal = original_session
-            database.engine = test_engine
+            database.engine = original_engine
 
     def test_context_manager_rollback(self, temp_dir, monkeypatch):
         """Test context manager rollback on error"""
@@ -193,6 +205,7 @@ class TestDatabaseContext:
         from core import database
 
         original_session = database.SessionLocal
+        original_engine = database.engine
         database.SessionLocal = test_session
         database.engine = test_engine
 
@@ -218,8 +231,12 @@ class TestDatabaseContext:
                 # This is acceptable for this test
                 pass  # Test just verifies no crash
         finally:
+            # See test_get_db_context's comment on the same pattern -
+            # this one didn't restore database.engine at all before,
+            # leaving it pointed at this test's own temp engine for
+            # every test that ran afterward in the same process.
             database.SessionLocal = original_session
-            database.engine = test_engine
+            database.engine = original_engine
 
 
 class TestDatabaseBackup:
