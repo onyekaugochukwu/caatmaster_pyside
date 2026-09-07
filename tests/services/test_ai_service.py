@@ -402,3 +402,70 @@ class TestAIPatternLearning:
         )
         assert result["output"][0] == "ABC-123"
         assert any("Infer the most likely useful" in p for p in fake.prompts_seen)
+
+
+class TestKeyringAvailabilityProbe:
+    """Regression test for a real CI failure: ai_service used to set
+    _use_keyring purely from whether `import keyring` succeeded. On a
+    headless Linux environment with no D-Bus Secret Service running (a
+    minimal server install, or - confirmed directly - GitHub Actions'
+    ubuntu-latest runner), the keyring PACKAGE installs and imports
+    fine, but every actual get_password()/set_password() call raises
+    NoKeyringError at the point of use. Every credential read/write
+    after that raised the same error with no fallback, since nothing
+    had verified a working backend actually existed. Fixed by probing
+    with one real, harmless, read-only get_password() call at import
+    time instead of trusting the import alone."""
+
+    def test_falls_back_when_keyring_has_no_backend(self, monkeypatch):
+        import importlib
+        import sys
+        import types
+
+        class FakeKeyringErrors(types.ModuleType):
+            class KeyringError(Exception):
+                pass
+
+        class FakeNoKeyringError(FakeKeyringErrors.KeyringError):
+            pass
+
+        fake_keyring = types.ModuleType("keyring")
+        fake_keyring.errors = FakeKeyringErrors("keyring.errors")
+
+        def _raise_no_backend(*args, **kwargs):
+            raise FakeNoKeyringError("No recommended backend was available.")
+
+        fake_keyring.get_password = _raise_no_backend
+
+        monkeypatch.setitem(sys.modules, "keyring", fake_keyring)
+        monkeypatch.setitem(sys.modules, "keyring.errors", fake_keyring.errors)
+
+        import services.ai_service as ai_service
+        importlib.reload(ai_service)
+        try:
+            assert ai_service._use_keyring is False
+        finally:
+            importlib.reload(ai_service)  # restore real keyring detection for later tests
+
+    def test_uses_keyring_when_a_real_backend_responds(self, monkeypatch):
+        import importlib
+        import sys
+        import types
+
+        class FakeKeyringErrors(types.ModuleType):
+            class KeyringError(Exception):
+                pass
+
+        fake_keyring = types.ModuleType("keyring")
+        fake_keyring.errors = FakeKeyringErrors("keyring.errors")
+        fake_keyring.get_password = lambda service, key: None  # a working backend with no stored value yet
+
+        monkeypatch.setitem(sys.modules, "keyring", fake_keyring)
+        monkeypatch.setitem(sys.modules, "keyring.errors", fake_keyring.errors)
+
+        import services.ai_service as ai_service
+        importlib.reload(ai_service)
+        try:
+            assert ai_service._use_keyring is True
+        finally:
+            importlib.reload(ai_service)  # restore real keyring detection for later tests

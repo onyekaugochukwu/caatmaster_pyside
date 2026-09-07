@@ -3107,11 +3107,31 @@ class EncryptedCredentialStore:
 SimpleCredentialStore = EncryptedCredentialStore
 
 
-# Try to import keyring, fall back to encrypted storage
+# Try to import keyring, fall back to encrypted storage.
+#
+# Importing the package successfully is not the same as having a working
+# backend: on a headless Linux environment with no D-Bus Secret Service
+# running (a minimal server install, or a CI runner - confirmed directly
+# against GitHub Actions' ubuntu-latest runner), `keyring` installs and
+# imports fine, but every actual get_password()/set_password() call
+# raises NoKeyringError at the point of use, not at import time. Setting
+# _use_keyring from the import alone meant every credential read/write
+# after that raised the same error with no fallback - probing with one
+# real (harmless, read-only) call here is the only way to know in
+# advance whether keyring will actually work on this machine.
 try:
     import keyring
-    _use_keyring = True
+    import keyring.errors
 except ImportError:
+    keyring = None
+
+if keyring is not None:
+    try:
+        keyring.get_password("caatmaster", "__availability_check__")
+        _use_keyring = True
+    except keyring.errors.KeyringError:
+        _use_keyring = False
+else:
     _use_keyring = False
 
 _credential_store = SimpleCredentialStore()
