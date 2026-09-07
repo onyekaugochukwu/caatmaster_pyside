@@ -101,15 +101,15 @@ class BaseModal(QDialog):
 
     def __init__(self, title: str, dataframe: pl.DataFrame = None, parent=None,
                  selected_column: str = None):
-        # Deliberately NOT forcing Qt.Window here (as this used to) - that
-        # flag makes a dialog behave like an independent top-level window
-        # while still being modal and parented to the main window, a
-        # contradictory combination that confused window managers' edge-
-        # snap/tiling gestures: dragging the dialog toward a screen edge
-        # could resize/restore the MAIN window instead of (or as well as)
-        # the dialog, since the WM no longer recognized it as a normal
-        # transient child exempt from those gestures. Qt's default QDialog
-        # flags are the well-tested, WM-correct choice.
+        # Do not force Qt.Window here: that flag makes a dialog behave
+        # like an independent top-level window while still being modal
+        # and parented to the main window, a combination that confuses
+        # window managers' edge-snap/tiling gestures - dragging the
+        # dialog toward a screen edge can resize/restore the main
+        # window instead of (or as well as) the dialog, because the WM
+        # no longer recognizes it as a normal transient child exempt
+        # from those gestures. Qt's default QDialog flags are the
+        # well-tested, WM-correct choice.
         super().__init__(parent if parent else None)
         self.setWindowTitle(title)
         self.setModal(True)

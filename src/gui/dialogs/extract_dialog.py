@@ -21,27 +21,15 @@ class ExtractDialog(BaseModal):
     Dialog for extracting a substring from a text column.
 
     Shared by three operation_ids (text_extract_first, text_extract_last,
-    text_extract_middle), each dispatching to its own real DataProcessor
-    method (extract_first_chars/extract_last_chars/extract_middle_chars) -
-    operation_id alone decides which one actually runs on Apply, the same
-    way AnomalyDetectionDialog's operation_id decides which algorithm
-    runs there.
+    text_extract_middle), each dispatching to its own DataProcessor
+    method (extract_first_chars/extract_last_chars/extract_middle_chars).
+    operation_id alone decides which one runs on Apply, the same way
+    AnomalyDetectionDialog's operation_id decides which algorithm runs
+    there.
 
-    This dialog used to also offer "Between Characters" (no real
-    operation behind it - previewable, never applicable) and an entire
-    second "Date/Time Extraction" tab with 14 more choices (Year,
-    Quarter, Month Name, ...), none of which any operation_id in
-    TransformationDialogFactory.DIALOG_MAPPING ever routed to this class
-    for - real date-part extraction (datetime_year, datetime_month, ...)
-    is handled entirely by the generic, registry-schema-driven dialog
-    instead. Both were removed rather than wired up: the real gap
-    reported was that this dialog's own "Number/Position" and "End
-    Position" spinboxes didn't match extract_first_chars/
-    extract_last_chars/extract_middle_chars's real num_chars/start_pos
-    parameter names at all, so every real "Extract" click silently used
-    those methods' defaults (num_chars=1, start_pos=1) regardless of
-    what was configured - a much narrower, already-serious problem that
-    didn't need a second, unrelated feature invented to fix it.
+    Date-part extraction (datetime_year, datetime_month, ...) is handled
+    entirely by the generic, registry-schema-driven dialog and is not
+    part of this class.
     """
 
     _MODE_BY_OPERATION_ID = {
@@ -174,14 +162,11 @@ class ExtractDialog(BaseModal):
         layout.addLayout(btn_layout)
 
     def get_parameters(self) -> dict:
-        """The parameters actually sent to DataProcessor - both for this
-        dialog's own preview() below and, via operation_id-based
-        dispatch, for the real applied operation. Key names
-        (num_chars/start_pos) match extract_first_chars/
-        extract_last_chars/extract_middle_chars exactly - an earlier
-        version used generic "param1"/"param2" names that matched
-        nothing, so every real Extract click silently ran with those
-        methods' own defaults regardless of what was configured here."""
+        """The parameters sent to DataProcessor, both for this dialog's
+        own preview() below and, via operation_id-based dispatch, for
+        the applied operation. Key names (num_chars/start_pos) match
+        extract_first_chars/extract_last_chars/extract_middle_chars
+        exactly."""
         column = self.column_selector.get_column()
         params = {
             "column": column,
@@ -212,9 +197,8 @@ class ExtractDialog(BaseModal):
         return True
 
     def preview(self):
-        """Generate a preview by calling the exact same DataProcessor
-        method Apply will call - see get_parameters()'s docstring for
-        why that used not to be true."""
+        """Generate a preview by calling the same DataProcessor method
+        Apply uses."""
         from core.data_processor import DataProcessor
 
         try:

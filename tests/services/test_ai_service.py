@@ -3,14 +3,8 @@ Tests for AI-backed data_processor operations - Sentiment Analysis,
 Entity Extraction, Classification, Summarization, Enrichment, Explain,
 and Pattern Learning.
 
-Every one of these was deliberately rewritten from a naive keyword/regex
-heuristic to a real LLM call (see each method's own docstring in
-core/data_processor.py for why - e.g. sentiment used to count matches
-against a 7-word keyword list, which real text defeats trivially). That
-means these can no longer test "does the deterministic heuristic get the
-right answer" the way the original version of this file did - there is
-no deterministic heuristic left to test. What CAN be tested
-deterministically, and is tested here via FakeAIManager: the prompt
+Each of these makes a real LLM call rather than a deterministic
+heuristic, so what is tested here (via FakeAIManager) is: the prompt
 actually gets built and sent, the LLM's JSON response actually gets
 parsed back into the right columns in the right row order, batching/
 null-handling doesn't crash, and a missing AI provider fails with a
@@ -405,17 +399,12 @@ class TestAIPatternLearning:
 
 
 class TestKeyringAvailabilityProbe:
-    """Regression test for a real CI failure: ai_service used to set
-    _use_keyring purely from whether `import keyring` succeeded. On a
-    headless Linux environment with no D-Bus Secret Service running (a
-    minimal server install, or - confirmed directly - GitHub Actions'
-    ubuntu-latest runner), the keyring PACKAGE installs and imports
-    fine, but every actual get_password()/set_password() call raises
-    NoKeyringError at the point of use. Every credential read/write
-    after that raised the same error with no fallback, since nothing
-    had verified a working backend actually existed. Fixed by probing
-    with one real, harmless, read-only get_password() call at import
-    time instead of trusting the import alone."""
+    """_use_keyring must reflect whether a working keyring backend
+    actually exists, not just whether `import keyring` succeeded: on a
+    headless Linux environment with no D-Bus Secret Service running,
+    the keyring package installs and imports fine, but every actual
+    get_password()/set_password() call raises NoKeyringError at the
+    point of use."""
 
     def test_falls_back_when_keyring_has_no_backend(self, monkeypatch):
         import importlib

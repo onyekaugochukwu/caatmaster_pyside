@@ -111,13 +111,6 @@ class TransformationDialogFactory:
         # Replace
         'replace_values': ReplaceValuesDialog,
 
-        # Note: GroupStatsDialog was mapped to the now-removed "stat_group_stats"
-        # operation_id, but its own get_parameters() output (value_column,
-        # statistics, prefix, as_new_rows) never actually matched what any
-        # real operation expected — it would have crashed on apply either
-        # way. stat_add_group_stats (the working group-stats operation)
-        # uses the generic dialog, which does match its real schema.
-
         # AI Operations
         'ai_explain': AIExplainDialog,
         'ai_sentiment': AISentimentDialog,
@@ -139,10 +132,8 @@ class TransformationDialogFactory:
         'change_dtype': ChangeDataTypeDialog,
 
         # Table operations
-        # Note: split_sheet is NOT here - it creates multiple datasets and is triggered from sidebar
-        # Note: combine_sheets was removed from OPERATION_REGISTRY - see the
-        # comment there; "Append Datasets" from the sidebar is the working
-        # equivalent for cross-dataset combination.
+        # split_sheet is not mapped here: it creates multiple datasets
+        # and is triggered from the sidebar instead.
         'transpose': TransposeDialog,
         'promote_row_header': PromoteRowHeaderDialog,
         'query_sheet': QuerySheetDialog,
@@ -195,14 +186,11 @@ class TransformationDialogFactory:
                 import inspect
                 sig = inspect.signature(dialog_class.__init__)
 
-                # Special handling for dialogs shared by more than one
-                # operation_id via a transform_type constructor kwarg
-                # rather than operation_id itself - each needs to know
-                # which was actually requested to open on (and lock to)
-                # the matching tab, the same reason AnomalyDetectionDialog
-                # needs operation_id below. Without this, PrefixSuffixDialog
-                # opened for 'text_add_suffix' silently defaulted to (and
-                # could only ever preview) "Add Prefix" instead.
+                # Dialogs shared by more than one operation_id via a
+                # transform_type constructor kwarg need to know which
+                # was requested, so the dialog opens on the matching
+                # tab (the same reason AnomalyDetectionDialog below
+                # needs operation_id).
                 if dialog_class.__name__ == 'NumberTransformDialog':
                     transform_type = 'modulo' if operation_id == 'math_modulo' else 'power'
                     if 'selected_column' in sig.parameters:

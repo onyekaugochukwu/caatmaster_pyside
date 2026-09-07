@@ -1,17 +1,12 @@
 """
 Preview/apply consistency for the Anomaly Detection dialog.
 
-A real, discovered defect: AnomalyDetectionDialog.preview() used to
-recompute every method (Isolation Forest, Z-Score, IQR, Local Outlier
-Factor) as its own local distance-from-mean heuristic, entirely separate
-from DataProcessor's real implementations that transform_view actually
-calls once "Run Detection" is clicked. A reviewer could preview one
-result and get a genuinely different one after committing - the exact
-kind of silent mismatch that erodes trust in every other number this
-application produces. preview() now calls the same DataProcessor methods,
-with the same parameters, that the real apply path calls; these tests
-pin that down structurally so a future edit can't quietly reintroduce a
-second, independently-drifting implementation.
+AnomalyDetectionDialog.preview() must call the same DataProcessor
+methods, with the same parameters, that the real apply path
+(transform_view's "Run Detection") calls for every method (Isolation
+Forest, Z-Score, IQR, Local Outlier Factor). These tests pin that down
+structurally so a future edit can't reintroduce a second, independently
+drifting implementation.
 """
 import numpy as np
 import polars as pl
@@ -36,11 +31,9 @@ def dialog(qtbot, sample_df):
 
 
 class TestOpensOnTheRequestedTab:
-    """Regression test: all four ml_anomaly_* operation ids share this one
-    dialog class (TransformationDialogFactory.DIALOG_MAPPING), but the
-    factory used to construct it identically regardless of which one was
-    requested - choosing "Local Outlier Factor" by name from a menu still
-    opened on the Isolation Forest tab, the first one, every time."""
+    """All four ml_anomaly_* operation ids share this one dialog class
+    (TransformationDialogFactory.DIALOG_MAPPING); the factory must open
+    it on the tab matching the requested operation_id."""
 
     @pytest.mark.parametrize("operation_id,expected_tab", [
         ("ml_anomaly_iforest", "Isolation Forest"),

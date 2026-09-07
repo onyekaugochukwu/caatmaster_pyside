@@ -6,12 +6,10 @@ Bridges a row-based financial statement (accounts as rows - "Cash",
 column format Financial Ratios needs (total_assets/revenue/... as
 literal columns). This closes the gap between core.financial_import_wizard
 (structural parsing that produces exactly this row-based shape) and
-financial_service.py's ratio engine (which needs concept columns) - a
-gap that previously left users with only a "go run Remove Rows -> Promote
-Header -> Transpose yourself" instruction that didn't even solve the real
-problem, since a plain transpose turns each individual account into its
-own column rather than rolling multiple accounts up into the concept
-buckets the ratio engine actually needs.
+financial_service.py's ratio engine (which needs concept columns). A
+plain transpose is not sufficient, since it turns each individual
+account into its own column rather than rolling multiple accounts up
+into the concept buckets the ratio engine needs.
 """
 import asyncio
 from typing import List, Optional

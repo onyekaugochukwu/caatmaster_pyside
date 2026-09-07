@@ -349,14 +349,9 @@ def _first_spanning_column(row: list) -> int:
 
 def _fill_row_blanks(row: list) -> list:
     """Plain forward-fill: each blank gets the nearest preceding real
-    value. Never touches a position that already has its own value —
-    unlike an earlier version of this logic, which tried to also exclude
-    "caption" cells here and ended up excluding legitimate, densely
-    packed per-column labels too (a row like "Region/Product, Range
-    Rover, Toyota, ..." has no blanks between its labels, but each one
-    is a real value for its own column, not a caption to be discarded).
-    That distinction is handled once, upstream, via
-    _first_spanning_column — this function just fills blanks."""
+    value. Never touches a position that already has its own value.
+    Caption-cell exclusion is handled upstream via
+    _first_spanning_column; this function only fills blanks."""
     filled = list(row)
     last = None
     for i, v in enumerate(row):

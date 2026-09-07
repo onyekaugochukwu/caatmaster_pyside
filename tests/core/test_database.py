@@ -172,17 +172,10 @@ class TestDatabaseContext:
                 assert user is not None
                 assert user.email == "test@example.com"
         finally:
-            # Restore the REAL module-level engine, not test_engine - a
-            # copy-paste bug here (`database.engine = test_engine`) once
-            # left core.database.engine permanently pointing at this
-            # test's temp-file engine for the rest of the suite, since
-            # test files run in the same process share module state. It
-            # went unnoticed because nothing else in the suite queried
-            # the database through the module-level engine after this
-            # test ran - until a later test (test_menu_wiring.py, which
-            # constructs a real MainWindow) started depending on it and
-            # failed with "no such table: users" against this test's own
-            # already-deleted temp database.
+            # Restore the REAL module-level engine, not test_engine: test
+            # files run in the same process and share module state, so
+            # leaving database.engine pointed at this test's temp-file
+            # engine would corrupt every test that runs after it.
             database.SessionLocal = original_session
             database.engine = original_engine
 
@@ -301,10 +294,9 @@ class TestModels:
 
     def test_ml_model_model(self, temp_dir):
         """Test MLModel creation and attributes - the only other real
-        table besides User (see core/models.py's module docstring: every
-        other model that used to live here was removed as dead schema,
-        since projects/datasets/transformation pipelines are persisted in
-        the local .caat file format instead, not this database)."""
+        table besides User (see core/models.py's module docstring:
+        projects/datasets/transformation pipelines are persisted in the
+        local .caat file format instead, not this database)."""
         test_db_path = temp_dir / "test_ml_model.db"
         test_db_url = f"sqlite:///{test_db_path}"
 

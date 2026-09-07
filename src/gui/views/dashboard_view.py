@@ -242,15 +242,9 @@ class ActivityItem(QFrame):
         layout.setSpacing(16)
 
         # Activity icon - kept as a direct attribute (like the other 3
-        # labels below) so it can be updated unambiguously later. The
-        # previous approach re-found these via findChildren() and guessed
-        # which was which from their current text - the icon label's text
-        # could get misidentified as the dataset label (both are "some
-        # non-empty string that isn't rows/cols/Modified"), overwriting it
-        # with a dataset name; once that happened, the icon label's text
-        # no longer matched any known emoji, so it could never be
-        # recognized as "the icon" again and stayed stuck on whatever
-        # got written into it.
+        # labels below) so it can be updated unambiguously later, rather
+        # than re-found via findChildren() and identified by guessing at
+        # its current text.
         self.icon_label = QLabel(icon)
         self.icon_label.setFixedSize(36, 36)
         self.icon_label.setAlignment(Qt.AlignCenter)
@@ -587,13 +581,11 @@ class DashboardView(QWidget):
 
     def _refresh_datasets(self):
         """Refresh the datasets section with current datasets"""
-        # Clear existing dataset cards - itemAt() only peeks, it doesn't
-        # detach the item from the layout, so the old widgets stayed fully
-        # attached (just pending eventual deletion) while new ones were
-        # added right after - if this ran twice in quick succession before
-        # Qt processed the deferred deleteLater(), both old and new cards
-        # briefly rendered at once. takeAt() actually removes the item
-        # from the layout immediately.
+        # Clear existing dataset cards using takeAt(), which removes the
+        # item from the layout immediately. itemAt() only peeks without
+        # detaching, which would leave stale widgets attached (pending
+        # deleteLater()) while new ones are added, risking both being
+        # rendered at once if this runs twice in quick succession.
         while self.datasets_layout.count():
             item = self.datasets_layout.takeAt(0)
             if item.widget():

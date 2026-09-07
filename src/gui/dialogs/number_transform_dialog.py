@@ -84,13 +84,10 @@ class NumberTransformDialog(BaseModal):
         self.tabs.addTab(self.modulo_tab, "Modulo")
         self.tabs.addTab(self.power_tab, "Power")
 
-        # operation_id ('math_modulo'/'math_power') is what actually
-        # decides which real method runs on Apply Transform, regardless
-        # of which tab is showing - switching tabs only changes this
-        # dialog's own preview. Pre-selecting AND disabling the other tab
-        # keeps the dialog from implying a choice that Apply won't honor
-        # (a real bug: opening this dialog for "Power" used to still
-        # default to and preview the Modulo tab).
+        # operation_id ('math_modulo'/'math_power') decides which method
+        # runs on Apply Transform, independent of which tab is showing.
+        # The matching tab is selected and the other is disabled so the
+        # dialog cannot imply a choice Apply will not honor.
         modulo_index, power_index = 0, 1
         self.tabs.setCurrentIndex(modulo_index if self.transform_type == "modulo" else power_index)
         self.tabs.setTabEnabled(power_index if self.transform_type == "modulo" else modulo_index, False)
@@ -241,17 +238,8 @@ class NumberTransformDialog(BaseModal):
         return True
 
     def preview(self):
-        """Generate a preview by calling the exact same DataProcessor
-        method Apply Transform will call, against just the first 10 rows.
-        An earlier version recomputed the transform locally against the
-        WHOLE dataframe's valid (non-NaN) values, then tried to splice
-        the first 10 of those results back into a fixed 10-row preview
-        via valid_mask[:10] - which raised a numpy boolean-index-size
-        error and hung this dialog (QMessageBox.warning blocks
-        indefinitely with no user present to dismiss it under a headless
-        Qt platform) on any real dataset with fewer than 10 rows, and
-        even on larger datasets misaligned results with rows whenever a
-        NaN appeared before row 10."""
+        """Generate a preview by calling the same DataProcessor method
+        Apply Transform uses, against the first 10 rows only."""
         from core.data_processor import DataProcessor
 
         try:

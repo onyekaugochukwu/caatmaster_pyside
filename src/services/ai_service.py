@@ -1113,13 +1113,9 @@ Never make up data or statistical values - calculate them from provided informat
         return self.providers.get(name)
 
     def get_max_tokens(self) -> int:
-        """Max output tokens per AI response - every provider's complete()
-        used to default to a hardcoded 4000 with no way to raise it, which
-        silently capped things like compliance report sections regardless
-        of how much the user actually wanted drafted (e.g. a thorough
-        multi-dataset writeup). Configurable in Settings > AI/ML; persisted
-        via QSettings so it survives restarts. Default of 4000 matches the
-        old hardcoded value, so nothing changes until the user raises it."""
+        """Max output tokens per AI response. Configurable in Settings >
+        AI/ML; persisted via QSettings so it survives restarts. Defaults
+        to 4000."""
         from PySide6.QtCore import QSettings
         settings = QSettings()
         return settings.value("ai/max_tokens", 4000, type=int)
@@ -2832,11 +2828,9 @@ class ReportAssistant:
                             audit_results: Dict,
                             tone: str = "professional") -> str:
         """Draft a section of a post-audit report. Word target scales
-        with the configured max response length (Settings > AI/ML) -
-        this used to say "Maximum 300 words" unconditionally, which meant
-        raising max_tokens alone had no effect since the model was still
-        told to stop at 300 words regardless of how much budget it had.
-        A thorough multi-dataset writeup needs both raised together."""
+        with the configured max response length (Settings > AI/ML), so
+        raising max_tokens also raises the word budget given to the
+        model."""
 
         target_words = int(self.ai.get_max_tokens() * 0.7)
 
@@ -3111,14 +3105,11 @@ SimpleCredentialStore = EncryptedCredentialStore
 #
 # Importing the package successfully is not the same as having a working
 # backend: on a headless Linux environment with no D-Bus Secret Service
-# running (a minimal server install, or a CI runner - confirmed directly
-# against GitHub Actions' ubuntu-latest runner), `keyring` installs and
-# imports fine, but every actual get_password()/set_password() call
-# raises NoKeyringError at the point of use, not at import time. Setting
-# _use_keyring from the import alone meant every credential read/write
-# after that raised the same error with no fallback - probing with one
-# real (harmless, read-only) call here is the only way to know in
-# advance whether keyring will actually work on this machine.
+# running (e.g. a minimal server install or a CI runner), `keyring`
+# installs and imports fine, but every actual get_password()/
+# set_password() call raises NoKeyringError at the point of use, not at
+# import time. Probe with one real, harmless, read-only call here to
+# determine availability up front rather than at first real use.
 try:
     import keyring
     import keyring.errors

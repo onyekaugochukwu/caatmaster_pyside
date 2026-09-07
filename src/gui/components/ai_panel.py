@@ -443,12 +443,9 @@ class AIPanel(QWidget):
         title_layout.addLayout(text_col)
         layout.addLayout(title_layout, 1)
 
-        # Quick Actions launcher - previously a panel that auto-showed
-        # before the first message and vanished afterward, which meant it
-        # disappeared right when a "what can this thing do" hint would
-        # still be useful, and could never be reopened once a
-        # conversation was underway. A persistent toggle beside
-        # Settings/Clear keeps it reachable at any point in the chat.
+        # Persistent toggle beside Settings/Clear keeps Quick Actions
+        # reachable at any point in the chat, not just before the first
+        # message.
         self.quick_actions_btn = QToolButton()
         self.quick_actions_btn.setFixedSize(32, 32)
         self.quick_actions_btn.setIcon(qta.icon("fa5s.bolt", color=Colors.TEXT_SECONDARY))
@@ -569,10 +566,8 @@ class AIPanel(QWidget):
         self.progress_bar.hide()
         layout.addWidget(self.progress_bar)
 
-        # Input row - textbox with an icon-only send/stop button inline at
-        # the end, instead of a separate button row below (the model name
-        # moved up into the header, so this row no longer needs to carry
-        # it too).
+        # Input row: textbox with an icon-only send/stop button inline
+        # at the end. The model name is shown in the header instead.
         input_row = QHBoxLayout()
         input_row.setSpacing(8)
 

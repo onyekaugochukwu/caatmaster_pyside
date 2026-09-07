@@ -77,9 +77,8 @@ class FilterConditionWidget(QWidget):
         self.columns = columns
         # Stored directly rather than looked up via self.parent(): once this
         # widget is added to a layout, Qt reparents it to that layout's own
-        # widget (e.g. a scroll area's content widget) — self.parent() then
-        # silently stops being the owning dialog, which used to make every
-        # column-switch after the first fall back to text-only operators.
+        # widget (e.g. a scroll area's content widget), so self.parent()
+        # no longer refers to the owning dialog.
         self._dataframe = dataframe
         self._setup_ui()
 
@@ -134,11 +133,11 @@ class FilterConditionWidget(QWidget):
         col_type = "text"
         if df is not None and column_name in df.columns:
             dtype = df[column_name].dtype
-            # is_numeric() covers every numeric dtype polars has (signed AND
-            # unsigned ints of every width, floats, decimal) — an explicit
-            # list here previously missed UInt8/16/32/64, so any column of
-            # that type (e.g. this app's own add_index_column, or a
-            # row/group count) silently lost the >/</>=/<= operators.
+            # is_numeric() covers every numeric dtype Polars has (signed
+            # and unsigned ints of every width, floats, decimal), unlike
+            # an explicit dtype list which would miss types such as
+            # UInt8/16/32/64 (e.g. this app's own add_index_column, or a
+            # row/group count) and lose the >/</>=/<= operators for them.
             if dtype.is_numeric():
                 col_type = "number"
             elif dtype in [pl.Date, pl.Datetime]:
@@ -332,11 +331,7 @@ class FilterDialog(BaseModal):
         """Generate preview of filtered data — delegates to the same
         DataProcessor._build_condition_expr the real filter_advanced/
         audit_flag_rows operations use, instead of maintaining a second,
-        separately-buggy copy of the same condition-to-expression logic
-        (this one used to fall back to comparing a raw, uncoerced string
-        against numeric columns whenever float(val) failed, e.g. while a
-        value field was still empty — "cannot compare string with numeric
-        type")."""
+        separate copy of the condition-to-expression logic."""
         try:
             params = self.get_parameters()
             conditions = params["conditions"]

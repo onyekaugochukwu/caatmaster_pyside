@@ -77,12 +77,8 @@ class TestMLAnomalyDetection:
         assert "value_lof_score" in result.columns
 
     def test_anomaly_iforest_uses_real_contamination_parameter(self, numeric_data):
-        """Regression test: an earlier version of ml_anomaly_iforest computed
-        a fixed distance-from-mean heuristic and ignored the contamination
-        parameter entirely, despite the operation accepting it and the
-        dialog exposing it - the flagged count never changed regardless of
-        what a reviewer set it to. A genuine Isolation Forest's flagged
-        count scales with contamination; this asserts that it now does."""
+        """A genuine Isolation Forest's flagged count scales with the
+        contamination parameter; assert that it does."""
         from core.data_processor import DataProcessor
 
         processor = DataProcessor()
@@ -94,17 +90,13 @@ class TestMLAnomalyDetection:
         assert low["value_is_anomaly"].sum() < high["value_is_anomaly"].sum()
 
     def test_anomaly_lof_score_reflects_local_density_not_distance_from_mean(self):
-        """Regression test: an earlier version of ml_anomaly_lof scored every
-        point purely by its raw distance from the column mean, which is not
-        what Local Outlier Factor actually measures - LOF compares a
-        point's local density to its neighbors' local density. Two points
-        roughly equally far from a large central cluster can score very
-        differently depending on whether either one has nearby company: a
-        point with a few close neighbors of its own is locally normal even
-        while sitting far from the main cluster, while a point with no
-        neighbors at all is genuinely isolated. A pure distance-from-mean
-        score cannot tell these two situations apart; LOF is specifically
-        built to."""
+        """Local Outlier Factor compares a point's local density to its
+        neighbors' local density, not raw distance from the column mean.
+        Two points roughly equally far from a large central cluster can
+        score very differently depending on whether either has nearby
+        company: a point with a few close neighbors of its own is
+        locally normal even while sitting far from the main cluster,
+        while a point with no neighbors at all is genuinely isolated."""
         from core.data_processor import DataProcessor
 
         processor = DataProcessor()
@@ -125,22 +117,15 @@ class TestMLAnomalyDetection:
         isolated_score = scores[-1]     # the point at -30.0, with no neighbors of its own
         # The companioned point is locally just as dense as the main cluster,
         # so its LOF score should stay near 1; the isolated point's only
-        # neighbors are ~30 units away in a dense cluster, so a real LOF
-        # score should mark it as dramatically more anomalous. A pure
-        # distance-from-mean score would instead rate both far above 1
-        # with no such gap between them.
+        # neighbors are ~30 units away in a dense cluster, so its LOF
+        # score should mark it as dramatically more anomalous.
         assert companioned_score < 2.0
         assert isolated_score > companioned_score * 50
 
     def test_anomaly_zscore_direction_above_only_flags_fewer_than_both(self, numeric_data):
-        """Regression test: the anomaly detection dialog's Z-Score tab has
-        exposed a "Direction" dropdown (Both / Above Mean Only / Below
-        Mean Only) since before this fix, but ml_anomaly_zscore accepted
-        no such parameter - selecting "Above Mean Only" changed only the
-        dialog's own preview, and had no effect on the value actually
-        written to the dataset once Run Detection was clicked. "both"
-        must flag every point either direction would flag, so it can
-        never flag fewer than "above" alone."""
+        """ml_anomaly_zscore's "both" direction must flag every point
+        either one-sided direction would flag, so it can never flag
+        fewer than "above" or "below" alone."""
         from core.data_processor import DataProcessor
 
         processor = DataProcessor()
@@ -154,8 +139,7 @@ class TestMLAnomalyDetection:
         assert below["value_is_outlier"].sum() <= both["value_is_outlier"].sum()
         # This dataset's outliers include both very high (200, 250, 300)
         # and very low (-100, -150) values, so each one-sided direction
-        # must find strictly fewer than "both" finds - proves direction
-        # is actually filtering, not silently ignored.
+        # must find strictly fewer than "both" finds.
         assert above["value_is_outlier"].sum() < both["value_is_outlier"].sum()
         assert below["value_is_outlier"].sum() < both["value_is_outlier"].sum()
         # A value flagged as "above" must be genuinely above the mean.
@@ -164,12 +148,8 @@ class TestMLAnomalyDetection:
         assert all(v > mean for v in flagged_above)
 
     def test_anomaly_iforest_accepts_n_estimators_and_max_samples(self, numeric_data):
-        """Regression test: the Isolation Forest tab's "Number of Trees"
-        and "Max Samples" spinners were collected into params by the
-        dialog but silently dropped before reaching ml_anomaly_iforest,
-        which accepted only contamination. Asserts the real method now
-        accepts both without raising, matching what the dialog has always
-        exposed."""
+        """ml_anomaly_iforest must accept n_estimators and max_samples,
+        matching what the Isolation Forest dialog tab exposes."""
         from core.data_processor import DataProcessor
 
         processor = DataProcessor()
@@ -182,12 +162,8 @@ class TestMLAnomalyDetection:
 
     def test_anomaly_lof_uses_real_contamination_parameter(self, numeric_data):
         """Mirrors test_anomaly_iforest_uses_real_contamination_parameter -
-        LOF's contamination now controls the flagged fraction the same
-        way Isolation Forest's does, rather than scikit-learn's own
-        'auto' default that ignored the dialog's exposed contamination
-        control entirely (the LOF tab exposed it under the misleading
-        label "Outlier Threshold", tied to neither scikit-learn parameter
-        at all)."""
+        LOF's contamination parameter must control the flagged fraction,
+        the same way Isolation Forest's does."""
         from core.data_processor import DataProcessor
 
         processor = DataProcessor()
@@ -197,14 +173,7 @@ class TestMLAnomalyDetection:
         assert low["value_is_outlier"].sum() < high["value_is_outlier"].sum()
 
     def test_outlier_detection_method_selection(self, numeric_data):
-        """Test outlier detection with different methods.
-
-        ml_outlier_detection() itself used to call ml_anomaly_zscore()/
-        ml_anomaly_iqr() with an output_col kwarg neither accepts - a real
-        TypeError on every call, not just a stale test expectation (fixed
-        alongside restoring this test's own coverage, previously masked
-        by this exact test's failure not stopping the suite from
-        reporting green elsewhere)."""
+        """Test outlier detection with different methods."""
         from core.data_processor import DataProcessor
 
         processor = DataProcessor()
@@ -276,27 +245,12 @@ class TestMLClustering:
 
 
 class TestMLForecasting:
-    """Test cases for ML forecasting operations.
-
-    ml_forecast/ForecastDialog (formerly tested here) were removed this
-    session: fully redundant with ml_arima/ml_ets below (both already
-    real, working, genuinely extending the dataset with forecasted rows
-    via statsmodels), while ml_forecast itself never did that at all -
-    it silently smoothed existing rows in place and ignored its own
-    `periods` parameter entirely, behind a dialog (date column, horizon,
-    confidence bounds, seasonal period, method choice) that promised
-    a feature no part of its real backend delivered. It had already been
-    removed from the right-click menu as a "no-op/duplicate" before this
-    session, and was not reachable from anywhere else in the UI.
-
-    ml_arima/ml_ets had no test coverage of their own before this change;
-    these replace what was removed instead of simply deleting it."""
+    """Test cases for ML forecasting operations (ml_arima, ml_ets), which
+    extend the dataset with genuinely forecasted rows via statsmodels."""
 
     def test_arima_extends_dataset_with_forecast_rows(self):
         """ARIMA must genuinely forecast INTO THE FUTURE - add `steps` new
-        rows beyond the original data - not just smooth existing rows,
-        which is the exact gap that made the now-removed ml_forecast a
-        broken promise of this same behavior."""
+        rows beyond the original data - not just smooth existing rows."""
         from core.data_processor import DataProcessor
 
         np.random.seed(0)

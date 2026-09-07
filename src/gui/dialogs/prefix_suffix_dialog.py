@@ -82,13 +82,11 @@ class PrefixSuffixDialog(BaseModal):
         self.tabs.addTab(self.prefix_tab, "Add Prefix")
         self.tabs.addTab(self.suffix_tab, "Add Suffix")
 
-        # operation_id ('text_add_prefix'/'text_add_suffix') is what
-        # actually decides which real method runs on Apply, regardless of
-        # which tab is showing - switching tabs only changes this
-        # dialog's own preview. Pre-selecting AND disabling the other tab
-        # keeps the dialog from implying a choice Apply won't honor (a
-        # real bug: opening this dialog for "Add Suffix" used to still
-        # default to and preview the Add Prefix tab).
+        # operation_id ('text_add_prefix'/'text_add_suffix') decides
+        # which method runs on Apply, independent of which tab is
+        # showing. The matching tab is selected and the other is
+        # disabled so the dialog cannot imply a choice Apply will not
+        # honor.
         prefix_index, suffix_index = 0, 1
         self.tabs.setCurrentIndex(prefix_index if self.transform_type == "prefix" else suffix_index)
         self.tabs.setTabEnabled(suffix_index if self.transform_type == "prefix" else prefix_index, False)

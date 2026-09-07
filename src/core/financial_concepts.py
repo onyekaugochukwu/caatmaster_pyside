@@ -38,9 +38,8 @@ FINANCIAL_CONCEPTS: Dict[str, List[tuple]] = {
     ]
 }
 
-# Consolidated superset of both regex-pattern dicts that used to live
-# separately in financial_ratios_dialog.py's _auto_detect_for_statement()
-# and _auto_detect_columns().
+# Shared regex patterns for detecting a financial concept from a column
+# name or account label.
 CONCEPT_DETECTION_PATTERNS: Dict[str, List[str]] = {
     # Liquidity
     "current_assets": [
@@ -54,20 +53,15 @@ CONCEPT_DETECTION_PATTERNS: Dict[str, List[str]] = {
     ],
     "cash": [
         r"\bcash", r"\bbanks?\b", r"\bcash.?equival"
-        # "bank" is a complete word given a trailing \b too (banks?\b),
-        # unlike the leading-only \b every other pattern here uses -
-        # without it, this matched inside "Bankruptcy", a real GAAP
-        # label/tag context (LiabilitiesSubjectToCompromise filings,
-        # going-concern disclosures) with nothing to do with cash.
+        # "bank" is anchored on both sides (banks?\b) to avoid matching
+        # inside "Bankruptcy" and similar unrelated GAAP terms.
     ],
     "inventory": [
         r"\binvent", r"\bstocks?\b", r"\bgoods"
-        # Same reasoning as "bank" above: bare "stock" unanchored on the
-        # right matched inside "StockholdersEquity", "TreasuryStockValue",
-        # and "CommonStockValue" - every one of them an equity concept,
-        # not inventory. "stock" itself is kept (not deleted) because it
-        # is genuine, common terminology for inventory outside US usage
-        # (IFRS/UK-style statements label the line item "Stock").
+        # "stock" is anchored on both sides to avoid matching inside
+        # "StockholdersEquity", "TreasuryStockValue", or "CommonStockValue",
+        # which are equity concepts. The bare word "Stock" is retained
+        # since it is standard IFRS/UK terminology for inventory.
     ],
     # Solvency
     "total_assets": [
@@ -96,40 +90,25 @@ CONCEPT_DETECTION_PATTERNS: Dict[str, List[str]] = {
     # Profitability
     "revenue": [
         r"\brevenues?\b", r"\bsales?\b", r"\bturnover\b"
-        # Regression test, found against a real SEC filing (Apple's FY2025
-        # 10-K, parsed through the real XBRL import path): bare, unanchored
-        # "sale" and "revenue" (no \b) matched inside XBRL element LOCAL
-        # NAMES built by concatenating unrelated GAAP terms -
-        # "PaymentsToAcquireAvailableForSaleSecuritiesDebt" and
-        # "ContractWithCustomerLiabilityRevenueRecognized" both matched
-        # and got summed into "revenue" alongside the genuine
-        # RevenueFromContractWithCustomerExcludingAssessedTax fact,
-        # inflating Apple's real ~$416B reported annual revenue to a
-        # nonsensical ~$1.75T. Every pattern in this file now leads with
-        # \b for the same reason: this class of false positive is general
-        # to matching short, common-English-word patterns against
-        # compact, concatenated identifiers with no word separators, not
-        # unique to "sale" or to this one filing.
+        # Every pattern in this file is word-boundary anchored (\b) to
+        # avoid matching inside compact, concatenated XBRL element names
+        # with no word separators (e.g. "sale" inside
+        # "PaymentsToAcquireAvailableForSaleSecuritiesDebt").
         #
-        # \b alone was not enough, though: XBRL concepts also carry a
-        # human-readable LABEL (spaced, not concatenated), and two of the
-        # three real false positives above are standalone, correctly-
-        # spaced occurrences of the word "sale"/"revenue" that still mean
-        # something else entirely - "Available-for-Sale" is a securities
-        # classification, not a sales transaction, and "Contract with
-        # Customer, Liability, Revenue Recognized" describes a deferred-
-        # revenue BALANCE SHEET LIABILITY, not the period's recognized
-        # top-line revenue. CONCEPT_EXCLUSION_PATTERNS below rules out
-        # both phrasings explicitly, rather than trying to make the
-        # positive pattern itself somehow smarter.
+        # Word-boundary anchoring alone is not sufficient for XBRL
+        # concepts with human-readable labels, since a label can contain
+        # a standalone, correctly-spaced occurrence of "sale"/"revenue"
+        # that still means something else - "Available-for-Sale" is a
+        # securities classification, not a sales transaction, and
+        # "Contract with Customer, Liability, Revenue Recognized"
+        # describes a deferred-revenue balance sheet liability, not
+        # recognized top-line revenue. CONCEPT_EXCLUSION_PATTERNS below
+        # rules out both phrasings explicitly.
         #
-        # Deliberately NOT "operating.?income" - that pattern already
-        # belongs to "ebit" below (operating income/profit IS
-        # essentially EBIT), and having it duplicated here meant
-        # "Operating Income" always matched revenue first (dict
-        # iteration order), silently feeding an EBIT-sized number into
-        # every ratio that uses top-line revenue - gross margin, net
-        # margin, asset turnover, all wrong at once.
+        # Deliberately excludes "operating.?income": that pattern belongs
+        # to "ebit" below, since operating income/profit is functionally
+        # EBIT, and duplicating it here would let "Operating Income"
+        # match revenue first by dict iteration order.
     ],
     "net_income": [
         r"\bnet.?income", r"\bprofit.?after.?tax",
@@ -172,20 +151,14 @@ CONCEPT_EXCLUSION_PATTERNS: Dict[str, List[str]] = {
     "revenue": [
         r"available.?for.?sale", r"held.?for.?sale",
         # "Available-for-Sale"/"Held-for-Sale" are securities/asset
-        # classifications ("Payments to Acquire Debt Securities,
-        # Available-for-Sale"), not a sales transaction - confirmed
-        # against Apple's real FY2025 10-K, where this phrase was the
-        # source of two of the four facts wrongly summed into "revenue".
+        # classifications, not a sales transaction.
         r"contract.*liabilit", r"liabilit.*revenue",
         # "Contract with Customer, Liability, Revenue Recognized" is a
-        # deferred-revenue BALANCE SHEET LIABILITY figure, not the
-        # period's recognized top-line revenue - also confirmed against
-        # the same real filing.
+        # deferred-revenue balance sheet liability, not recognized
+        # top-line revenue.
         r"reclassification.?adjustment", r"other.?comprehensive.?income",
-        # "Other Comprehensive Income (Loss), Reclassification Adjustment
-        # from AOCI for Sale of Securities, Net of Tax" - an OCI
-        # reclassification line, not a sale of goods/services. Also
-        # found in the same real filing.
+        # Other Comprehensive Income reclassification lines are not
+        # revenue from goods or services.
     ],
 }
 

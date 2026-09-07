@@ -1,37 +1,29 @@
 """
 Systematic dialog audit.
 
-This exists because of a real, discovered failure mode: SoxSodDialog,
-CosoDialog, and IFRS9Dialog were each completely non-functional (their
-"Run"/"Generate"/"Scan" button raised AttributeError, silently, because
 Qt swallows exceptions raised inside a slot by default - no crash, no
-visible error, the dialog just... does nothing) for an unknown period
-before anyone noticed, because nothing had ever automated-tested them and
-nobody had happened to check stderr after a manual click. There was no
-prior GUI test coverage in this codebase at all.
-
-Two checks, at two different levels of rigor:
+visible error, the dialog just does nothing - so a dialog whose primary
+action button raises can appear to work while being completely
+non-functional. Two checks, at two different levels of rigor, guard
+against that:
 
 1. Construction, for every dialog registered in
    TransformationDialogFactory.DIALOG_MAPPING, via the REAL factory
    entrypoint (not a hand-rolled constructor call) - catches an import
    error or a _setup_ui() crash. Asserts the factory actually returned
    the EXPECTED dialog class, not its own silent fallback to
-   GenericTransformationDialog on a construction exception - which
-   otherwise means a broken dialog quietly starts using the generic
-   form instead of failing loudly, another way this exact class of bug
-   hides.
+   GenericTransformationDialog on a construction exception, which
+   would otherwise let a broken dialog quietly start using the generic
+   form instead of failing loudly.
 
 2. A real button click, via qtbot.mouseClick() (not calling a method by
    a guessed name) on every plausible "primary action" button in each
    dialog, with QMessageBox/QFileDialog/nested QDialog.exec() all
    neutralized first so a validation popup or an accidentally-clicked
    nested dialog can't hang the test. pytest-qt automatically fails a
-   test if an exception was raised inside a Qt slot during it (verified
-   directly before relying on it - see this file's own history) - this
-   is what actually would have caught the original bug, since it exactly
-   reproduces "the auditor clicks the button" rather than testing
-   whatever method happens to be connected to it.
+   test if an exception was raised inside a Qt slot during it, which
+   exactly reproduces "the auditor clicks the button" rather than
+   testing whatever method happens to be connected to it.
 """
 import re
 from pathlib import Path

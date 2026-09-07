@@ -10,32 +10,22 @@ from sqlalchemy.pool import StaticPool
 from contextlib import contextmanager
 
 # The database (holds hashed user passwords - core.models.User) lives
-# under the user's home directory, the same convention already used for
-# everything else the app persists locally (recent_projects.py,
-# session_state.py, ai_service.py's credential store all use
-# Path.home()/".caatmaster" or ".config/caatmaster") - NOT inside the
-# project/installation directory. Two concrete problems the old
-# `Path(__file__).parent.parent.parent / "data"` location caused:
-#   1. It sat inside the git working tree with no .gitignore entry, so
-#      the real database - hashed passwords included - was repeatedly
-#      committed to source control across many commits.
-#   2. For a packaged/portable build, a path derived from the running
-#      module's location is not a reliably writable, persistent location -
-#      a PyInstaller --onefile build in particular extracts to a fresh
-#      temp directory every launch, so a database written there would
-#      silently lose all data (including registered users) every time the
-#      app closed.
+# under the user's home directory, not the project/installation
+# directory, matching the convention used elsewhere for local app state
+# (recent_projects.py, session_state.py, ai_service.py's credential
+# store all use Path.home()/".caatmaster" or ".config/caatmaster"). A
+# path derived from the installation directory is unsuitable for a
+# packaged build: a PyInstaller --onefile build extracts to a fresh
+# temp directory on every launch, so a database written there would not
+# persist between runs.
 DATA_DIR = Path.home() / ".caatmaster" / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # Database file path
 DB_PATH = DATA_DIR / "caatmaster.db"
 
-# One-time migration for anyone with a pre-existing database at the old,
-# project-relative location: copy it forward rather than silently
-# starting empty (which would look like every registered user vanished).
-# Only runs when the new location doesn't have a database yet, so it
-# never overwrites real data once the move has happened.
+# Migrate a database at the legacy, project-relative location forward to
+# DATA_DIR, if one exists and the new location doesn't have one yet.
 _LEGACY_DB_PATH = Path(__file__).parent.parent.parent / "data" / "caatmaster.db"
 if not DB_PATH.exists() and _LEGACY_DB_PATH.exists():
     import shutil as _shutil

@@ -612,12 +612,9 @@ class TestDataProcessor:
 
 
 class TestReplaceValues:
-    """Regression tests for real bugs found by tracing the Find and
-    Replace dialog's own exposed controls (case_sensitive, use_regex,
-    whole_word, and the "Replace All" button label) back to what
-    replace_values actually did with them - none of the three
-    checkboxes had any effect on the real result, and "Replace All"
-    only replaced the first match per cell."""
+    """replace_values must honor case_sensitive, use_regex, and
+    whole_word, and must replace every occurrence per cell, not just
+    the first."""
 
     def test_replace_all_replaces_every_occurrence_not_just_the_first(self):
         from core.data_processor import DataProcessor

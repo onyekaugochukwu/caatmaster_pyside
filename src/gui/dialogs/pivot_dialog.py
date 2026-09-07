@@ -322,15 +322,11 @@ class PivotTableDialog(BaseModal):
         self._populate_columns(text)
 
     def get_parameters(self) -> dict:
-        """The parameters actually sent to DataProcessor.pivot() - both
-        for this dialog's own preview() below and, via
-        TransformView.apply_transformation, for the real applied
-        operation. Key names match pivot()'s own signature exactly
-        ("index"/"aggregate", not "rows"/"aggregation") - an earlier
-        mismatch here meant every real "Generate Pivot Table" click
-        raised TypeError: pivot() missing 1 required positional
-        argument: 'index', while this dialog's own preview, built from a
-        second, independent implementation below, worked fine."""
+        """The parameters sent to DataProcessor.pivot(), both for this
+        dialog's own preview() below and, via
+        TransformView.apply_transformation, for the applied operation.
+        Key names match pivot()'s signature exactly ("index"/"aggregate",
+        not "rows"/"aggregation")."""
         return {
             "index": self.rows_zone.get_columns(),
             "columns": self.columns_zone.get_columns(),
@@ -356,9 +352,8 @@ class PivotTableDialog(BaseModal):
         return True
 
     def preview(self):
-        """Generate a preview by calling the exact same DataProcessor.pivot()
-        that Run/Apply will call - see get_parameters()'s docstring for
-        why that used not to be true."""
+        """Generate a preview by calling the same DataProcessor.pivot()
+        that Run/Apply uses."""
         from core.data_processor import DataProcessor
 
         try:

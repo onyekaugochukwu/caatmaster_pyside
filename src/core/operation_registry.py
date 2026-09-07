@@ -974,11 +974,8 @@ OPERATION_REGISTRY = {
         "creates_columns": False  # Creates a statistics summary
     },
 
-    # Note: "stat_group_stats" used to live here as a near-duplicate of
-    # stat_add_group_stats below (same display name, same params, no
-    # execution method — always crashed). Removed rather than fixed, since
-    # stat_add_group_stats is the actively-maintained version (it also
-    # supports a zscore calculation and more descriptive column names).
+    # Group statistics are provided by stat_add_group_stats below, which
+    # supports a zscore calculation and descriptive column names.
 
     # =========================================================================
     # ML CLASSIFICATION & PREDICTION OPERATIONS

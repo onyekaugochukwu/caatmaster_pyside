@@ -446,10 +446,9 @@ class AISettingsDialog(QDialog):
         """Save all provider configurations"""
         from src.services.ai_service import save_ai_credentials, AIProviderFactory, FERNET_AVAILABLE
 
-        # Any real (non-local) API key about to be saved while the
-        # cryptography package is missing would previously be written to
-        # disk in PLAINTEXT with only a console-only warning — easy to miss
-        # entirely. Ask explicitly instead of silently downgrading security.
+        # Without the cryptography package, a real (non-local) API key
+        # would be written to disk in PLAINTEXT. Ask explicitly rather
+        # than silently downgrading security.
         if not FERNET_AVAILABLE:
             has_real_key = any(
                 widget.get_config()["api_key"] and not AIProviderFactory.is_local_provider(provider)

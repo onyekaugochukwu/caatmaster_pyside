@@ -164,18 +164,13 @@ class TestBuildWideConceptTable:
         assert build_wide_concept_table(pl.DataFrame()).is_empty()
 
     def test_duplicate_non_dimensional_facts_are_not_summed(self):
-        """Regression test, found against a real filing (Apple's FY2025
-        10-K, parsed through this exact function via SEC EDGAR): a real
-        filing tags the same whole-entity fact more than once - once in
-        the primary statement, again in MD&A prose, a selected-financial-
-        data table, a segment reconciliation's "Total" row, ... - all
-        non-dimensional, all the same period, all the identical value.
-        The old aggregate_function="sum" multiplied a real number by
-        however many times the filing happened to repeat it: revenue
-        tagged 4 times inflated Apple's real ~$416B to ~$1.66T in that
-        real filing. Reproduced here with a synthetic facts_df so this
-        stays a fast, offline, deterministic test rather than depending
-        on a live SEC fetch."""
+        """A real filing can tag the same whole-entity fact more than
+        once - once in the primary statement, again in MD&A prose, a
+        selected-financial-data table, a segment reconciliation's
+        "Total" row, ... - all non-dimensional, all the same period,
+        all the identical value. Summing these would multiply a real
+        number by however many times the filing happens to repeat it,
+        so duplicate non-dimensional facts must not be summed."""
         from services.xbrl_import_service import build_wide_concept_table
 
         facts_df = pl.DataFrame({
@@ -188,11 +183,9 @@ class TestBuildWideConceptTable:
         assert wide["revenue"].to_list() == [416161000000.0]
 
     def test_dimensional_facts_are_still_summed_when_requested(self):
-        """The fix above must not touch the OTHER, intentional summing
-        case this function documents: several dimensional (segment)
-        facts that together partition the whole DO need to be added to
-        reconstruct a total, when include_dimensional=True is requested
-        explicitly."""
+        """Several dimensional (segment) facts that together partition
+        the whole must still be added to reconstruct a total when
+        include_dimensional=True is requested explicitly."""
         from services.xbrl_import_service import build_wide_concept_table
 
         facts_df = pl.DataFrame({

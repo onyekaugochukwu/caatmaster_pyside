@@ -487,9 +487,8 @@ class JoinDatasetsDialog(BaseModal):
             self.preview_table.load_dataframe(pl.DataFrame({c: [] for c in columns}))
 
     def _on_right_dataset_changed(self, right_name: str):
-        """Repopulate the right join-key list for the actually selected
-        right dataset - this used to always show the left dataset's
-        columns regardless of which right dataset was picked."""
+        """Repopulate the right join-key list for the selected right
+        dataset."""
         columns = self.dataset_columns.get(right_name, [])
         self.right_key_combo.clear()
         self.right_key_combo.addItems(columns)
@@ -552,9 +551,8 @@ class CompareDatasetsDialog(BaseModal):
         self.setMinimumSize(650, 600)
 
     def _setup_ui(self):
-        # Main layout with scroll area - previously had none at all, so
-        # content taller than the dialog just got clipped/squished
-        # instead of scrolling.
+        # Main layout with scroll area, so content taller than the
+        # dialog scrolls instead of being clipped.
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
 

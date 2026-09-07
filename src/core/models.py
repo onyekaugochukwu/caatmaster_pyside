@@ -3,17 +3,9 @@ Database Models for CAATmaster
 Adapted from PostgreSQL to SQLite for desktop portability
 
 Only User (authentication) and MLModel (saved ML model registry) are
-backed by real tables here - everything else the app persists (projects,
+backed by real tables here. Everything else the app persists (projects,
 datasets, transformation pipelines) lives in the local .caat file format
-(core/caat_format.py, core/project_manager.py) instead. This file used to
-define 15 additional models (Dataset, DatasetColumn, Project, MLRun,
-AIProvider, ComplianceDocument, ProjectArtifact, ProjectTeam,
-ProjectTemplate, ProjectAuditLog, ProjectSession, SessionSnapshot,
-SessionShare, TransformationStep, TrainedModel) left over from an earlier
-multi-user/server-oriented design - their tables were created by
-init_db() on every launch but never actually queried or written by any
-service or view, so they were removed rather than carried forward as dead
-schema.
+(core/caat_format.py, core/project_manager.py) instead.
 """
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Boolean, JSON, Float
 from sqlalchemy.orm import relationship

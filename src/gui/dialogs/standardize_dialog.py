@@ -22,17 +22,11 @@ class StandardizeDialog(BaseModal):
     Dialog for data standardization and normalization.
 
     Shared by four operation_ids (stat_zscore, standardize_minmax,
-    stat_percent_rank, stat_rank), each dispatching to its own real
-    DataProcessor method - operation_id alone decides which one actually
-    runs on Apply, the same way AnomalyDetectionDialog's operation_id
-    decides which algorithm runs there. This dialog used to present four
-    ADDITIONAL method choices (Min-Max -1 to 1, Decimal Scaling, two rank
-    variants, Robust Z-Score) with no real operation behind any of them
-    at all - selectable, previewable, but Apply would silently run
-    whichever of the four real methods matched the operation_id it was
-    opened for regardless of what was selected. Removed rather than
-    wired up, since inventing new backend operations for them was a
-    larger change than fixing the actual reported gap.
+    stat_percent_rank, stat_rank), each dispatching to its own
+    DataProcessor method. operation_id alone decides which method runs
+    on Apply, the same way AnomalyDetectionDialog's operation_id decides
+    which algorithm runs there. Only the four methods with a real
+    DataProcessor operation behind them are offered as choices.
     """
 
     _METHOD_BY_OPERATION_ID = {
@@ -171,12 +165,8 @@ class StandardizeDialog(BaseModal):
         return True
 
     def preview(self):
-        """Generate a preview by calling the exact same DataProcessor
-        method Apply will call - an earlier version of this method
-        recomputed each method locally (e.g. Percent Rank as 0-100 via
-        np.argsort), which for Percent Rank specifically did not even
-        match the real stat_percent_rank operation's own 0.0-1.0 scale,
-        regardless of which method was selected."""
+        """Generate a preview by calling the same DataProcessor method
+        Apply uses, so the preview matches the applied result exactly."""
         from core.data_processor import DataProcessor
 
         try:

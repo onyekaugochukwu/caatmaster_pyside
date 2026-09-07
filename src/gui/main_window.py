@@ -64,13 +64,10 @@ class MainWindow(QMainWindow):
         self.setup_auth()
         self.setup_ai()
         self.setup_ui()
-        # setup_ai() -> _load_ai_credentials() already loaded any saved
-        # provider into self.ai_manager, but self.ai_panel didn't exist yet
-        # at that point (it's created inside setup_ui(), one line above) -
-        # its hasattr() guard silently skipped pushing the provider name to
-        # the panel, so it kept showing "Model: Not configured" even with a
-        # provider correctly configured and loaded. Push it again now that
-        # the panel actually exists.
+        # setup_ai() loads any saved provider into self.ai_manager before
+        # self.ai_panel exists (the panel is created inside setup_ui(),
+        # one line above), so the panel can't be updated at that point.
+        # Push the provider name now that the panel exists.
         self._update_ai_panel_provider()
         self.setup_backstage()
         self.create_statusbar()
@@ -130,12 +127,10 @@ class MainWindow(QMainWindow):
 
     def _update_ai_panel_provider(self):
         """Update the AI panel, and the Settings page's AI/ML tab, with
-        current provider info. Both used to only refresh from
-        _on_ai_settings_changed() (fired when the AI Settings dialog
-        saves a change), so a provider loaded from stored credentials at
-        startup never reached either of them until something happened to
-        call this - the Settings page kept showing "Not configured" even
-        with a provider actively loaded and in use."""
+        current provider info. Must be called explicitly after a
+        provider is loaded from stored credentials at startup, since
+        that path is separate from _on_ai_settings_changed() (fired
+        when the AI Settings dialog saves a change)."""
         if hasattr(self, 'ai_panel') and self.ai_panel and self.ai_manager and self.ai_manager.default_provider:
             provider = self.ai_manager.get_provider(self.ai_manager.default_provider)
             if provider:
@@ -359,9 +354,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Handle window close - offer to save unsaved changes first, then
-        wait for threads to finish. Without this, closing the window with
-        pending transformations silently discarded them — autosave only
-        writes to a separate recovery file, never the project itself."""
+        wait for threads to finish. Autosave only writes to a separate
+        recovery file, never the project itself, so this prompt is the
+        only path that saves pending transformations to the project."""
         if self.project_dirty and self.current_project:
             reply = QMessageBox.question(
                 self, "Unsaved Changes",
@@ -680,12 +675,11 @@ class MainWindow(QMainWindow):
     def _on_ai_analyze_dataset(self):
         """Handle analyze dataset request - reasons across whichever
         dataset(s) are checked in the AI panel's Quick Actions selector.
-        Deliberately does NOT gate on _check_data_loaded() (which only
-        checks self.current_dataset) - a dataset can be selected entirely
+        Does not gate on _check_data_loaded() (which only checks
+        self.current_dataset), since a dataset can be selected entirely
         through the AI panel's checklist without current_dataset ever
-        being set, and that check_data_loaded() call used to block every
-        quick action in that case even though real data was available.
-        The dataframe-resolution check right below is the real gate."""
+        being set. The dataframe-resolution check right below is the
+        real gate."""
         if not self._check_ai_available():
             return
 
@@ -766,12 +760,10 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_ai_generate_column(self):
-        """Open AI column generator dialog. Deliberately does NOT gate on
-        _check_data_loaded() - it only checks self.current_dataset, but
-        this method already builds its own dataframes dict from every
-        project dataset below and has its own "no data" check; gating on
-        current_dataset too used to block this even when the project
-        clearly had data, just because current_dataset hadn't been set."""
+        """Open AI column generator dialog. Does not gate on
+        _check_data_loaded(), since that only checks self.current_dataset
+        while this method builds its own dataframes dict from every
+        project dataset below and has its own "no data" check."""
         # Get all datasets from current project
         dataframes = {}
         if self.current_project and hasattr(self.current_project, 'datasets'):
@@ -806,13 +798,12 @@ class MainWindow(QMainWindow):
         dialog's own selector, so Policy Check/Rule Detection can run
         across them together instead of one at a time.
 
-        Deliberately does NOT gate on _check_data_loaded() - it only
-        checks self.current_dataset, but this method already builds its
-        own dataframes dict from every project dataset below and has its
-        own "no data" check; gating on current_dataset too used to block
-        this even with valid project data, just because current_dataset
-        hadn't been set (a real possibility now that datasets can be
-        selected entirely through the AI panel's checklist)."""
+        Does not gate on _check_data_loaded(), since that only checks
+        self.current_dataset while this method builds its own
+        dataframes dict from every project dataset below and has its
+        own "no data" check - current_dataset can be unset even with
+        valid project data when datasets are selected entirely through
+        the AI panel's checklist."""
         if not self._check_ai_available():
             return
 
@@ -988,11 +979,9 @@ class MainWindow(QMainWindow):
                 self.content_stack.setCurrentWidget(transform_view)
                 transform_view.apply_transformation(operation_id, params)
 
-            # Close the loop: confirm in the chat what actually happened,
-            # and fold it into the conversation history so a follow-up
-            # ("now also sort that") has something real to refer to -
-            # before this, the conversation went quiet at exactly the
-            # moment it should confirm success.
+            # Confirm in the chat what actually happened, and fold it
+            # into the conversation history so a follow-up ("now also
+            # sort that") has something real to refer to.
             display_name = OPERATION_REGISTRY.get(operation_id, {}).get("display_name", operation_id)
             confirmation = (
                 f"✅ Applied **{display_name}** — {df.height:,} → {dialog.result_df.height:,} rows, "
@@ -1208,13 +1197,11 @@ class MainWindow(QMainWindow):
             if self.current_project.client_name:
                 context_parts.append(f"Client: {self.current_project.client_name}")
 
-        # Every dataset in the project gets real, computed stats here (not
-        # just the active one) — previously the AI only knew about
-        # whichever dataset happened to be open, so it couldn't answer
-        # "how many rows does Vendors have" while Transactions was active.
-        # Stats are genuinely computed per dataset (not fabricated), but
-        # kept lightweight (no outlier/IQR work) since this rebuilds on
-        # every single chat message across potentially several datasets.
+        # Every dataset in the project gets real, computed stats here,
+        # not just the active one, so the AI can answer questions about
+        # any dataset regardless of which one is currently open. Stats
+        # are kept lightweight (no outlier/IQR work) since this rebuilds
+        # on every chat message across potentially several datasets.
         if self.current_project and self.current_project.datasets:
             context_parts.append(f"\nAll datasets in this project ({len(self.current_project.datasets)}):")
             for ds in self.current_project.datasets.values():
@@ -2224,11 +2211,10 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _on_transform_data_changed(self, df):
-        """Keep SQL/Visualizations/Reports/Query in sync whenever the active
-        dataset's data changes from the Transform page (apply/undo/toggle/
-        clear a step) — otherwise those pages silently show stale data once
-        the Applied Steps panel became reachable from every page, not just
-        Transform."""
+        """Keep SQL/Visualizations/Reports/Query in sync whenever the
+        active dataset's data changes from the Transform page
+        (apply/undo/toggle/clear a step), since the Applied Steps panel
+        is reachable from every page, not just Transform."""
         viz_view = self.views.get("visualizations")
         query_view = self.views.get("query")
         reports_view = self.views.get("reports")
@@ -2898,9 +2884,8 @@ class MainWindow(QMainWindow):
             "sampling": lambda: self._on_transform("sampling"),
             "field_statistics": lambda: self._on_transform("field_statistics"),
 
-            # Financial operations - previously reachable only by right-clicking
-            # a column header and choosing Financial; promoted here to their own
-            # top-level menu once that was flagged as a real discoverability gap.
+            # Financial operations, also reachable by right-clicking a
+            # column header and choosing Financial.
             "financial_ratios": lambda: self._on_transform("financial_ratios"),
             "reshape_statement_to_concepts": lambda: self._on_transform("reshape_statement_to_concepts"),
             "ifrs9_staging": lambda: self._on_transform("ifrs9_staging"),
@@ -3076,13 +3061,11 @@ class MainWindow(QMainWindow):
             # Non-modal (.show(), not .exec()) so reviewing/exporting the
             # report doesn't block continuing to work — keep a reference so
             # Python doesn't garbage-collect it out from under the open
-            # window. WA_DeleteOnClose means a closed dialog's C++ object is
-            # already destroyed by the time we get here — shiboken.isValid()
-            # checks that safely; calling .isVisible() directly on a
-            # destroyed dialog instead raises RuntimeError, which (before
-            # this fix) got caught by the except below and silently broke
-            # every report attempt for the rest of the session, the moment
-            # any earlier report window was closed.
+            # window. WA_DeleteOnClose means a closed dialog's C++ object
+            # is already destroyed by the time we get here, so
+            # shiboken6.isValid() must be checked before calling
+            # .isVisible() on it (which raises RuntimeError on a
+            # destroyed dialog otherwise).
             import shiboken6
             self._open_report_dialogs = [
                 d for d in getattr(self, '_open_report_dialogs', [])

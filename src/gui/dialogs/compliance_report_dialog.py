@@ -601,8 +601,7 @@ class ComplianceReportDialog(QDialog):
         self.detection_progress.setVisible(False)
         layout.addWidget(self.detection_progress)
 
-        # Status label - matches the Policy Check tab's pattern (this tab
-        # previously had no status feedback at all).
+        # Status label - matches the Policy Check tab's pattern.
         self.detection_status = QLabel()
         self.detection_status.setStyleSheet(f"""
             QLabel {{
@@ -616,9 +615,8 @@ class ComplianceReportDialog(QDialog):
         self.detection_status.setVisible(False)
         layout.addWidget(self.detection_status)
 
-        # Results - previously nothing on this tab showed the actual
-        # detected violations; they silently went to the Generate Report
-        # tab's output box instead.
+        # Detected violations for this tab, shown here rather than in
+        # the Generate Report tab's output box.
         self.detection_results_output = QTextEdit()
         self.detection_results_output.setReadOnly(True)
         self.detection_results_output.setPlaceholderText("Results will appear here after running detection.")
@@ -722,8 +720,7 @@ class ComplianceReportDialog(QDialog):
         self.report_progress.setVisible(False)
         layout.addWidget(self.report_progress)
 
-        # Status label - this tab's status message used to be routed to
-        # policy_status on the Policy Check tab, so it was invisible here.
+        # Status label for this tab's own generation progress.
         self.report_status = QLabel()
         self.report_status.setStyleSheet(f"""
             QLabel {{

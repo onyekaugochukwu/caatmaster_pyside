@@ -1,13 +1,11 @@
 """
 PDF text extraction, tested against a real filing.
 
-Every existing test of the AI-assisted document features fed synthetic or
-hand-typed narrative text through the AI-facing side of the pipeline.
-Nothing had exercised the actual pypdf extraction step against a real,
-messy, professionally-typeset PDF - the kind an auditor would genuinely
-attach - so a change to pypdf's API, a change to the page-cap/length-cap
-logic, or a PDF whose layout defeats extraction entirely could all pass
-the rest of the suite unnoticed.
+Exercises the actual pypdf extraction step against a real, messy,
+professionally-typeset PDF of the kind an auditor would genuinely
+attach, rather than synthetic or hand-typed narrative text, so that a
+change to pypdf's API, the page-cap/length-cap logic, or a PDF whose
+layout defeats extraction entirely is caught.
 
 The fixture (test_data/pdf/sec_edgar_rpm_ars_2026.pdf) is RPM
 International Inc.'s FY2026 Annual Report to Security Holders (SEC EDGAR

@@ -180,8 +180,7 @@ class ProjectsView(QWidget):
         self.details_text.setReadOnly(True)
         self.details_text.setMaximumHeight(150)
         # QTextEdit has native placeholder support - shows automatically
-        # whenever the widget is empty, replacing what used to be a blank
-        # box with no explanation for why nothing was there.
+        # whenever the widget is empty.
         self.details_text.setPlaceholderText("Select a project above to see its details here.")
         self.details_text.setStyleSheet(f"""
             QTextEdit {{

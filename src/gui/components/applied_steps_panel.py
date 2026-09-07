@@ -3,10 +3,10 @@ Applied Steps panel — a persistent side panel (not tied to a single page)
 showing the active dataset's transformation pipeline, with per-step
 enable/disable and timing.
 
-This widget only renders steps and emits signals — TransformView still owns
-the actual TransformationPipeline and all mutation logic (undo/clear/toggle),
-the same way it did before this panel was pulled out into something shared
-across pages. That keeps this component a thin, reusable view.
+This widget only renders steps and emits signals — TransformView owns
+the actual TransformationPipeline and all mutation logic (undo/clear/
+toggle), keeping this component a thin, reusable view shared across
+pages.
 """
 import qtawesome as qta
 from PySide6.QtCore import Qt, Signal, QSize

@@ -1,12 +1,6 @@
 """
 Tests for core.financial_concepts - concept-detection regex patterns and
 suggest_concept_for_text()'s specificity-based, ambiguity-safe matching.
-
-Several of these encode bugs found by direct investigation: overlapping
-patterns that made a real line item silently map to the WRONG concept
-with no visible error (e.g. "Retained Earnings" always resolving to
-Total Equity), which is a root cause of "ratios never correctly parsed"
-independent of any numeric-parsing issue.
 """
 import pytest
 
@@ -14,9 +8,8 @@ from core.financial_concepts import suggest_concept_for_text, is_likely_total_ro
 
 
 class TestRetainedEarningsVsTotalEquity:
-    """Both concepts used to share the pattern r"retained.?earn" - dict
-    iteration order meant total_equity's copy always won, so the
-    dedicated retained_earnings concept could never actually be reached."""
+    """retained_earnings and total_equity must each match their own
+    distinct patterns; neither should shadow the other."""
 
     def test_retained_earnings_maps_to_its_own_concept(self):
         assert suggest_concept_for_text("Retained Earnings") == "retained_earnings"
@@ -30,10 +23,7 @@ class TestRetainedEarningsVsTotalEquity:
 
 
 class TestOperatingIncomeVsRevenue:
-    """Both concepts used to share r"operating.?income" - dict order made
-    "Operating Income" always resolve to revenue instead of ebit,
-    feeding an EBIT-sized figure into every ratio that uses top-line
-    revenue."""
+    """"Operating Income" must resolve to ebit, not revenue."""
 
     def test_operating_income_maps_to_ebit_not_revenue(self):
         assert suggest_concept_for_text("Operating Income") == "ebit"
@@ -44,14 +34,12 @@ class TestOperatingIncomeVsRevenue:
 
 
 class TestOverlyBroadPatternsRemoved:
-    """"reserve" and a bare "earn" used to be broad enough to catch
+    """"reserve" and a bare "earn" must not be broad enough to catch
     non-equity/non-net-income line items that merely contain those
     substrings."""
 
     def test_warranty_reserve_is_not_equity(self):
-        # No "warranty" concept exists in the taxonomy at all - before the
-        # fix, this matched total_equity purely because of the bare
-        # "reserve" pattern, not because of anything to do with equity.
+        # No "warranty" concept exists in the taxonomy at all.
         assert suggest_concept_for_text("Warranty Reserve") is None
 
     def test_earnings_per_share_is_not_net_income(self):
@@ -63,9 +51,9 @@ class TestOverlyBroadPatternsRemoved:
 
 
 class TestProfitForTheYearVariants:
-    """r"profit.?for.?year" only allowed a single optional character
-    between "for" and "year", so the extremely common IFRS-style label
-    "Profit for the Year" (with "the" in between) never matched at all."""
+    """The IFRS-style label "Profit for the Year" (with "the" between
+    "for" and "year") must match, as must the shorter "Profit for
+    Year"."""
 
     def test_profit_for_the_year(self):
         assert suggest_concept_for_text("Profit for the Year") == "net_income"
@@ -86,14 +74,10 @@ class TestSpecificityRanking:
 
 
 class TestCompactIdentifiersDoNotMatchInsideAnotherWord:
-    """Regression tests, found against a real filing (Apple's FY2025
-    10-K, parsed through the actual XBRL import path from SEC EDGAR):
-    every pattern here used to be unanchored, so a short common-English-
-    word pattern like "sale" matched anywhere it appeared as a substring
-    - including inside an unrelated XBRL element name/label built by
-    concatenating several GAAP terms with no separator. This summed four
-    unrelated facts into "revenue" and inflated a real company's actual
-    ~$416B reported annual revenue to a nonsensical ~$1.75T."""
+    """A short common-English-word pattern like "sale" must not match
+    as a substring anywhere it appears, including inside an unrelated
+    XBRL element name/label built by concatenating several GAAP terms
+    with no separator."""
 
     def test_available_for_sale_is_not_revenue(self):
         assert suggest_concept_for_text(

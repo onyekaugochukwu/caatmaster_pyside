@@ -30,30 +30,24 @@ or not-yet-listed standard) tag falls back to fuzzy-matching its label/
 local name via financial_concepts.suggest_concept_for_text() rather than
 being silently dropped.
 
-Local-first taxonomy resolution: a real filing's schemaRef points at its
+Local-first taxonomy resolution: a filing's schemaRef points at its
 taxonomy publisher's own URL (e.g. the SEC's or IFRS Foundation's own
-servers). The FIRST time Arelle ever sees a given taxonomy version, it
-has to fetch those schema/linkbase files over the network - on a machine
-with no internet at that moment (an air-gapped client site, a laptop with
-a downloaded filing and no connectivity), parsing fails outright. Arelle
-does cache what it successfully resolves (permanently, under
-~/.config/arelle/cache), so it's a one-time cost per taxonomy version,
-not per file - but that's not good enough for a genuinely offline-capable
-tool, since US-GAAP/IFRS publish a new taxonomy version every year.
+servers). The first time Arelle sees a given taxonomy version, it fetches
+those schema/linkbase files over the network; on a machine with no
+internet at that moment (an air-gapped client site, a laptop with a
+downloaded filing and no connectivity), parsing fails outright. Arelle
+caches what it successfully resolves under ~/.config/arelle/cache, so
+this is a one-time cost per taxonomy version rather than per file, but
+US-GAAP/IFRS publish a new taxonomy version every year, so a purely
+cache-based approach cannot guarantee offline operation.
 
-The real fix is XBRL's own Taxonomy Packages mechanism: a pre-built zip
-bundle of a taxonomy (published by the SEC, the IFRS Foundation, and
-others for exactly this reason) that Arelle can register once via
-add_taxonomy_package() below. Traced directly in Arelle's own source
-(arelle/FileSource.py) to confirm this claim rather than assume it: every
-schema/linkbase URL is passed through PackageManager.mappedUrl() BEFORE
-the web-cache/network-fetch code path is ever reached - a registered
-package's mapping is checked FIRST and, when it matches, the network is
-never attempted at all. This was verified end-to-end with a real,
-spec-compliant taxonomy package pointing at a non-resolvable test domain
-(https://test.example, which cannot be reached at all) and confirmed to
-resolve purely from the local package with zero network activity and
-zero errors.
+XBRL's Taxonomy Packages mechanism solves this: a pre-built zip bundle
+of a taxonomy (published by the SEC, the IFRS Foundation, and others)
+that Arelle can register once via add_taxonomy_package() below. Every
+schema/linkbase URL is passed through PackageManager.mappedUrl() before
+the web-cache/network-fetch code path is reached, so a registered
+package's mapping is checked first and the network is never attempted
+once a match is found.
 
 One Arelle quirk this module works around: Cntlr only auto-loads and
 auto-saves the persisted package registry when constructed with
@@ -244,11 +238,9 @@ def list_taxonomy_packages() -> List[TaxonomyPackageInfo]:
 def add_taxonomy_package(package_path: str) -> TaxonomyPackageInfo:
     """Register a local XBRL Taxonomy Package (a .zip, per the Taxonomy
     Packages 1.0 spec - the format the SEC, the IFRS Foundation, and
-    other taxonomy publishers distribute for exactly this purpose) so
-    every future parse resolves that taxonomy's schema/linkbase
-    references from this local file FIRST, before any network attempt -
-    see this module's docstring for how that was verified directly
-    against Arelle's source and confirmed with a real test package.
+    other taxonomy publishers distribute) so every future parse resolves
+    that taxonomy's schema/linkbase references from this local file
+    first, before any network attempt (see this module's docstring).
 
     Raises ValueError if the file isn't a valid taxonomy package (e.g. a
     plain schema zip with no META-INF/taxonomyPackage.xml manifest).
@@ -458,32 +450,18 @@ def build_wide_concept_table(
     aggregate_function = "sum"
     if not include_dimensional:
         working = working.filter(~pl.col("is_dimensional"))
-        # A real filing routinely tags the exact same whole-entity fact
-        # more than once - once in the primary statement, again in MD&A
-        # prose, a selected-financial-data table, a segment
-        # reconciliation's own "Total" row, ... - all non-dimensional,
-        # all the same period, all the same value. These are duplicate
-        # REPORTS of one real number, not separate additive quantities,
-        # and summing them (this function's behavior before this fix)
-        # multiplies a real figure by however many times the filing
-        # happens to repeat it. Confirmed against a real filing (Apple's
-        # FY2025 10-K, fetched from SEC EDGAR): revenue was tagged 4
-        # times for the same period at the identical value and summing
-        # inflated the real ~$416B to ~$1.66T; net income was tagged 4
-        # times the same way, cost of goods twice. Dropping exact
-        # (period, concept, value) duplicates first removes the multiple
-        # reports of the same number without needing to know in advance
-        # how many times any given filing happens to repeat a fact.
+        # A filing may tag the same whole-entity fact more than once
+        # (the primary statement, MD&A prose, a selected-financial-data
+        # table, a segment reconciliation's own "Total" row), all
+        # non-dimensional, same period, same value. These are duplicate
+        # reports of one number rather than separate additive quantities,
+        # so exact (period, concept, value) duplicates are dropped before
+        # aggregation rather than summed.
         working = working.unique(subset=["period", "app_concept", "value"])
-        # If a genuine conflict remains after that (two DIFFERENT values
-        # for the same whole-entity concept and period - a restatement,
-        # or two distinct line items that both happened to map to the
-        # same concept), summing them is the same wrong assumption that
-        # caused the bug above: two different whole-entity totals for one
-        # period are not additive. Taking the first is not perfect, but a
-        # real reported number is always safer here than a manufactured
-        # sum that cannot correspond to anything the filer actually
-        # reported.
+        # If two DIFFERENT values remain for the same whole-entity concept
+        # and period (a restatement, or two distinct line items mapped to
+        # the same concept), they are not additive; take the first
+        # reported value rather than summing them.
         aggregate_function = "first"
     if periods:
         working = working.filter(pl.col("period").is_in(periods))

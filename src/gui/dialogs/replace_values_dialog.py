@@ -19,20 +19,10 @@ from ..theme import Colors
 class ReplaceValuesDialog(BaseModal):
     """
     Dialog for find-and-replace in a column, backed by
-    DataProcessor.replace_values().
-
-    Used to also offer a "Bulk Replace" tab (a multi-line old_value,
-    new_value list) with no backend behind it at all - previewable
-    (its own local Python loop), but replace_values() has no parameter
-    for a list of pairs, so every real "Replace All" click on that tab
-    silently ran a single-pair replacement using whatever was left in
-    the Simple tab's own Find/Replace fields instead. Removed rather
-    than given a new backend operation, since the real, narrower gap
-    this dialog needs fixed is that its three real checkboxes
-    (Case sensitive, Whole word only, Use regular expression) were all
-    silently ignored by replace_values() itself - see that method's own
-    docstring for the specifics, including a "Replace All" that only
-    replaced the first match per cell.
+    DataProcessor.replace_values(). Offers a single find/replace pair
+    with Case Sensitive, Whole Word Only, and Use Regular Expression
+    options, matching replace_values()'s own parameters exactly (see
+    that method's docstring for their semantics).
     """
 
     def __init__(self, dataframe: pl.DataFrame, parent=None, selected_column: str = None):
@@ -169,12 +159,10 @@ class ReplaceValuesDialog(BaseModal):
         layout.addLayout(btn_layout)
 
     def get_parameters(self) -> dict:
-        """The parameters actually sent to DataProcessor.replace_values() -
-        both for this dialog's own preview() below and, via
-        TransformView.apply_transformation, for the real applied
-        operation. Key names match replace_values()'s own signature
-        exactly, including case_sensitive/use_regex/whole_word, which an
-        earlier version of that method silently accepted and ignored."""
+        """The parameters sent to DataProcessor.replace_values(), both
+        for this dialog's own preview() below and, via
+        TransformView.apply_transformation, for the applied operation.
+        Key names match replace_values()'s signature exactly."""
         return {
             "column": self.column_selector.get_column(),
             "output_column": self.output_col_edit.text() or "replaced",
@@ -201,9 +189,8 @@ class ReplaceValuesDialog(BaseModal):
         return True
 
     def preview(self):
-        """Generate a preview by calling the exact same DataProcessor.replace_values()
-        that Replace All will call - see get_parameters()'s docstring for
-        why that used not to be true."""
+        """Generate a preview by calling the same DataProcessor.replace_values()
+        that Replace All uses."""
         from core.data_processor import DataProcessor
 
         try:
@@ -215,11 +202,9 @@ class ReplaceValuesDialog(BaseModal):
 
             processor = DataProcessor()
             try:
-                # _call_mapped_method (not a direct keyword call) - the
-                # same param-name mapping (output_column -> output_col)
-                # and filtering the real apply path uses via
-                # TransformView.apply_transformation, so preview can't
-                # drift from apply by calling the method differently.
+                # Uses _call_mapped_method so parameter name mapping
+                # (output_column -> output_col) matches the real apply
+                # path via TransformView.apply_transformation.
                 result = processor._call_mapped_method(processor.replace_values, self.original_df, params)
             except Exception as regex_error:
                 if params["use_regex"]:

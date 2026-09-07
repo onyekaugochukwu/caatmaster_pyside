@@ -819,16 +819,11 @@ class DataProcessor:
 
     def ml_anomaly_iforest(self, df: pl.DataFrame, column: str, contamination: float = 0.1,
                             n_estimators: int = 100, max_samples="auto") -> pl.DataFrame:
-        """Anomaly detection using a genuine Isolation Forest (scikit-learn) -
-        the algorithm this operation's own name promises. An earlier version
-        of this method computed a distance-from-mean heuristic instead, under
-        the same "Isolation Forest" label, which is the exact kind of
-        mismatch between a name and what it actually computes that this
-        codebase treats as a real defect elsewhere, not a stylistic
-        preference. Trains a fresh, unsaved model against this single column
-        only, for a quick one-off screen; a persistent, reusable, genuinely
+        """Detect anomalies in a single column using scikit-learn's
+        IsolationForest. Trains a fresh, unsaved model against this column
+        only, for a quick one-off screen; a persistent, reusable,
         multivariate model belongs in the ML Models view's Train Model
-        workflow instead, which this quick operation does not replace."""
+        workflow instead."""
         from sklearn.ensemble import IsolationForest
         col_data = df[column].to_numpy().reshape(-1, 1)
         if len(col_data) < 2:
@@ -895,22 +890,16 @@ class DataProcessor:
 
     def ml_anomaly_lof(self, df: pl.DataFrame, column: str, n_neighbors: int = 20,
                         contamination: float = 0.1) -> pl.DataFrame:
-        """Local Outlier Factor via scikit-learn - the genuine, density-based
-        algorithm this operation's name promises, not the distance-from-mean
-        heuristic an earlier version of this method computed under the same
-        name. Run with novelty=False (scikit-learn's default), the correct
-        mode for scoring a fixed, already-collected population for its own
-        internal outliers, as opposed to novelty=True, used instead by the
-        ML Models view's trainable models to judge NEW data against a
-        population already seen. n_neighbors is capped at one less than the
-        population size, since scikit-learn requires strictly fewer
-        neighbors than there are samples; a small population still runs,
-        with fewer neighbors than requested, rather than raising an error
-        the reviewer has no obvious way to resolve from this dialog.
-        contamination sets the expected flagged fraction, same meaning and
-        default as Isolation Forest's own parameter above, rather than
-        scikit-learn's own 'auto' default, so the two tabs behave
-        predictably the same way when left untouched."""
+        """Detect anomalies in a single column using scikit-learn's
+        LocalOutlierFactor with novelty=False, which scores a fixed,
+        already-collected population for its own internal outliers (as
+        opposed to novelty=True, used by the ML Models view's trainable
+        models to judge new data against a population already seen).
+        n_neighbors is capped at one less than the population size, since
+        scikit-learn requires strictly fewer neighbors than there are
+        samples. contamination sets the expected flagged fraction, matching
+        Isolation Forest's own parameter above rather than scikit-learn's
+        'auto' default."""
         from sklearn.neighbors import LocalOutlierFactor
         col_data = df[column].to_numpy().reshape(-1, 1)
         n = len(col_data)
@@ -937,12 +926,9 @@ class DataProcessor:
         """General outlier detection.
 
         ml_anomaly_zscore()/ml_anomaly_iqr() don't take an output_col
-        (they always name their flag column f"{column}_is_outlier") - this
-        used to pass output_col through to them anyway, which raised
-        TypeError on every call (caught by restoring this method's own
-        test coverage, previously masked by a blanket try/except/skip).
-        Renames their fixed-name flag column to the caller's requested
-        output_col afterward instead."""
+        parameter; they always name their flag column
+        f"{column}_is_outlier". Renames that fixed-name column to the
+        caller's requested output_col afterward instead."""
         fixed_col = f"{column}_is_outlier"
         if method == 'zscore':
             result = self.ml_anomaly_zscore(df, column=column, threshold=3.0)
@@ -1820,12 +1806,13 @@ class DataProcessor:
 
     def ai_generate_column(self, df: pl.DataFrame, column_name: str, instruction: str,
                            generated_code: str, **kwargs) -> pl.DataFrame:
-        """Execute AI-generated column code — sandboxed via
-        services.ai_service.safe_exec_polars_code (see that module for why
-        a bare exec_globals={"pl": pl} wasn't actually a sandbox: Python
+        """Execute AI-generated column code, sandboxed via
+        services.ai_service.safe_exec_polars_code. A bare
+        exec_globals={"pl": pl} is not a sandbox on its own: Python
         auto-injects the real __builtins__ into any globals dict that
-        doesn't define its own, so generated code previously had full
-        access to __import__/open/eval/etc.)."""
+        doesn't define its own, giving generated code access to
+        __import__/open/eval/etc. unless __builtins__ is explicitly
+        restricted."""
         from services.ai_service import safe_exec_polars_code
         try:
             return safe_exec_polars_code(generated_code, df)
@@ -2551,14 +2538,12 @@ class DataProcessor:
         repeat elsewhere?) — since both are just "group by columns, count
         occurrences of each group."
 
-        Grouping is done with a real struct key (pl.struct), never a string
-        concatenation: an earlier version built the key by joining columns
-        with "_" after regex-sanitizing each one, which meant two genuinely
-        different combinations — e.g. ("A_B", "C") and ("A", "B_C") — could
-        collide into the identical string "A_B_C" and get flagged as
-        duplicates of each other. A struct compares each field independently,
-        so no delimiter collision is possible no matter what characters the
-        data itself contains.
+        Grouping uses a struct key (pl.struct) rather than a delimited
+        string concatenation, so that distinct column combinations cannot
+        collide into the same key (e.g. ("A_B", "C") and ("A", "B_C")
+        joined with "_" both produce "A_B_C"). A struct compares each
+        field independently regardless of what characters the data
+        contains.
         """
         key_expr = pl.struct(columns)
         return df.with_columns([
@@ -3249,10 +3234,7 @@ class DataProcessor:
         if right_df is None:
             raise ValueError("Right dataframe is None")
 
-        # Map join type to polars join strategy. ("right" used to be mapped
-        # to "outer" here, which kept unmatched rows from BOTH sides instead
-        # of just the right one - polars supports "right" natively now, so
-        # this uses that directly instead of the wrong workaround.)
+        # Map join type to polars' native join strategy.
         join_map = {
             "left": "left",
             "right": "right",
@@ -3758,32 +3740,19 @@ class DataProcessor:
         """Create pivot table.
 
         index/columns/values each accept either a single column name or a
-        list of them - Polars' own pivot() supports both natively (a list
-        of `values` produces one set of pivoted columns per value column;
-        a list of `columns` produces a composite/tuple column header), and
-        PivotTableDialog's drag-and-drop zones let a reviewer drop more
-        than one column into any of the three, so this must not silently
-        assume a single string the way an incomplete type hint once did.
+        list of them. Polars' own pivot() supports both: a list of
+        `values` produces one set of pivoted columns per value column,
+        and a list of `columns` produces a composite/tuple column header.
 
-        aggregate maps to Polars' own aggregate_function values, with two
-        corrections found by tracing an actual crash and an actual wrong
-        result back to this method: "average" (what the dialog's combo
-        box text becomes) is not itself a valid Polars aggregate_function
-        literal (only "mean" is) and silently fell through to this
-        method's own now-removed default of 'first' - selecting Average
-        in the dialog quietly computed the FIRST value per group instead,
-        with no error to reveal it. "distinct_count" has no matching
-        Polars string literal at all; Polars' own pivot() only accepts an
-        aggregation *expression* for anything outside its fixed set of
-        literals, so that one case is handled separately below.
+        aggregate maps to Polars' aggregate_function values via
+        _pivot_aggregate_function()/_pivot_aggregate_expr(), which also
+        handle "average" (mapped to "mean", since Polars only recognizes
+        "mean") and "distinct_count" (which has no matching Polars
+        string literal and requires an aggregation expression instead).
 
-        columns/on is empty precisely when the dialog's COLUMNS drop zone
-        is left empty - a genuine, validated use case in the dialog (a
-        plain group-by summary rather than a cross-tab), not an error
-        case, but Polars' own pivot() requires a non-empty `on` and
-        raises if given one. Falls back to an equivalent group_by/agg in
-        that case instead, using the exact same aggregate mapping so the
-        two code paths can't silently disagree on what "Average" means.
+        When columns is empty (no pivot header column selected), this
+        falls back to an equivalent group_by/agg, since Polars' pivot()
+        requires a non-empty `on` argument.
         """
         index_cols = index if isinstance(index, list) else [index]
         value_cols = values if isinstance(values, list) else [values]
@@ -4077,35 +4046,17 @@ class DataProcessor:
 
         replace_with_null=True treats find_value as an exact, whole-value
         match (not a substring/regex pattern) and turns any matching cell
-        into a true null — for standardizing ad-hoc missing-value markers
-        ("???", "-", "N/A") into real nulls, which a numeric cast can then
-        handle instead of choking on leftover text. Without it, this
-        behaves as before: find_value is a substring/regex pattern
-        replaced within each string value.
+        into a true null, for standardizing ad-hoc missing-value markers
+        ("???", "-", "N/A") into real nulls that a numeric cast can then
+        handle. Otherwise find_value is a substring/regex pattern replaced
+        within each string value, using str.replace_all() so every
+        occurrence in a cell is replaced, not just the first.
 
-        Three corrections found by tracing the Find and Replace dialog's
-        own exposed controls back to what this method actually did with
-        them:
-
-        - The dialog's primary button reads "Replace All", but this used
-          Polars' str.replace(), which - unlike its name suggests -
-          replaces only the FIRST match in each cell by default; a value
-          containing the search text more than once kept every match
-          after the first. Now uses str.replace_all().
-        - case_sensitive changed nothing: neither branch here ever added
-          a case-insensitivity flag, so a search for "hello" already
-          failed to match "Hello" regardless of what the checkbox said.
-        - use_regex and whole_word were collected by the dialog's
-          get_parameters() but never reached this method at all - two
-          real, exposed controls with zero effect on the applied result.
-          Since Polars' str.replace_all() always treats its pattern as a
-          regex, use_regex=False (the sensible default for a "find text"
-          box) now escapes find_value first, so a search string
-          containing a genuine regex metacharacter (".", "$", "100%",
-          "user.name") is matched literally instead of as a pattern -
-          another real, silent bug this fixes as a side effect: every
-          find/replace before this fix was implicitly running in regex
-          mode with no way to turn it off.
+        case_sensitive=False applies an inline (?i) regex flag.
+        use_regex=False (the default) escapes find_value via re.escape()
+        first, so a search string containing a regex metacharacter
+        (".", "$", "100%", "user.name") is matched literally.
+        whole_word=True wraps the pattern in \\b word-boundary anchors.
         """
         output_col = output_col or f"{column}_replaced"
 
@@ -4130,12 +4081,9 @@ class DataProcessor:
     def standardize_missing_values(self, df: pl.DataFrame, column: str, markers: List[str],
                                    case_sensitive: bool = False) -> pl.DataFrame:
         """Replace any of several ad-hoc missing-value marker tokens
-        ("???", "-", "N/A", ...) with a true null, in one step, in place —
-        the dedicated fix for what used to require one Find and Replace
-        step per marker plus hoping Change Data Type's strict cast
-        wouldn't choke on whatever was left. Matches on the whole,
-        trimmed cell value, not a substring — a marker token appearing
-        inside a longer real value is deliberately left alone."""
+        ("???", "-", "N/A", ...) with a true null, in one step. Matches
+        the whole, trimmed cell value, not a substring, so a marker token
+        appearing inside a longer real value is left alone."""
         if not markers:
             return df
         col_expr = pl.col(column).cast(pl.Utf8, strict=False).str.strip_chars()

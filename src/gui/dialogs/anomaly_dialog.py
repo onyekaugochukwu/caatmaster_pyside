@@ -25,13 +25,10 @@ class AnomalyDetectionDialog(BaseModal):
     Anomaly Detection dialog with multiple method options
     """
 
-    # Every one of the four "ml_anomaly_*" operation ids maps to this
-    # same dialog class (see TransformationDialogFactory.DIALOG_MAPPING) -
-    # this tells __init__ which tab actually corresponds to the specific
-    # one the user picked, whether from the right-click "Machine
-    # Learning" submenu or the top menu bar's ML > Anomaly Detection
-    # submenu. Without it, choosing "Local Outlier Factor" by name still
-    # opened on the Isolation Forest tab every time.
+    # All four "ml_anomaly_*" operation ids map to this same dialog class
+    # (see TransformationDialogFactory.DIALOG_MAPPING). This maps each
+    # operation_id to the tab it corresponds to, so the dialog opens on
+    # the method the user actually selected from a menu.
     _TAB_BY_OPERATION_ID = {
         "ml_anomaly_iforest": 0,
         "ml_anomaly_zscore": 1,
@@ -92,16 +89,10 @@ class AnomalyDetectionDialog(BaseModal):
 
         layout.addWidget(self.tabs)
 
-        # Output columns - read-only, since every method here always names
-        # its own output columns from the source column
-        # ({column}_is_anomaly, {column}_zscore, ...), the same convention
-        # every other operation in this application uses. Earlier versions
-        # of this box were editable QLineEdits that fed only this dialog's
-        # own dead apply_detection() method - a reviewer could type a
-        # custom name here, watch it appear to accept the change, and get
-        # the default name anyway once Run Detection actually applied the
-        # operation. These labels show the real name instead of promising
-        # a rename that never happened.
+        # Output columns are read-only: every method here names its own
+        # output columns from the source column ({column}_is_anomaly,
+        # {column}_zscore, ...), the same convention every operation in
+        # this application uses.
         output_group = QGroupBox("Output Columns")
         output_layout = QGridLayout(output_group)
 
@@ -315,17 +306,10 @@ class AnomalyDetectionDialog(BaseModal):
         return method_map.get(self.tabs.currentIndex(), "iforest")
 
     def get_parameters(self) -> dict:
-        """The parameters actually sent to DataProcessor - both for this
-        dialog's own preview() below and, via
-        TransformView.apply_transformation, for the real applied
-        operation. One dict feeds both, by construction, so a preview can
-        no longer promise a result the real run does not deliver, the way
-        an earlier version of this dialog did: its own preview()
-        recomputed every method as a local distance-from-mean heuristic
-        while the real applied operation called scikit-learn directly, and
-        its "Direction" and "Detection Mode" dropdowns adjusted only that
-        local preview, silently doing nothing to the value actually
-        written to the dataset once Run Detection was clicked."""
+        """The parameters sent to DataProcessor, both for this dialog's
+        own preview() below and, via TransformView.apply_transformation,
+        for the applied operation. One dict feeds both, so preview and
+        apply cannot diverge."""
         method = self.get_method()
         params = {"method": method}
 
@@ -343,11 +327,9 @@ class AnomalyDetectionDialog(BaseModal):
         elif method == "iqr":
             params["column"] = self.iqr_col.get_column()
             base_multiplier = self.iqr_multiplier.value()
-            # "Extreme Bounds" is a preset that doubles the multiplier
-            # rather than a separate parameter - ml_anomaly_iqr only ever
-            # took one multiplier, so folding the preset in here keeps
-            # that single value the one truth both preview and apply share,
-            # instead of two controls that could disagree.
+            # "Extreme Bounds" is a preset that doubles the multiplier;
+            # ml_anomaly_iqr takes a single multiplier value, so the
+            # preset is folded into it here.
             params["multiplier"] = base_multiplier * 2 if self.iqr_mode.currentIndex() == 1 else base_multiplier
         elif method == "lof":
             params["column"] = self.lof_col.get_column()
@@ -375,10 +357,9 @@ class AnomalyDetectionDialog(BaseModal):
     }
 
     def preview(self):
-        """Generate a preview by calling the exact same DataProcessor
-        method, with the exact same parameters, that Run Detection will
-        call to actually apply the operation - see get_parameters()'s
-        docstring for why that used not to be true."""
+        """Generate a preview by calling the same DataProcessor method,
+        with the same parameters, that Run Detection uses to apply the
+        operation."""
         from core.data_processor import DataProcessor
 
         try:

@@ -109,9 +109,7 @@ class CosoService:
         
         # If mapping provided, map category to component
         if mapping and category_col in df.columns:
-            # map_dict was renamed to replace_strict in current polars -
-            # the old call raised AttributeError on every real use of this
-            # dialog, since it always builds and passes a mapping.
+            # Current Polars uses replace_strict, not map_dict.
             map_expr = pl.col(category_col).replace_strict(mapping, default="Unmapped").alias("coso_component")
             working_df = df.with_columns(map_expr)
         else:
