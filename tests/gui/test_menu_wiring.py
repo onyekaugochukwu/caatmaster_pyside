@@ -22,6 +22,23 @@ import polars as pl
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QFileDialog
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _init_database():
+    """This file is the only one in the suite that constructs a real
+    MainWindow() directly, rather than through main.py's own entry point
+    - which matters because main.py calls core.database.init_db() BEFORE
+    ever constructing MainWindow (main.py line ~87), and at least one
+    menu action reads from the users table that call creates. A real
+    first launch always goes through main.py and never hits this; a
+    fresh checkout with no prior local run of the real app - exactly
+    what a CI runner is - has no users table yet, since nothing else
+    in this test file (or the rest of the suite) ever calls init_db()
+    itself. Confirmed by reproducing the exact CI failure locally
+    against a machine with no ~/.caatmaster directory at all."""
+    from core.database import init_db
+    init_db()
+
+
 @pytest.fixture(autouse=True)
 def _neutralize_blocking_dialogs(monkeypatch):
     """Same rationale as test_dialog_audit.py's fixture of the same name:
