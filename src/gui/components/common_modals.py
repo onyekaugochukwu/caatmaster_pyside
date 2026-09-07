@@ -405,7 +405,22 @@ class PreviewTable(QTableWidget):
         # intermediate size change reliably reaches the event filter above
         # before the dialog is first shown. Re-syncing once after the
         # event loop actually settles catches that gap.
-        QTimer.singleShot(0, lambda: self._show_empty_state(self._empty_label.isVisible()))
+        #
+        # Guarded: several dialogs replace/rebuild their preview table
+        # synchronously during their own setup (e.g. a combo box's
+        # currentIndexChanged firing once as it's populated, triggering
+        # an immediate preview refresh) - if THIS instance is already
+        # gone by the time the event loop gets back around to firing this
+        # callback, touching self._empty_label raises RuntimeError
+        # ("Internal C++ object already deleted") instead of silently
+        # doing nothing, which is what a deferred "re-check later" should
+        # do when "later" never comes for this particular instance.
+        def _resync_empty_state():
+            try:
+                self._show_empty_state(self._empty_label.isVisible())
+            except RuntimeError:
+                pass
+        QTimer.singleShot(0, _resync_empty_state)
 
     def set_empty_message(self, message: str):
         """Customize the empty-state text for a specific dialog, e.g.

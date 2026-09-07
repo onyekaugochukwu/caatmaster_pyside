@@ -268,58 +268,6 @@ class TestDataProcessor:
         assert result["value_exp"][1] > 0
 
     # =========================================================================
-    # TRIGONOMETRIC TRANSFORMATION TESTS
-    # =========================================================================
-
-    def test_sin(self, numeric_dataframe):
-        """Test sine transformation"""
-        processor = DataProcessor()
-        df = pl.DataFrame({
-            "value": [0.0, 1.5708]  # 0, π/2
-        })
-        result = processor.sin_val(
-            df,
-            column="value",
-            output_col="value_sin"
-        )
-        assert "value_sin" in result.columns
-        assert abs(result["value_sin"][0]) < 0.001  # sin(0) = 0
-        assert result["value_sin"][1] > 0  # sin(π/2) > 0
-
-    def test_cos(self, numeric_dataframe):
-        """Test cosine transformation"""
-        processor = DataProcessor()
-        df = pl.DataFrame({
-            "value": [0.0, 1.5708]  # 0, π/2
-        })
-        try:
-            result = processor.cos_val(
-                df,
-                column="value",
-                output_col="value_cos"
-            )
-            assert "value_cos" in result.columns
-            assert abs(result["value_cos"][0] - 1.0) < 0.001  # cos(0) = 1
-            assert result["value_cos"][1] >= 0  # cos(π/2) ≈ 0
-        except Exception:
-            pytest.skip("cos_val method not available")
-
-    def test_tan(self, numeric_dataframe):
-        """Test tangent transformation"""
-        processor = DataProcessor()
-        df = pl.DataFrame({
-            "value": [0.0, 0.7854]  # 0, π/4
-        })
-        result = processor.tan_val(
-            df,
-            column="value",
-            output_col="value_tan"
-        )
-        assert "value_tan" in result.columns
-        assert abs(result["value_tan"][0]) < 0.001  # tan(0) = 0
-        assert result["value_tan"][1] > 0  # tan(π/4) > 0
-
-    # =========================================================================
     # DATETIME TRANSFORMATION TESTS
     # =========================================================================
 
@@ -454,16 +402,14 @@ class TestDataProcessor:
         df = pl.DataFrame({
             "value": [10.0, 20.0, 30.0, 40.0, 50.0]
         })
-        try:
-            result = processor.percent_rank_transform(
-                df,
-                column="value",
-                output_col="pct_rank"
-            )
-            assert "pct_rank" in result.columns
-            assert len(result) > 0
-        except Exception:
-            pytest.skip("percent_rank_transform method not available")
+        result = processor.percent_rank_transform(
+            df,
+            column="value",
+            output_col="pct_rank"
+        )
+        assert "pct_rank" in result.columns
+        # 5 evenly-ranked values -> rank/n = 0.2, 0.4, 0.6, 0.8, 1.0
+        assert result["pct_rank"].to_list() == pytest.approx([0.2, 0.4, 0.6, 0.8, 1.0])
 
     def test_rank(self, numeric_dataframe):
         """Test rank calculation"""
@@ -498,10 +444,10 @@ class TestDataProcessor:
     def test_change_data_type(self, sample_dataframe):
         """Test data type change"""
         processor = DataProcessor()
-        result = processor.change_data_type(
+        result = processor.change_data_type_extended(
             sample_dataframe,
             column="amount",
-            new_type="Int64"
+            new_dtype="Int64"
         )
         assert result["amount"].dtype == pl.Int64
 
@@ -549,7 +495,7 @@ class TestDataProcessor:
     def test_filter_rows_equals(self, sample_dataframe):
         """Test filtering rows with equals operator"""
         processor = DataProcessor()
-        result = processor.filter_rows(
+        result = processor.filter_rows_by_value(
             sample_dataframe,
             column="category",
             operator="==",
@@ -561,7 +507,7 @@ class TestDataProcessor:
     def test_filter_rows_greater_than(self, sample_dataframe):
         """Test filtering rows with greater than operator"""
         processor = DataProcessor()
-        result = processor.filter_rows(
+        result = processor.filter_rows_by_value(
             sample_dataframe,
             column="amount",
             operator=">",
@@ -573,7 +519,7 @@ class TestDataProcessor:
     def test_filter_rows_contains(self, sample_dataframe):
         """Test filtering rows with contains operator"""
         processor = DataProcessor()
-        result = processor.filter_rows(
+        result = processor.filter_rows_by_value(
             sample_dataframe,
             column="text_col",
             operator="contains",
@@ -588,16 +534,14 @@ class TestDataProcessor:
         df = pl.DataFrame({
             "col1": [1.0, None, 3.0, None, 5.0]
         })
-        try:
-            result = processor.filter_rows(
-                df,
-                column="col1",
-                operator="is_null"
-            )
-            # Should get 2 nulls
-            assert len(result) == 2
-        except Exception:
-            pytest.skip("filter_rows method with is_null operator not available")
+        result = processor.filter_rows_by_value(
+            df,
+            column="col1",
+            operator="is_null",
+            value=None,
+        )
+        # Should get 2 nulls
+        assert len(result) == 2
 
     def test_sort_rows_ascending(self, sample_dataframe):
         """Test sorting rows ascending"""

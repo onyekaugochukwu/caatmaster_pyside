@@ -1,0 +1,6 @@
+sku,description,cost,selling_price,costs_to_sell,quantity
+SKU-1001,Office Chairs Model A,45.00,60.00,5.00,200
+SKU-1002,Legacy Printer Cartridges,18.50,15.00,2.00,500
+SKU-1003,Desk Organizers,8.00,14.00,1.50,900
+SKU-1004,Discontinued Monitor Stands,32.00,20.00,3.00,150
+SKU-1005,Shipping Boxes (Bulk),2.10,3.50,0.40,5000

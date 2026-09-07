@@ -61,12 +61,6 @@ class AuthService:
         self.current_user_id: Optional[int] = None
         self.session_token: Optional[str] = None
 
-    def __getattr__(self, name):
-        """Trap attribute access to detect missing attributes."""
-        import sys
-        print(f"[DEBUG] AuthService.__getattr__ called for '{name}'", file=sys.stderr)
-        raise AttributeError(f"'AuthService' object has no attribute '{name}'")
-
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify a password against a hash"""
         return pwd_context.verify(plain_password, hashed_password)

@@ -38,7 +38,7 @@ class TestBenfordLawAnalysis:
         result = processor.audit_benford_law(
             transaction_dataframe,
             column="amount",
-            output_col="benford_deviation"
+            deviation_col="benford_deviation"
         )
 
         assert "benford_deviation" in result.columns
@@ -46,24 +46,26 @@ class TestBenfordLawAnalysis:
         deviations = result["benford_deviation"]
         assert (deviations >= 0).all()
 
-    def test_benford_law_compliant_data(self):
+    def test_benford_law_compliant_data(self, benford_compliant_data):
         """Test with data that follows Benford's Law"""
         from core.data_processor import DataProcessor
 
-        numbers = self.benford_compliant_data
+        # benford_compliant_data is a fixture (see decorator above) -
+        # accessing it via self.benford_compliant_data (the previous
+        # form) returns the undecorated FixtureFunctionDefinition object
+        # itself, not the generated numbers, and only failed downstream
+        # at len() rather than where the real mistake was.
+        numbers = benford_compliant_data
         df = pl.DataFrame({"amount": numbers})
 
         processor = DataProcessor()
-        try:
-            result = processor.audit_benford_law(
-                df,
-                column="amount",
-                output_col="deviation"
-            )
-            assert "deviation" in result.columns
-            assert len(result) == len(numbers)
-        except Exception:
-            pytest.skip("audit_benford_law method not available")
+        result = processor.audit_benford_law(
+            df,
+            column="amount",
+            deviation_col="deviation"
+        )
+        assert "deviation" in result.columns
+        assert len(result) == len(numbers)
 
 
 class TestDuplicateDetection:
@@ -243,19 +245,27 @@ class TestRoundNumberDetection:
         })
 
         processor = DataProcessor()
-        try:
-            result = processor.audit_round_numbers(
-                df,
-                column="amount",
-                threshold=0.5,
-                output_col="is_round",
-                score_col="roundness"
-            )
+        result = processor.audit_round_numbers(
+            df,
+            column="amount",
+            threshold=0.5,
+            output_col="is_round",
+            score_col="roundness"
+        )
 
-            assert "is_round" in result.columns
-            assert "roundness" in result.columns
-        except Exception:
-            pytest.skip("audit_round_numbers method not available")
+        assert "is_round" in result.columns
+        assert "roundness" in result.columns
+
+        by_amount = dict(zip(df["amount"].to_list(), result["is_round"].to_list()))
+        # 100, 200, 1000, 5000 are genuinely round (>= 50% trailing-zero
+        # digits at this threshold); 150 is only partially round; 123.45
+        # has a fractional part and is never round.
+        assert by_amount[100.0] is True
+        assert by_amount[200.0] is True
+        assert by_amount[1000.0] is True
+        assert by_amount[5000.0] is True
+        assert by_amount[150.0] is False
+        assert by_amount[123.45] is False
 
 
 class TestAuditOutlierDetection:

@@ -105,9 +105,12 @@ AUDIT_MENU = [
 
 STATISTICS_MENU = [
     ("Visualize Dataset...", "fa5s.chart-bar", "visualize_dataset"),
+    ("Cross-Tabulation...", "fa5s.table", "cross_tabulation"),
+    ("Sampling...", "fa5s.random", "sampling"),
     None,
     ("Descriptive", [
         ("Summary Statistics", "fa5s.chart-pie", "stat_summary"),
+        ("Field Statistics...", "fa5s.list-alt", "field_statistics"),
         ("Mean / Median", "fa5s.ruler-combined", "stat_central"),
         ("Variance", "fa5s.wave-square", "stat_variance"),
     ]),
@@ -125,6 +128,26 @@ STATISTICS_MENU = [
         ("Normal Distribution", "fa5s.bell", "stat_normal"),
         ("Binomial Distribution", "fa5s.dice", "stat_binomial"),
         ("Poisson Distribution", "fa5s.chart-bar", "stat_poisson"),
+    ]),
+]
+
+FINANCIAL_MENU = [
+    ("Financial Ratios...", "fa5s.balance-scale", "financial_ratios"),
+    ("Reshape Statement to Ratio Inputs...", "fa5s.exchange-alt", "reshape_statement_to_concepts"),
+    None,
+    ("IFRS", [
+        ("IFRS 9 Staging...", "fa5s.university", "ifrs9_staging"),
+        ("IFRS 9 Scenario-Weighted ECL...", "fa5s.chart-line", "ifrs9_scenario_ecl"),
+        ("IFRS 15 Margin Shift Detection (CUSUM)...", "fa5s.chart-area", "ifrs15_margin_cusum"),
+        ("IFRS 15 Revenue Timing Gap...", "fa5s.calendar-check", "ifrs15_timing_gap"),
+        ("IFRS 16 Lease Liability && IBR Check...", "fa5s.file-contract", "ifrs16_lease_liability"),
+    ]),
+    ("IAS", [
+        ("IAS 2 Inventory NRV Write-Down...", "fa5s.boxes", "ias2_nrv_writedown"),
+        ("IAS 12 DTA Recoverability Check...", "fa5s.percentage", "ias12_dta_recoverability"),
+        ("IAS 21 FX Rate Consistency Check...", "fa5s.money-bill-wave", "ias21_fx_rate_check"),
+        ("IAS 36 Implied Growth Rate (Reverse DCF)...", "fa5s.chart-line", "ias36_implied_growth_rate"),
+        ("IAS 37 Provision Trend Break...", "fa5s.exclamation-triangle", "ias37_provision_trend"),
     ]),
 ]
 
@@ -212,7 +235,7 @@ VIEW_MENU = [
     ("Formula Bar", "fa5s.superscript", "formula_bar"),
 ]
 
-_ALL_MENUS = (TRANSFORM_MENU, AUDIT_MENU, STATISTICS_MENU, REPORTS_MENU, AI_MENU, ML_MENU, VIEW_MENU)
+_ALL_MENUS = (TRANSFORM_MENU, AUDIT_MENU, STATISTICS_MENU, FINANCIAL_MENU, REPORTS_MENU, AI_MENU, ML_MENU, VIEW_MENU)
 
 
 def _is_leaf(item):
@@ -284,6 +307,8 @@ def build_menu_bar(main_window, registry: CommandRegistry) -> QMenuBar:
     file_menu.addAction(_icon("fa5s.save"), "Save Project As...", main_window.save_project_as)
     file_menu.addSeparator()
     file_menu.addAction(_icon("fa5s.file-import"), "Import Data...", main_window.import_data)
+    file_menu.addAction(_icon("fa5s.code"), "Import XBRL / iXBRL...", main_window.on_xbrl_import_requested)
+    file_menu.addAction(_icon("fa5s.box-open"), "Manage Taxonomy Packages...", main_window.on_manage_taxonomy_packages_requested)
     file_menu.addAction(_icon("fa5s.file-export"), "Export Data...", main_window.export_data)
     file_menu.addAction(_icon("fa5s.share-square"), "Export for Review...", main_window.export_for_review)
     file_menu.addSeparator()
@@ -302,6 +327,9 @@ def build_menu_bar(main_window, registry: CommandRegistry) -> QMenuBar:
 
     stats_menu = menu_bar.addMenu("&Statistics")
     _populate_menu(stats_menu, STATISTICS_MENU, registry)
+
+    financial_menu = menu_bar.addMenu("Fina&ncial")
+    _populate_menu(financial_menu, FINANCIAL_MENU, registry)
 
     reports_menu = menu_bar.addMenu("&Reports")
     _populate_menu(reports_menu, REPORTS_MENU, registry)

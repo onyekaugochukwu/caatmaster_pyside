@@ -7,6 +7,13 @@ from pathlib import Path
 import tempfile
 import os
 
+# Default to a headless Qt platform so PySide6 widgets (dialogs, etc.) can
+# be constructed in tests without a real display - setdefault() so a
+# developer who deliberately wants a visible Qt window for debugging can
+# still override it by setting QT_QPA_PLATFORM themselves before running
+# pytest. Must happen before anything imports PySide6.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 # Add src directory to path
 _src_path = Path(__file__).parent.parent / "src"
 if str(_src_path) not in sys.path:

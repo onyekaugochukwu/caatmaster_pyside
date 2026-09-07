@@ -2512,6 +2512,77 @@ class MainWindow(QMainWindow):
             f"({DOCUMENT_TYPES.get(dialog.doc_type, dialog.doc_type)})"
         )
 
+    def on_xbrl_import_requested(self):
+        """Import an XBRL instance document or inline XBRL (iXBRL)
+        filing, mapping its tagged facts onto this app's standard
+        financial concepts. Creates up to two datasets: a long "XBRL
+        Facts" table (every tagged fact - an audit trail down to the raw
+        filing) and, when at least one concept was resolved, a wide
+        "XBRL Ratios" table (one row per period, one column per concept)
+        that FinancialService's ratio/Altman Z-score calculations and any
+        other concept-keyed module (e.g. the IFRS 9/15/16 dialogs' column
+        mapping) can consume exactly as they would a spreadsheet import.
+
+        Unlike a CSV/Excel import, these datasets have no source_file_path
+        set - "Refresh" only knows how to re-read a CSV/Excel file, not
+        re-parse XBRL, so leaving it unset keeps that action correctly
+        unavailable rather than silently trying and failing."""
+        from PySide6.QtWidgets import QMessageBox, QDialog, QInputDialog
+        from pathlib import Path
+        from core.project_manager import Dataset
+        from gui.dialogs.xbrl_import_dialog import XBRLImportDialog
+
+        if not self.current_project:
+            QMessageBox.warning(
+                self, "No Project Selected",
+                "Please create or open a project before importing a dataset."
+            )
+            return
+
+        dialog = XBRLImportDialog(parent=self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        result = dialog.get_result()
+        facts_df = result["facts_df"]
+        wide_df = result["wide_df"]
+        if facts_df.height == 0:
+            QMessageBox.warning(self, "No Data", "No facts were extracted from this filing.")
+            return
+
+        base_name = Path(result["source_file"]).stem if result["source_file"] else "XBRL Import"
+        data_view = self.views.get("data")
+        transform_view = self.views.get("transform")
+
+        facts_dataset = Dataset(name=f"{base_name} (XBRL Facts)", dataframe=facts_df)
+        if data_view:
+            data_view._finalize_new_dataset(facts_dataset, facts_df)
+
+        created_names = [facts_dataset.name]
+        if wide_df.height > 0:
+            ratios_dataset = Dataset(name=f"{base_name} (XBRL Ratios)", dataframe=wide_df)
+            if data_view:
+                data_view._finalize_new_dataset(ratios_dataset, wide_df)
+            if transform_view:
+                transform_view.set_dataframe(wide_df, None)
+            created_names.append(ratios_dataset.name)
+        elif transform_view:
+            transform_view.set_dataframe(facts_df, None)
+
+        self.statusBar().showMessage(
+            f"Created dataset(s): {', '.join(created_names)} "
+            f"({facts_df.height} fact(s) from entity {result['entity_identifier'] or 'unknown'})"
+        )
+
+    def on_manage_taxonomy_packages_requested(self):
+        """Open the standalone Manage Taxonomy Packages dialog - the same
+        one reachable from inside the XBRL import dialog, exposed here
+        too since a firm may want to pre-load taxonomy packages before
+        ever attempting an import (e.g. IT setting up a new offline
+        machine)."""
+        from gui.dialogs.taxonomy_package_dialog import TaxonomyPackageDialog
+        TaxonomyPackageDialog(parent=self).exec()
+
     @Slot()
     def on_paste_requested(self):
         """Handle "paste dataset from clipboard" request from the sidebar or Ctrl+Shift+V"""
@@ -2821,6 +2892,25 @@ class MainWindow(QMainWindow):
             "stat_normal": lambda: self._on_statistics("stat_normal"),
             "stat_binomial": lambda: self._on_statistics("stat_binomial"),
             "stat_poisson": lambda: self._on_statistics("stat_poisson"),
+            "cross_tabulation": lambda: self._on_transform("cross_tabulation"),
+            "sampling": lambda: self._on_transform("sampling"),
+            "field_statistics": lambda: self._on_transform("field_statistics"),
+
+            # Financial operations - previously reachable only by right-clicking
+            # a column header and choosing Financial; promoted here to their own
+            # top-level menu once that was flagged as a real discoverability gap.
+            "financial_ratios": lambda: self._on_transform("financial_ratios"),
+            "reshape_statement_to_concepts": lambda: self._on_transform("reshape_statement_to_concepts"),
+            "ifrs9_staging": lambda: self._on_transform("ifrs9_staging"),
+            "ifrs9_scenario_ecl": lambda: self._on_transform("ifrs9_scenario_ecl"),
+            "ifrs15_margin_cusum": lambda: self._on_transform("ifrs15_margin_cusum"),
+            "ifrs15_timing_gap": lambda: self._on_transform("ifrs15_timing_gap"),
+            "ifrs16_lease_liability": lambda: self._on_transform("ifrs16_lease_liability"),
+            "ias2_nrv_writedown": lambda: self._on_transform("ias2_nrv_writedown"),
+            "ias12_dta_recoverability": lambda: self._on_transform("ias12_dta_recoverability"),
+            "ias21_fx_rate_check": lambda: self._on_transform("ias21_fx_rate_check"),
+            "ias36_implied_growth_rate": lambda: self._on_transform("ias36_implied_growth_rate"),
+            "ias37_provision_trend": lambda: self._on_transform("ias37_provision_trend"),
 
             # View operations
             "show_dashboard": lambda: self.on_navigation_requested("dashboard"),
@@ -2835,6 +2925,8 @@ class MainWindow(QMainWindow):
             "report_audit": self._on_report_audit,
             "report_llm": self._on_ai_compliance_check,
             "report_disclosure_recon": self._on_numeric_disclosure_reconciliation,
+            "xbrl_import": self.on_xbrl_import_requested,
+            "manage_taxonomy_packages": self.on_manage_taxonomy_packages_requested,
             "report_profile": self._on_col_profile,
             "report_quality": self._on_col_quality,
             "report_transformation": self._on_report_transformation_log,

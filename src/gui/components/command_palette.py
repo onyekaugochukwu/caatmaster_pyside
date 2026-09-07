@@ -20,7 +20,7 @@ from gui.theme import Colors
 # gui.components.app_menu's action_id values, so the palette can find the
 # same 80+ operations without the user needing to know which menu it's under.
 RIBBON_ACTIONS = [
-    ("Import", "import_data"), ("Export", "export_data"), ("Quick Export", "export_data"),
+    ("Import", "import_data"), ("Import XBRL/iXBRL", "xbrl_import"), ("Manage Taxonomy Packages", "manage_taxonomy_packages"), ("Export", "export_data"), ("Quick Export", "export_data"),
     ("Sort", "sort_asc"), ("Remove", "remove_rows"), ("Filter", "filter"),
     ("Upper/Lower", "text_upper"), ("Split", "split_comma"), ("Trim", "text_trim"),
     ("Round", "math_round"), ("Abs", "math_abs"), ("Sqrt", "math_sqrt"),
@@ -52,11 +52,22 @@ RIBBON_ACTIONS = [
     ("Query Settings", "query_settings"), ("Dependencies", "dependencies"),
     ("Column Quality", "col_quality"), ("Column Profile", "col_profile"),
     ("Formula Bar", "formula_bar"),
+    ("Cross-Tabulation", "cross_tabulation"), ("Sampling", "sampling"), ("Field Statistics", "field_statistics"),
+    ("Financial Ratios", "financial_ratios"), ("Reshape Statement to Ratio Inputs", "reshape_statement_to_concepts"),
+    ("IFRS 9 Staging", "ifrs9_staging"), ("IFRS 9 Scenario-Weighted ECL", "ifrs9_scenario_ecl"),
+    ("IFRS 15 Margin Shift (CUSUM)", "ifrs15_margin_cusum"), ("IFRS 15 Revenue Timing Gap", "ifrs15_timing_gap"),
+    ("IFRS 16 Lease Liability & IBR Check", "ifrs16_lease_liability"),
+    ("IAS 2 Inventory NRV Write-Down", "ias2_nrv_writedown"), ("IAS 12 DTA Recoverability", "ias12_dta_recoverability"),
+    ("IAS 21 FX Rate Consistency", "ias21_fx_rate_check"), ("IAS 36 Implied Growth Rate", "ias36_implied_growth_rate"),
+    ("IAS 37 Provision Trend Break", "ias37_provision_trend"),
 ]
 
 _CATEGORY_BY_PREFIX = [
     ("ml_", "ML"), ("ai_", "AI"), ("stat_", "Statistics"), ("report_", "Reports"),
     ("audit_", "Audit"), ("benford", "Audit"), ("import_", "File"), ("export_", "File"),
+    ("ifrs", "Financial"), ("ias", "Financial"), ("financial_ratios", "Financial"),
+    ("reshape_statement_to_concepts", "Financial"),
+    ("cross_tabulation", "Statistics"), ("sampling", "Statistics"), ("field_statistics", "Statistics"),
 ]
 
 

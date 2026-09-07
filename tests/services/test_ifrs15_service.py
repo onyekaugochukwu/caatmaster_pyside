@@ -61,6 +61,53 @@ class TestDetectMarginShiftsCusum:
         result = IFRS15Service().detect_margin_shifts_cusum(df, "revenue", "cost", "period", group_col="contract")
         assert not any(result["ifrs15_cusum_flag"].to_list())
 
+    def test_short_history_shift_flagged_at_default_threshold(self):
+        """Regression test for a real failure mode: a mean/standard-
+        deviation baseline is itself pulled toward and inflated by the
+        very shift it is supposed to detect, which can mask a large,
+        genuine shift in a short history - the single shifted period
+        among only six widens the standard deviation enough that the
+        shift no longer clears 4x it. A median/interquartile-range
+        baseline is resistant to this, since one outlying period out of
+        six is not enough to move either one much."""
+        from services.ifrs15_service import IFRS15Service
+
+        margins = [0.400, 0.397, 0.403, 0.398, 0.398, 0.150]  # 5 stable ~40%, then a collapse to 15%
+        revenue = [100000.0] * len(margins)
+        cost = [r * (1 - m) for r, m in zip(revenue, margins)]
+        df = pl.DataFrame({
+            "contract": ["C1"] * len(margins), "revenue": revenue, "cost": cost,
+            "period": self._dates(len(margins)),
+        })
+        result = IFRS15Service().detect_margin_shifts_cusum(df, "revenue", "cost", "period", group_col="contract")
+        flags = result.sort("period")["ifrs15_cusum_flag"].to_list()
+        assert not any(flags[:5])
+        assert flags[5]
+
+    def test_even_split_shift_flagged_not_masked_by_degenerate_mad(self):
+        """Regression test for the failure mode the median-absolute-
+        deviation (MAD) version of this baseline introduced: MAD collapses
+        to exactly 0 once a sustained shift covers close to half or more
+        of the population (an even, or near-even, split leaves the
+        majority of absolute deviations from the median at 0), which
+        silently suppresses detection of exactly the kind of long-running
+        shift this check exists to catch. The interquartile range only
+        degenerates past a 25% split, not a 50% split, and stays positive
+        here."""
+        from services.ifrs15_service import IFRS15Service
+
+        margins = [0.30] * 10 + [0.05] * 8  # a slightly-less-than-half split, each side perfectly flat
+        revenue = [1000.0] * len(margins)
+        cost = [r * (1 - m) for r, m in zip(revenue, margins)]
+        df = pl.DataFrame({
+            "contract": ["C1"] * len(margins), "revenue": revenue, "cost": cost,
+            "period": self._dates(len(margins)),
+        })
+        result = IFRS15Service().detect_margin_shifts_cusum(df, "revenue", "cost", "period", group_col="contract")
+        flags = result.sort("period")["ifrs15_cusum_flag"].to_list()
+        assert not any(flags[:10])
+        assert any(flags[10:])
+
     def test_zero_revenue_produces_null_margin_not_crash(self):
         from services.ifrs15_service import IFRS15Service
 

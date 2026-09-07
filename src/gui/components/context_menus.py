@@ -275,24 +275,6 @@ class ColumnContextMenu(QMenu):
             number_menu.addAction(action)
         transform_menu.addMenu(number_menu)
 
-        # Trigonometric
-        trig_menu = self._create_submenu("Trigonometric", "math")
-        trig_ops = [
-            ("Sine", "trig_sin"),
-            ("Cosine", "trig_cos"),
-            ("Tangent", "trig_tan"),
-            ("Arc Sine", "trig_asin"),
-            ("Arc Cosine", "trig_acos"),
-            ("Arc Tangent", "trig_atan"),
-        ]
-        for label, op in trig_ops:
-            action = QAction(label, self)
-            action.triggered.connect(
-                lambda checked, o=op: self._emit_transform(o)
-            )
-            trig_menu.addAction(action)
-        transform_menu.addMenu(trig_menu)
-
         # Date Transforms
         date_menu = self._create_submenu("Date", "calendar")
         date_ops = [

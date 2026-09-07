@@ -1,0 +1,35 @@
+invoice_id,invoice_date,vendor,department,account,description,amount,payment_method,approver,status
+20001,2025-01-03,Anderson Paper Co,Operations,Office Supplies,Copy paper and toner restock,842.50,ACH,T. Alvarez,Approved
+20002,2025-01-04,Cascade IT Solutions,IT,IT Equipment,Replacement laptop batteries,1290.00,Card,R. Chen,Approved
+20003,2025-01-06,BrightPath Logistics,Operations,Maintenance,Warehouse forklift service,675.25,Check,T. Alvarez,Approved
+20004,2025-01-07,Fenwick Legal Group,Legal,Professional Services,Contract review - Q1 vendor agreements,4900.00,Wire,M. Okafor,Approved
+20005,2025-01-08,Evergreen Facilities,Facilities,Utilities,January electricity - main office,3150.75,ACH,S. Patel,Approved
+20006,2025-01-09,GreenLeaf Catering,Marketing,Travel & Entertainment,Client appreciation lunch,410.00,Card,,Approved
+20007,2025-01-10,Harborview Consulting,Finance,Consulting Fees,Budget variance analysis - December,5000.00,Wire,R. Chen,Approved
+20008,2025-01-13,Anderson Paper Co,Operations,Office Supplies,Copy paper and toner restock,842.50,ACH,T. Alvarez,Approved
+20009,2025-01-14,Delta Office Interiors,Facilities,Maintenance,Reception area furniture repair,1225.00,Check,S. Patel,Approved
+20010,2025-01-15,Cascade IT Solutions,IT,IT Equipment,Network switch replacement,9900.00,Wire,R. Chen,Approved
+20011,2025-01-16,BrightPath Logistics,Operations,Maintenance,Loading dock repair,318.40,Card,,Pending
+20012,2025-01-17,Fenwick Legal Group,Legal,Professional Services,Employment policy review,2100.00,Wire,M. Okafor,Approved
+20013,2025-01-20,Evergreen Facilities,Facilities,Utilities,January water and sewer,890.60,ACH,S. Patel,Approved
+20014,2025-01-21,GreenLeaf Catering,Marketing,Travel & Entertainment,Trade show catering deposit,2500.00,Card,T. Alvarez,Approved
+20016,2025-01-23,Harborview Consulting,Finance,Consulting Fees,Internal controls walkthrough,3675.00,Wire,R. Chen,Approved
+20017,2025-01-24,Anderson Paper Co,Operations,Office Supplies,Breakroom supplies restock,156.20,Card,T. Alvarez,Approved
+20018,2025-01-27,Delta Office Interiors,Facilities,Maintenance,Carpet cleaning - 3rd floor,480.00,Check,,Approved
+20019,2025-01-28,Cascade IT Solutions,IT,IT Equipment,Firewall license renewal,4875.00,Wire,R. Chen,Approved
+20020,2025-01-29,BrightPath Logistics,Operations,Maintenance,HVAC filter replacement,275.90,Card,T. Alvarez,Approved
+20021,2025-01-30,Fenwick Legal Group,Legal,Professional Services,Litigation hold notice preparation,1450.00,Wire,M. Okafor,Approved
+20022,2025-02-03,Evergreen Facilities,Facilities,Utilities,February electricity - main office,3210.15,ACH,S. Patel,Approved
+20023,2025-02-04,GreenLeaf Catering,Marketing,Travel & Entertainment,Sales kickoff breakfast,615.00,Card,T. Alvarez,Approved
+20024,2025-02-05,Anderson Paper Co,Operations,Office Supplies,Copy paper and toner restock,842.50,ACH,T. Alvarez,Approved
+20025,2025-02-06,Harborview Consulting,Finance,Consulting Fees,Fraud risk assessment workshop,6200.00,Wire,R. Chen,Approved
+20026,2025-02-07,Delta Office Interiors,Facilities,Maintenance,Elevator inspection,950.00,Check,S. Patel,Approved
+20027,2025-02-10,Cascade IT Solutions,IT,IT Equipment,Server rack cooling fan,48750.00,Wire,R. Chen,Approved
+20029,2025-02-11,BrightPath Logistics,Operations,Maintenance,Parking lot striping,1180.00,Check,,Pending
+20030,2025-02-12,Fenwick Legal Group,Legal,Professional Services,Vendor contract renegotiation,3320.00,Wire,M. Okafor,Approved
+20031,2025-02-13,Evergreen Facilities,Facilities,Utilities,February water and sewer,865.30,ACH,S. Patel,Approved
+20032,2025-02-14,GreenLeaf Catering,Marketing,Travel & Entertainment,Valentine client gifts,290.00,Card,T. Alvarez,Rejected
+20033,2025-02-17,Anderson Paper Co,Operations,Office Supplies,Shipping boxes and packing tape,214.75,ACH,T. Alvarez,Approved
+20034,2025-02-18,Harborview Consulting,Finance,Consulting Fees,Segregation of duties review,10000.00,Wire,R. Chen,Approved
+20035,2025-02-19,Delta Office Interiors,Facilities,Maintenance,Window washing - full building,725.00,Check,S. Patel,Approved
+20036,2025-02-20,Cascade IT Solutions,IT,IT Equipment,Laptop docking stations (x6),1860.00,Card,,Approved

@@ -1,0 +1,5 @@
+jurisdiction,dta_balance,tax_rate,utilization_years,benchmark_profit
+Home Country HQ,4000000,0.25,5,3500000
+Subsidiary A (loss carryforward),2500000,0.21,3,400000
+Subsidiary B,800000,0.19,7,900000
+Subsidiary C (new market entry),1200000,0.22,4,300000

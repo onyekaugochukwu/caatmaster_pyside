@@ -43,12 +43,6 @@ class DataProcessor:
         'math_log': 'log',
         'math_log10': 'log10',
         'math_exp': 'exp',
-        'trig_sin': 'sin',
-        'trig_cos': 'cos',
-        'trig_tan': 'tan',
-        'trig_asin': 'asin',
-        'trig_acos': 'acos',
-        'trig_atan': 'atan',
         'datetime_year': 'year',
         'datetime_month': 'month',
         'datetime_day': 'day',
@@ -306,20 +300,6 @@ class DataProcessor:
             return self._call_mapped_method(self.modulo, df, params)
         elif operation_id == 'math_power':
             return self._call_mapped_method(self.power, df, params)
-
-        # Trigonometric transformations
-        elif operation_id == 'trig_sin':
-            return self._call_mapped_method(self.sin_val, df, params)
-        elif operation_id == 'trig_cos':
-            return self._call_mapped_method(self.cos_val, df, params)
-        elif operation_id == 'trig_tan':
-            return self._call_mapped_method(self.tan_val, df, params)
-        elif operation_id == 'trig_asin':
-            return self._call_mapped_method(self.asin_val, df, params)
-        elif operation_id == 'trig_acos':
-            return self._call_mapped_method(self.acos_val, df, params)
-        elif operation_id == 'trig_atan':
-            return self._call_mapped_method(self.atan_val, df, params)
 
         # DateTime transformations
         elif operation_id == 'datetime_year':
@@ -809,30 +789,6 @@ class DataProcessor:
     # TRIGONOMETRIC TRANSFORMATION IMPLEMENTATIONS
     # ============================================================================
 
-    def sin_val(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
-        """Sine (radians)"""
-        return df.with_columns(pl.col(column).sin().alias(output_col))
-
-    def cos_val(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
-        """Cosine (radians)"""
-        return df.with_columns(pl.col(column).cos().alias(output_col))
-
-    def tan_val(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
-        """Tangent (radians)"""
-        return df.with_columns(pl.col(column).tan().alias(output_col))
-
-    def asin_val(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
-        """Arc sine (radians)"""
-        return df.with_columns(pl.col(column).arcsin().alias(output_col))
-
-    def acos_val(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
-        """Arc cosine (radians)"""
-        return df.with_columns(pl.col(column).arccos().alias(output_col))
-
-    def atan_val(self, df: pl.DataFrame, column: str, output_col: str) -> pl.DataFrame:
-        """Arc tangent (radians)"""
-        return df.with_columns(pl.col(column).arctan().alias(output_col))
-
     # ============================================================================
     # DATETIME TRANSFORMATION IMPLEMENTATIONS
     # ============================================================================
@@ -961,22 +917,34 @@ class DataProcessor:
     # ============================================================================
 
     def ml_anomaly_iforest(self, df: pl.DataFrame, column: str, contamination: float = 0.1) -> pl.DataFrame:
-        """Anomaly detection using Isolation Forest - simplified"""
-        import numpy as np
+        """Anomaly detection using a genuine Isolation Forest (scikit-learn) -
+        the algorithm this operation's own name promises. An earlier version
+        of this method computed a distance-from-mean heuristic instead, under
+        the same "Isolation Forest" label, which is the exact kind of
+        mismatch between a name and what it actually computes that this
+        codebase treats as a real defect elsewhere, not a stylistic
+        preference. Trains a fresh, unsaved model against this single column
+        only, for a quick one-off screen; a persistent, reusable, genuinely
+        multivariate model belongs in the ML Models view's Train Model
+        workflow instead, which this quick operation does not replace."""
+        from sklearn.ensemble import IsolationForest
         col_data = df[column].to_numpy().reshape(-1, 1)
-        mean_val = np.mean(col_data)
-        std_val = np.std(col_data)
-        if std_val == 0:
-            std_val = 1
+        if len(col_data) < 2:
+            return df.with_columns([
+                pl.lit(False).alias(f"{column}_is_anomaly"),
+                pl.lit(None, dtype=pl.Float64).alias(f"{column}_anomaly_score"),
+            ])
 
-        distances = np.abs(col_data - mean_val) / std_val
-        threshold = 2.5
-        is_anomaly = distances > threshold
-        scores = 1 - (1 / (1 + distances))
+        model = IsolationForest(contamination=contamination, random_state=42)
+        predictions = model.fit_predict(col_data)
+        # score_samples is lower for more anomalous points; negate so this
+        # column keeps the same "higher = more anomalous" convention every
+        # other technique in this file uses.
+        scores = -model.score_samples(col_data)
 
         return df.with_columns([
-            pl.Series(name=f"{column}_is_anomaly", values=is_anomaly.flatten()),
-            pl.Series(name=f"{column}_anomaly_score", values=scores.flatten())
+            pl.Series(name=f"{column}_is_anomaly", values=(predictions == -1)),
+            pl.Series(name=f"{column}_anomaly_score", values=scores)
         ])
 
     def ml_anomaly_zscore(self, df: pl.DataFrame, column: str, threshold: float = 3.0) -> pl.DataFrame:
@@ -1010,27 +978,58 @@ class DataProcessor:
         ])
 
     def ml_anomaly_lof(self, df: pl.DataFrame, column: str, n_neighbors: int = 20) -> pl.DataFrame:
-        """Local Outlier Factor - simplified"""
-        import numpy as np
-        col_data = df[column].to_numpy()
-        mean_val = np.mean(col_data)
-        distances = np.abs(col_data - mean_val)
-        max_dist = np.max(distances)
-        if max_dist == 0:
-            max_dist = 1
-        scores = 1 - (distances / max_dist)
-        is_outlier = scores < 0.3
+        """Local Outlier Factor via scikit-learn - the genuine, density-based
+        algorithm this operation's name promises, not the distance-from-mean
+        heuristic an earlier version of this method computed under the same
+        name. Run with novelty=False (scikit-learn's default), the correct
+        mode for scoring a fixed, already-collected population for its own
+        internal outliers, as opposed to novelty=True, used instead by the
+        ML Models view's trainable models to judge NEW data against a
+        population already seen. n_neighbors is capped at one less than the
+        population size, since scikit-learn requires strictly fewer
+        neighbors than there are samples; a small population still runs,
+        with fewer neighbors than requested, rather than raising an error
+        the reviewer has no obvious way to resolve from this dialog."""
+        from sklearn.neighbors import LocalOutlierFactor
+        col_data = df[column].to_numpy().reshape(-1, 1)
+        n = len(col_data)
+        if n < 2:
+            return df.with_columns([
+                pl.lit(False).alias(f"{column}_is_outlier"),
+                pl.lit(None, dtype=pl.Float64).alias(f"{column}_lof_score"),
+            ])
+
+        k = max(1, min(n_neighbors, n - 1))
+        model = LocalOutlierFactor(n_neighbors=k)
+        predictions = model.fit_predict(col_data)
+        # negative_outlier_factor_ is lower (more negative) for more
+        # anomalous points; negate so this column keeps the same
+        # "higher = more anomalous" convention every other technique here uses.
+        scores = -model.negative_outlier_factor_
+
         return df.with_columns([
-            pl.Series(name=f"{column}_is_outlier", values=is_outlier),
+            pl.Series(name=f"{column}_is_outlier", values=(predictions == -1)),
             pl.Series(name=f"{column}_lof_score", values=scores)
         ])
 
     def ml_outlier_detection(self, df: pl.DataFrame, column: str, output_col: str, method: str = 'iqr') -> pl.DataFrame:
-        """General outlier detection"""
+        """General outlier detection.
+
+        ml_anomaly_zscore()/ml_anomaly_iqr() don't take an output_col
+        (they always name their flag column f"{column}_is_outlier") - this
+        used to pass output_col through to them anyway, which raised
+        TypeError on every call (caught by restoring this method's own
+        test coverage, previously masked by a blanket try/except/skip).
+        Renames their fixed-name flag column to the caller's requested
+        output_col afterward instead."""
+        fixed_col = f"{column}_is_outlier"
         if method == 'zscore':
-            return self.ml_anomaly_zscore(df, column=column, output_col=output_col, threshold=3.0)
+            result = self.ml_anomaly_zscore(df, column=column, threshold=3.0)
         else:
-            return self.ml_anomaly_iqr(df, column=column, output_col=output_col, multiplier=1.5)
+            result = self.ml_anomaly_iqr(df, column=column, multiplier=1.5)
+        if output_col != fixed_col:
+            result = result.rename({fixed_col: output_col})
+        return result
 
     def ml_clustering(self, df: pl.DataFrame, column: str, output_col: str, n_clusters: int = 3) -> pl.DataFrame:
         """K-Means clustering - simplified"""
@@ -2759,25 +2758,29 @@ class DataProcessor:
 
     def audit_round_numbers(self, df: pl.DataFrame, column: str, threshold: float, output_col: str,
                            score_col: str, **kwargs) -> pl.DataFrame:
-        """Detect unusually round numbers (potential manipulation)"""
+        """Detect unusually round numbers (potential manipulation).
+
+        roundness = what fraction of the number's digits are trailing
+        zeros (e.g. 5000 -> 3 of 4 digits -> 0.75; 150 -> 1 of 3 -> 0.333;
+        123.45, having a fractional part at all, -> 0.0). A prior version
+        of this scored how close the number's mantissa (its leading
+        digits normalized into [1, 10)) was to exactly 1.0 - which is
+        mathematically incapable of ever recognizing 200, 500, or 5000 as
+        round (their mantissas are 2, 5, and 5 - nowhere near 1), while
+        scoring 123.45 as MORE round than 200 purely because 123.45's
+        mantissa (1.235) happens to be numerically closer to 1.0. Verified
+        against exactly that case while restoring test coverage for this
+        method (its own test had been silently skipping itself on any
+        exception, which is how this went unnoticed)."""
         def calc_roundness(val):
             if val is None or val == 0:
                 return 0.0
             val = abs(float(val))
-            # Calculate ratio of trailing zeros for integers
-            log10 = np.log10(val)
-            mantissa = 10 ** (log10 - np.floor(log10))
-            # Higher score = more round (mantissa close to 1, 10, 100...)
-            round_scores = [1.0, 0.1, 0.01, 0.001]
-            # max(..., 0) (an int) rather than 0.0 would return a plain
-            # Python int whenever the score clamps to zero, mixing with the
-            # numpy.float64 from the un-clamped branch — a mixed
-            # int/numpy.float64 list downstream produces a mixed
-            # bool/numpy.bool_ "is_round" list, which polars' Series
-            # constructor refuses ("found value of type Boolean" while
-            # inferring Float64) — hence the explicit float() here.
-            score = max(1 - min(abs(mantissa - r) for r in round_scores), 0.0)
-            return float(score)
+            if val != int(val):
+                return 0.0  # a genuine fractional amount is never "round"
+            digit_str = str(int(val))
+            trailing_zeros = len(digit_str) - len(digit_str.rstrip('0'))
+            return float(trailing_zeros) / len(digit_str)
 
         roundness = [calc_roundness(v) for v in df[column]]
         is_round = [s >= threshold for s in roundness]
@@ -3784,10 +3787,10 @@ class DataProcessor:
         elif method == "stratified":
             if stratify_column:
                 # Sample proportionally from each stratum
-                strata = df.group_by(stratify_column).agg(pl.col(0).count().alias("count"))
+                strata = df.group_by(stratify_column).agg(pl.len().alias("count"))
                 total = strata["count"].sum()
                 samples = []
-                for _, row in strata.iterrows():
+                for row in strata.iter_rows(named=True):
                     stratum_size = int(n * row["count"] / total) or 1
                     stratum_df = df.filter(pl.col(stratify_column) == row[stratify_column])
                     if random_seed:
@@ -4940,34 +4943,6 @@ class LegacyDataProcessor:
         return df.with_columns(pl.col(column).exp().alias(f"{column}_exp"))
 
     # =========================================================================
-    # TRIGONOMETRIC TRANSFORMATIONS
-    # =========================================================================
-
-    def trig_sin(self, df: pl.DataFrame, column: str) -> pl.DataFrame:
-        """Sine (radians)"""
-        return df.with_columns(pl.col(column).sin().alias(f"{column}_sin"))
-
-    def trig_cos(self, df: pl.DataFrame, column: str) -> pl.DataFrame:
-        """Cosine (radians)"""
-        return df.with_columns(pl.col(column).cos().alias(f"{column}_cos"))
-
-    def trig_tan(self, df: pl.DataFrame, column: str) -> pl.DataFrame:
-        """Tangent (radians)"""
-        return df.with_columns(pl.col(column).tan().alias(f"{column}_tan"))
-
-    def trig_asin(self, df: pl.DataFrame, column: str) -> pl.DataFrame:
-        """Arc sine (radians)"""
-        return df.with_columns(pl.col(column).arcsin().alias(f"{column}_asin"))
-
-    def trig_acos(self, df: pl.DataFrame, column: str) -> pl.DataFrame:
-        """Arc cosine (radians)"""
-        return df.with_columns(pl.col(column).arccos().alias(f"{column}_acos"))
-
-    def trig_atan(self, df: pl.DataFrame, column: str) -> pl.DataFrame:
-        """Arc tangent (radians)"""
-        return df.with_columns(pl.col(column).arctan().alias(f"{column}_atan"))
-
-    # =========================================================================
     # DATE/TIME TRANSFORMATIONS
     # =========================================================================
 
@@ -5152,22 +5127,20 @@ class LegacyDataProcessor:
     # =========================================================================
 
     def ml_anomaly_iforest(self, df: pl.DataFrame, column: str, contamination: float = 0.1) -> pl.DataFrame:
-        """Anomaly detection using Isolation Forest - simplified"""
+        """Anomaly detection using scikit-learn's real Isolation Forest.
+        This class's copy is unreachable via the live Transform dispatch
+        (see DataProcessor.ml_anomaly_iforest, which the pipeline actually
+        calls), but kept in sync with it so no dead heuristic-based
+        implementation is left lying around under the same method name."""
+        from sklearn.ensemble import IsolationForest
         col_data = df[column].to_numpy().reshape(-1, 1)
-        mean_val = np.mean(col_data)
-        std_val = np.std(col_data)
-        if std_val == 0:
-            std_val = 1
-
-        # Simplified anomaly detection based on distance from mean
-        distances = np.abs(col_data - mean_val) / std_val
-        threshold = 2.5  # Simplified threshold
-        is_anomaly = distances > threshold
-        scores = 1 - (1 / (1 + distances))  # Higher = more anomalous
+        model = IsolationForest(contamination=contamination, random_state=42)
+        predictions = model.fit_predict(col_data)
+        scores = -model.score_samples(col_data)
 
         return df.with_columns([
-            pl.Series(name=f"{column}_is_anomaly", values=is_anomaly),
-            pl.Series(name=f"{column}_anomaly_score", values=scores.flatten())
+            pl.Series(name=f"{column}_is_anomaly", values=(predictions == -1)),
+            pl.Series(name=f"{column}_anomaly_score", values=scores)
         ])
 
     def ml_anomaly_zscore(self, df: pl.DataFrame, column: str, threshold: float = 3.0) -> pl.DataFrame:
@@ -5196,19 +5169,27 @@ class LegacyDataProcessor:
         ])
 
     def ml_anomaly_lof(self, df: pl.DataFrame, column: str, n_neighbors: int = 20) -> pl.DataFrame:
-        """Local Outlier Factor - simplified"""
-        col_data = df[column].to_numpy()
-        mean_val = np.mean(col_data)
-        distances = np.abs(col_data - mean_val)
-        max_dist = np.max(distances)
-        if max_dist == 0:
-            max_dist = 1
-        # Simplified LOF-like score
-        scores = 1 - (distances / max_dist)
-        threshold = 0.3
-        is_outlier = scores < threshold
+        """Local Outlier Factor via scikit-learn's real, density-based
+        algorithm. This class's copy is unreachable via the live Transform
+        dispatch (see DataProcessor.ml_anomaly_lof, which the pipeline
+        actually calls), but kept in sync with it so no dead heuristic-based
+        implementation is left lying around under the same method name."""
+        from sklearn.neighbors import LocalOutlierFactor
+        col_data = df[column].to_numpy().reshape(-1, 1)
+        n = len(col_data)
+        if n < 2:
+            return df.with_columns([
+                pl.lit(False).alias(f"{column}_is_outlier"),
+                pl.lit(None, dtype=pl.Float64).alias(f"{column}_lof_score"),
+            ])
+
+        k = max(1, min(n_neighbors, n - 1))
+        model = LocalOutlierFactor(n_neighbors=k)
+        predictions = model.fit_predict(col_data)
+        scores = -model.negative_outlier_factor_
+
         return df.with_columns([
-            pl.Series(name=f"{column}_is_outlier", values=is_outlier),
+            pl.Series(name=f"{column}_is_outlier", values=(predictions == -1)),
             pl.Series(name=f"{column}_lof_score", values=scores)
         ])
 

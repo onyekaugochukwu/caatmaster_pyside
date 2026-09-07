@@ -72,8 +72,12 @@ class TestDatabaseInit:
         tables = inspector.get_table_names()
         assert len(tables) > 0, "No tables were created"
 
-        # Verify key tables exist
-        expected_tables = ["users", "datasets", "projects", "ml_runs", "project_sessions"]
+        # Verify key tables exist - only User (auth) and MLModel (saved ML
+        # model registry) are real tables here; everything else the app
+        # persists (projects, datasets, transformation pipelines) lives in
+        # the local .caat file format instead (see core/models.py's own
+        # module docstring for why 15 other models were removed).
+        expected_tables = ["users", "ml_models"]
         for table in expected_tables:
             assert table in tables, f"Table '{table}' was not created"
 
@@ -278,9 +282,13 @@ class TestModels:
             assert user.is_active is True
             assert user.created_at is not None
 
-    def test_project_model(self, temp_dir):
-        """Test Project model creation and attributes"""
-        test_db_path = temp_dir / "test_project.db"
+    def test_ml_model_model(self, temp_dir):
+        """Test MLModel creation and attributes - the only other real
+        table besides User (see core/models.py's module docstring: every
+        other model that used to live here was removed as dead schema,
+        since projects/datasets/transformation pipelines are persisted in
+        the local .caat file format instead, not this database)."""
+        test_db_path = temp_dir / "test_ml_model.db"
         test_db_url = f"sqlite:///{test_db_path}"
 
         test_engine = create_engine(
@@ -295,9 +303,8 @@ class TestModels:
         test_session = sessionmaker(autocommit=False, autoflush=False, bind=test_engine, expire_on_commit=False)
 
         with test_session() as db:
-            from core.models import User, Project
+            from core.models import User, MLModel
 
-            # Create a user first
             user = User(
                 username="testuser",
                 email="test@example.com",
@@ -308,232 +315,22 @@ class TestModels:
             db.commit()
             db.refresh(user)
 
-            # Create a project
-            project = Project(
-                name="Test Project",
-                description="A test project",
-                client_name="Test Client",
-                engagement_type="audit",
-                created_by=user.id,
-                status="active",
-                tags=["test", "audit"]
+            ml_model = MLModel(
+                name="Test Isolation Forest",
+                model_type="isolation_forest",
+                file_path="/path/to/model.pkl",
+                target_column="amount",
+                feature_columns=["amount", "vendor_id"],
+                hyperparameters={"contamination": 0.05},
+                metrics={"anomaly_count": 12},
+                user_id=user.id,
             )
-            db.add(project)
+            db.add(ml_model)
             db.commit()
-            db.refresh(project)
+            db.refresh(ml_model)
 
-            assert project.id is not None
-            assert project.name == "Test Project"
-            assert project.status == "active"
-            assert project.tags == ["test", "audit"]
-
-    def test_dataset_model(self, temp_dir):
-        """Test Dataset model creation and attributes"""
-        test_db_path = temp_dir / "test_dataset.db"
-        test_db_url = f"sqlite:///{test_db_path}"
-
-        test_engine = create_engine(
-            test_db_url,
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-            echo=False,
-        )
-
-        from core import models  # noqa: F401
-        Base.metadata.create_all(bind=test_engine)
-        test_session = sessionmaker(autocommit=False, autoflush=False, bind=test_engine, expire_on_commit=False)
-
-        with test_session() as db:
-            from core.models import User, Dataset
-
-            # Create a user first
-            user = User(
-                username="testuser",
-                email="test@example.com",
-                hashed_password="hash",
-                full_name="Test User"
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-
-            # Create a dataset
-            dataset = Dataset(
-                name="Test Dataset",
-                file_path="/path/to/file.csv",
-                file_format="csv",
-                row_count=1000,
-                column_count=10,
-                file_size=10240,
-                created_by=user.id
-            )
-            db.add(dataset)
-            db.commit()
-            db.refresh(dataset)
-
-            assert dataset.id is not None
-            assert dataset.name == "Test Dataset"
-            assert dataset.row_count == 1000
-            assert dataset.file_format == "csv"
-
-    def test_project_session_model(self, temp_dir):
-        """Test ProjectSession model creation"""
-        test_db_path = temp_dir / "test_session.db"
-        test_db_url = f"sqlite:///{test_db_path}"
-
-        test_engine = create_engine(
-            test_db_url,
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-            echo=False,
-        )
-
-        from core import models  # noqa: F401
-        Base.metadata.create_all(bind=test_engine)
-        test_session = sessionmaker(autocommit=False, autoflush=False, bind=test_engine, expire_on_commit=False)
-
-        with test_session() as db:
-            from core.models import User, Project, ProjectSession
-
-            # Create user and project
-            user = User(
-                username="testuser",
-                email="test@example.com",
-                hashed_password="hash",
-                full_name="Test User"
-            )
-            db.add(user)
-            db.commit()
-
-            project = Project(
-                name="Test Project",
-                created_by=user.id
-            )
-            db.add(project)
-            db.commit()
-            db.refresh(project)
-
-            # Create session
-            session = ProjectSession(
-                project_id=project.id,
-                session_name="Analysis Session 1",
-                workspace_state={"view": "data"},
-                analysis_context={"filters": []}
-            )
-            db.add(session)
-            db.commit()
-            db.refresh(session)
-
-            assert session.id is not None
-            assert session.session_name == "Analysis Session 1"
-            assert session.is_active is True
-            assert session.version == 1
-
-    def test_ml_run_model(self, temp_dir):
-        """Test MLRun model creation"""
-        test_db_path = temp_dir / "test_mlrun.db"
-        test_db_url = f"sqlite:///{test_db_path}"
-
-        test_engine = create_engine(
-            test_db_url,
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-            echo=False,
-        )
-
-        from core import models  # noqa: F401
-        Base.metadata.create_all(bind=test_engine)
-        test_session = sessionmaker(autocommit=False, autoflush=False, bind=test_engine, expire_on_commit=False)
-
-        with test_session() as db:
-            from core.models import User, MLRun
-
-            # Create user first
-            user = User(
-                username="testuser",
-                email="test@example.com",
-                hashed_password="hash",
-                full_name="Test User"
-            )
-            db.add(user)
-            db.commit()
-
-            # Create ML run
-            ml_run = MLRun(
-                run_id="run-001",
-                dataset_name="test_dataset",
-                algorithm="isolation_forest",
-                summary="Test run",
-                metrics_json='{"accuracy": 0.95}',
-                created_by=user.id
-            )
-            db.add(ml_run)
-            db.commit()
-            db.refresh(ml_run)
-
-            assert ml_run.id is not None
-            assert ml_run.run_id == "run-001"
-            assert ml_run.algorithm == "isolation_forest"
-
-    def test_transformation_step_model(self, temp_dir):
-        """Test TransformationStep model creation"""
-        test_db_path = temp_dir / "test_transform.db"
-        test_db_url = f"sqlite:///{test_db_path}"
-
-        test_engine = create_engine(
-            test_db_url,
-            connect_args={"check_same_thread": False},
-            poolclass=StaticPool,
-            echo=False,
-        )
-
-        from core import models  # noqa: F401
-        Base.metadata.create_all(bind=test_engine)
-        test_session = sessionmaker(autocommit=False, autoflush=False, bind=test_engine, expire_on_commit=False)
-
-        with test_session() as db:
-            from core.models import User, Project, ProjectSession, TransformationStep
-
-            # Create user
-            user = User(
-                username="testuser",
-                email="test@example.com",
-                hashed_password="hash",
-                full_name="Test User"
-            )
-            db.add(user)
-            db.commit()
-
-            # Create project and session
-            project = Project(
-                name="Test Project",
-                created_by=user.id
-            )
-            db.add(project)
-            db.commit()
-
-            session = ProjectSession(
-                project_id=project.id,
-                session_name="Test Session"
-            )
-            db.add(session)
-            db.commit()
-            db.refresh(session)
-
-            # Create transformation step
-            step = TransformationStep(
-                session_id=session.id,
-                operation_type="ml_predict",
-                operation_name="ml_detect_anomaly",
-                parameters={"column": "amount", "threshold": 0.5},
-                status="success",
-                step_order=1
-            )
-            db.add(step)
-            db.commit()
-            db.refresh(step)
-
-            assert step.id is not None
-            assert step.operation_type == "ml_predict"
-            assert step.status == "success"
-            assert step.step_order == 1
+            assert ml_model.id is not None
+            assert ml_model.name == "Test Isolation Forest"
+            assert ml_model.model_type == "isolation_forest"
+            assert ml_model.feature_columns == ["amount", "vendor_id"]
+            assert ml_model.is_active is True

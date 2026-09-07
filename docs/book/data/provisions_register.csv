@@ -1,0 +1,6 @@
+category,prior_year,current_year,settlement_flag
+Warranty Provision,850000,820000,False
+Legal Claims Provision,1200000,400000,True
+Restructuring Provision,300000,310000,False
+Environmental Remediation,500000,180000,False
+Onerous Contract Provision,150000,165000,False

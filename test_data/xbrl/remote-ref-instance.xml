@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xbrl xmlns="http://www.xbrl.org/2003/instance"
+      xmlns:link="http://www.xbrl.org/2003/linkbase"
+      xmlns:xlink="http://www.w3.org/1999/xlink"
+      xmlns:iso4217="http://www.xbrl.org/2003/iso4217"
+      xmlns:test="http://test.example/taxonomy">
+  <link:schemaRef xlink:type="simple" xlink:href="http://test.example/remote/test-taxonomy.xsd"/>
+  <context id="c-duration">
+    <entity>
+      <identifier scheme="http://www.example.com">0001234567</identifier>
+    </entity>
+    <period>
+      <startDate>2024-01-01</startDate>
+      <endDate>2024-12-31</endDate>
+    </period>
+  </context>
+  <unit id="usd">
+    <measure>iso4217:USD</measure>
+  </unit>
+  <test:Revenue contextRef="c-duration" unitRef="usd" decimals="0">1234567</test:Revenue>
+</xbrl>

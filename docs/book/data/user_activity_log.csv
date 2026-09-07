@@ -1,0 +1,22 @@
+user_id,user_name,department,action,action_date,status,termination_date
+U101,Grace Liu,Procurement,Create Vendor,2025-01-06,Active,
+U101,Grace Liu,Procurement,Create PO,2025-01-09,Active,
+U102,Marcus Webb,Accounts Payable,Pay Vendor,2025-01-07,Active,
+U102,Marcus Webb,Accounts Payable,Approve Invoice,2025-01-10,Active,
+U103,Elena Petrova,Procurement,Create Vendor,2025-01-08,Active,
+U103,Elena Petrova,Procurement,Pay Vendor,2025-01-14,Active,
+U104,David Osei,Procurement,Create PO,2025-01-09,Active,
+U104,David Osei,Procurement,Approve PO,2025-01-11,Active,
+U105,Priya Nair,Warehouse,Receive Goods,2025-01-13,Active,
+U105,Priya Nair,Warehouse,Approve Invoice,2025-01-16,Active,
+U106,Tom Brennan,Procurement,Create PO,2025-01-10,Active,
+U107,Sarah Kim,Accounts Payable,Approve PO,2025-01-12,Active,
+U107,Sarah Kim,Accounts Payable,Approve Invoice,2025-01-17,Active,
+U108,James Okoro,Warehouse,Create Vendor,2025-01-06,Active,
+U108,James Okoro,Warehouse,Create PO,2025-01-11,Active,
+U108,James Okoro,Warehouse,Receive Goods,2025-01-15,Active,
+U109,Wendy Chu,Finance,Approve Invoice,2025-01-05,Terminated,2025-01-15
+U109,Wendy Chu,Finance,Pay Vendor,2025-01-08,Terminated,2025-01-15
+U109,Wendy Chu,Finance,Approve Invoice,2025-01-22,Terminated,2025-01-15
+U110,Alan Brooks,Procurement,Create Vendor,2025-01-07,Active,
+U111,Robert Lin,Warehouse,Receive Goods,2024-12-10,Terminated,2024-12-20
