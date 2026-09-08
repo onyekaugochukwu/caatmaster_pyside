@@ -48,7 +48,8 @@ def create_readme():
         print(f"  Warning: {app_path} not found")
         return
 
-    readme_content = """# CAATmaster
+    arch_label = _mac_arch_label()
+    readme_content = f"""# CAATmaster
 
 Professional Continuous Audit Analytics Tool - Desktop Version
 
@@ -74,7 +75,10 @@ The application creates a `~/.caatmaster` directory containing:
 
 ## System Requirements
 
-- macOS 12 (Monterey) or later, Apple Silicon or Intel
+- macOS 12 (Monterey) or later, {arch_label}
+- This build is single-architecture, not a universal binary - it will
+  not run on the other Mac CPU architecture. Get the matching download
+  for your Mac if one is offered separately.
 - No additional dependencies required (all bundled)
 - Approximately 500MB free disk space
 
@@ -86,6 +90,16 @@ For issues or questions, please refer to the documentation.
     with open(readme_path, 'w', encoding='utf-8') as f:
         f.write(readme_content)
     print(f"  Created {readme_path}")
+
+
+def _mac_arch_label() -> str:
+    import platform
+    machine = platform.machine()
+    if machine == 'arm64':
+        return 'Apple Silicon (M1/M2/M3/M4)'
+    elif machine == 'x86_64':
+        return 'Intel'
+    return machine
 
 
 def create_archive():
@@ -100,8 +114,10 @@ def create_archive():
 
     from datetime import datetime
 
+    import platform
+    arch = platform.machine()
     timestamp = datetime.now().strftime("%Y%m%d")
-    archive_name = f"CAATmaster_macOS_{timestamp}.zip"
+    archive_name = f"CAATmaster_macOS_{arch}_{timestamp}.zip"
 
     # ditto preserves the .app bundle's structure (symlinks, code
     # signature placeholders, resource forks) the way macOS expects -

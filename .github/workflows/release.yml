@@ -84,6 +84,11 @@ jobs:
           if-no-files-found: error
 
   build-macos:
+    # GitHub's hosted macOS runners are Apple Silicon (arm64) only -
+    # Intel runner images (macos-13 and earlier) were retired, and
+    # PyInstaller bundles the interpreter it runs under, so this build
+    # only runs on Apple Silicon Macs. An Intel build would need
+    # self-hosted Intel Mac hardware, which isn't set up here.
     runs-on: macos-latest
     timeout-minutes: 40
     steps:
@@ -132,7 +137,7 @@ jobs:
 
             - **Windows**: `CAATmaster_Win_Portable_*.zip` - extract and run `start.bat` or `CAATmaster.exe`.
             - **Linux**: `CAATmaster-*-x86_64.AppImage` (`chmod +x`, then run directly) or `CAATmaster_Linux_Portable_*.tar.gz`.
-            - **macOS**: `CAATmaster_macOS_*.zip` - unsigned build, see the bundled README for the Gatekeeper workaround.
+            - **macOS**: `CAATmaster_macOS_arm64_*.zip` - Apple Silicon (M1/M2/M3/M4) only; GitHub's hosted macOS runners no longer support Intel, so no Intel build is offered. Unsigned build, see the bundled README for the Gatekeeper workaround.
             - The companion book, *Audit Analytics with CaatMaster*, is attached as a PDF.
           files: |
             artifacts/linux-builds/*
