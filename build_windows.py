@@ -60,24 +60,20 @@ def build_onefile():
     print("Building single .exe file with PyInstaller...")
     print("Note: First launch may be slower (extracting to temp)...")
 
+    # Reuses caatmaster.spec (the same dependency list as the portable
+    # build) rather than a separate, hand-maintained set of PyInstaller
+    # CLI flags - the latter previously drifted out of date and was
+    # missing most of the app's actual hidden imports (arelle, keyring,
+    # passlib, cryptography, qtawesome) and the resources/ directory.
     cmd = [
         sys.executable, '-m', 'PyInstaller',
         '--clean',
-        '--onefile',  # Create single executable
-        '--noconsole',  # No console window
-        '--name', 'CAATmaster',
-        '--add-data', 'src;src',
-        '--hiddenimport', 'PySide6.QtCore',
-        '--hiddenimport', 'PySide6.QtGui',
-        '--hiddenimport', 'PySide6.QtWidgets',
-        '--hiddenimport', 'sqlalchemy.dialects.sqlite',
-        '--hiddenimport', 'polars',
-        '--exclude-module', 'tkinter',
-        '--exclude-module', 'IPython',
-        'main.py',
+        'caatmaster.spec',
     ]
 
-    subprocess.check_call(cmd)
+    env = os.environ.copy()
+    env['CAATMASTER_ONEFILE'] = '1'
+    subprocess.check_call(cmd, env=env)
 
 
 def create_launcher_portable():

@@ -1,9 +1,14 @@
 """
 PyInstaller spec file for CAATmaster.
-Builds a portable onedir distribution (Windows/Linux/macOS).
+Builds a portable onedir distribution (Windows/Linux/macOS), or a
+single-file executable if the CAATMASTER_ONEFILE environment variable
+is set to "1" before invoking PyInstaller on this spec.
 """
+import os
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_all
+
+ONEFILE = os.environ.get('CAATMASTER_ONEFILE') == '1'
 
 project_root = Path(SPECPATH)
 src_path = project_root / "src"
@@ -90,11 +95,7 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
+exe_kwargs = dict(
     name='CAATmaster',
     debug=False,
     bootloader_ignore_signals=False,
@@ -110,12 +111,34 @@ exe = EXE(
     icon=None,
 )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='CAATmaster',
-)
+if ONEFILE:
+    # Everything (binaries + datas) goes into the single EXE; there is
+    # no separate COLLECT step and no _internal/ directory - PyInstaller
+    # extracts to a temp dir (sys._MEIPASS) at each launch instead.
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        exclude_binaries=False,
+        **exe_kwargs,
+    )
+else:
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        **exe_kwargs,
+    )
+
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        name='CAATmaster',
+    )

@@ -94,21 +94,13 @@ def main():
     # Execute appropriate build
     if system == "windows":
         if build_type == "onefile":
-            # Modify build_windows.py temporarily
             print("Building single .exe for Windows...")
-            spec_file = Path('caatmaster.spec')
-            original_spec = spec_file.read_text() if spec_file.exists() else ""
-
-            # Create onefile spec
-            onefile_spec = original_spec.replace(
-                "exclude_binaries=True",
-                "exclude_binaries=False"
-            ).replace(
-                "name='CAATmaster',\n    debug=False,",
-                "name='CAATmaster',\n    debug=False,\n    onefile=True,"
+            env = os.environ.copy()
+            env['CAATMASTER_ONEFILE'] = '1'
+            subprocess.check_call(
+                [sys.executable, '-m', 'PyInstaller', '--clean', 'caatmaster.spec'],
+                env=env,
             )
-
-            subprocess.check_call([sys.executable, '-m', 'PyInstaller', '--onefile', '--noconsole', '--name', 'CAATmaster', 'main.py'])
         else:
             # Use build_windows.py for portable
             subprocess.check_call([sys.executable, 'build_windows.py'])
