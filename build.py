@@ -114,15 +114,15 @@ def main():
             subprocess.check_call([sys.executable, 'build_linux.py'])
 
     elif system == "macos":
-        print("Building for macOS...")
-        print("Note: macOS builds require a Mac. Using portable directory approach.")
-        subprocess.check_call([sys.executable, 'build_linux.py'])  # Reuse Linux script
+        print("Building CAATmaster.app for macOS...")
+        subprocess.check_call([sys.executable, 'build_macos.py'])
 
     else:
         print(f"Error: Unknown platform {system}")
         print("Please use platform-specific build script:")
         print("  Windows: build_windows.py")
         print("  Linux:   build_linux.py or build_appimage.py")
+        print("  macOS:   build_macos.py")
         sys.exit(1)
 
     print()

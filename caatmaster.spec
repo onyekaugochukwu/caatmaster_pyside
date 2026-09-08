@@ -5,6 +5,7 @@ single-file executable if the CAATMASTER_ONEFILE environment variable
 is set to "1" before invoking PyInstaller on this spec.
 """
 import os
+import sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_all
 
@@ -142,3 +143,15 @@ else:
         upx_exclude=[],
         name='CAATmaster',
     )
+
+    if sys.platform == 'darwin':
+        app = BUNDLE(
+            coll,
+            name='CAATmaster.app',
+            icon=None,
+            bundle_identifier='com.caatmaster.app',
+            info_plist={
+                'NSHighResolutionCapable': True,
+                'CFBundleShortVersionString': '0.1.0',
+            },
+        )

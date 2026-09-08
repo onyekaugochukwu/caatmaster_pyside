@@ -168,11 +168,17 @@ Terminal=false
 
     result = subprocess.run(appimagetool_cmd, env=appimage_env, capture_output=True, text=True)
 
-    if result.returncode != 0 and 'libfuse.so.2' in result.stderr:
-        # No FUSE (common in containers/CI) - appimagetool's own
-        # bundled runtime falls back to extracting itself instead of
-        # mounting, which needs no FUSE at all.
-        print("  FUSE not available, retrying with --appimage-extract-and-run...")
+    if result.returncode != 0:
+        # FUSE is commonly unavailable or unusable in containers/CI -
+        # either the shared library is missing (dlopen error) or
+        # /dev/fuse can't be opened (permission error in an
+        # unprivileged container). appimagetool's own bundled runtime
+        # falls back to extracting itself instead of mounting, which
+        # needs no FUSE at all either way, so retry unconditionally on
+        # any failure rather than matching one specific error string.
+        print(result.stdout)
+        print(result.stderr)
+        print("  First attempt failed, retrying with --appimage-extract-and-run...")
         result = subprocess.run(
             [appimagetool_cmd[0], '--appimage-extract-and-run'] + appimagetool_cmd[1:],
             env=appimage_env,
