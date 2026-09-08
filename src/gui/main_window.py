@@ -1302,7 +1302,6 @@ class MainWindow(QMainWindow):
         from gui.views.sql_transform_view import SQLTransformView
         from gui.views.analyze_view import AnalyzeView
         from gui.views.visualizations_view import VisualizationsView
-        from gui.views.query_view import QueryView
         from gui.views.ml_models_view import MLModelInventoryView
         from gui.views.projects_view import ProjectsView
         from gui.views.reports_view import ReportsView
@@ -1319,7 +1318,6 @@ class MainWindow(QMainWindow):
             "sql": SQLTransformView(ai_sql_generator=self.ai_sql_generator),
             "analyze": AnalyzeView(),
             "visualizations": VisualizationsView(),
-            "query": QueryView(),
             "ml models": MLModelInventoryView(),
             "projects": ProjectsView(),
             "reports": ReportsView(),
@@ -1346,7 +1344,6 @@ class MainWindow(QMainWindow):
         transform_view = self.views["transform"]
         sql_view = self.views["sql"]
         viz_view = self.views["visualizations"]
-        query_view = self.views["query"]
         reports_view = self.views["reports"]
         transform_view.set_ai_manager(self.ai_manager)
         data_view.data_loaded.connect(transform_view.set_dataframe)
@@ -1355,7 +1352,6 @@ class MainWindow(QMainWindow):
         # wipes every other registered table each time it's called. Every
         # dataset gets registered by name instead, via _on_dataset_added.
         data_view.data_loaded.connect(viz_view.set_dataframe)
-        data_view.data_loaded.connect(query_view.set_dataframe)
         data_view.data_loaded.connect(reports_view.set_dataframe)
         data_view.dataset_added.connect(self._on_dataset_added)
         # Also refresh dashboard when dataset is added
@@ -1398,7 +1394,7 @@ class MainWindow(QMainWindow):
     # Data-workspace pages where the Applied Steps panel stays pinned —
     # anywhere you're actively working with a dataset's pipeline. Hidden on
     # Dashboard/Projects/Settings/ML Models, which have no dataset context.
-    PIPELINE_VIEWS = {"data", "transform", "sql", "visualizations", "reports", "query"}
+    PIPELINE_VIEWS = {"data", "transform", "sql", "visualizations", "reports"}
 
     @Slot(str)
     def on_navigation_requested(self, view_name):
@@ -1457,7 +1453,6 @@ class MainWindow(QMainWindow):
                 transform_view = self.views.get("transform")
                 sql_view = self.views.get("sql")
                 viz_view = self.views.get("visualizations")
-                query_view = self.views.get("query")
                 reports_view = self.views.get("reports")
 
                 if transform_view:
@@ -1467,8 +1462,6 @@ class MainWindow(QMainWindow):
                     sql_view.refresh_dataset(dataset.name, df, dataset_id=dataset.id)
                 if viz_view:
                     viz_view.set_dataframe(df)
-                if query_view:
-                    query_view.set_dataframe(df)
                 if reports_view:
                     reports_view.set_dataframe(df)
 
@@ -2211,19 +2204,16 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _on_transform_data_changed(self, df):
-        """Keep SQL/Visualizations/Reports/Query in sync whenever the
+        """Keep SQL/Visualizations/Reports in sync whenever the
         active dataset's data changes from the Transform page
         (apply/undo/toggle/clear a step), since the Applied Steps panel
         is reachable from every page, not just Transform."""
         viz_view = self.views.get("visualizations")
-        query_view = self.views.get("query")
         reports_view = self.views.get("reports")
         sql_view = self.views.get("sql")
 
         if viz_view:
             viz_view.set_dataframe(df)
-        if query_view:
-            query_view.set_dataframe(df)
         if reports_view:
             reports_view.set_dataframe(df)
         if sql_view and self.current_dataset:
@@ -4018,13 +4008,10 @@ class MainWindow(QMainWindow):
         if data_view and hasattr(data_view, 'set_project'):
             data_view.set_project(project)
 
-        # Update SQL views with project
+        # Update SQL view with project
         sql_view = self.views.get("sql")
         if sql_view and hasattr(sql_view, 'set_project'):
             sql_view.set_project(project)
-        query_view = self.views.get("query")
-        if query_view and hasattr(query_view, 'set_project'):
-            query_view.set_project(project)
 
     def set_dataset(self, dataset):
         """Set the current active dataset"""
