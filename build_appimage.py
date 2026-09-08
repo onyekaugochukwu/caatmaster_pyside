@@ -71,10 +71,11 @@ def create_appimage():
     else:
         print(f"  Warning: CAATmaster binary not found")
 
-    # Copy all internal files
+    # Copy all internal files - PyInstaller's onedir bootloader looks
+    # for _internal as a sibling of the executable, not under lib/.
     internal_path = dist_path / '_internal'
     if internal_path.exists():
-        shutil.copytree(internal_path, appdir_path / 'usr' / 'lib' / '_internal')
+        shutil.copytree(internal_path, appdir_path / 'usr' / 'bin' / '_internal')
 
     # Copy resources if they exist
     resources_src = Path('resources')
@@ -159,11 +160,26 @@ Terminal=false
     appimage_env = os.environ.copy()
     appimage_env['ARCH'] = 'x86_64'
 
-    result = subprocess.run([
-        str(appimagetool),
+    appimagetool_cmd = [
+        str(appimagetool.resolve()),
         str(appdir_path),
         f'CAATmaster-{version}-x86_64.AppImage'
-    ], env=appimage_env)
+    ]
+
+    result = subprocess.run(appimagetool_cmd, env=appimage_env, capture_output=True, text=True)
+
+    if result.returncode != 0 and 'libfuse.so.2' in result.stderr:
+        # No FUSE (common in containers/CI) - appimagetool's own
+        # bundled runtime falls back to extracting itself instead of
+        # mounting, which needs no FUSE at all.
+        print("  FUSE not available, retrying with --appimage-extract-and-run...")
+        result = subprocess.run(
+            [appimagetool_cmd[0], '--appimage-extract-and-run'] + appimagetool_cmd[1:],
+            env=appimage_env,
+        )
+    else:
+        print(result.stdout)
+        print(result.stderr)
 
     if result.returncode == 0:
         print(f"\n  ✓ Created: CAATmaster-{version}-x86_64.AppImage")

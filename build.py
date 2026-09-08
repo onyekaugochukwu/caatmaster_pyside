@@ -108,7 +108,6 @@ def main():
                 "name='CAATmaster',\n    debug=False,\n    onefile=True,"
             )
 
-            import subprocess
             subprocess.check_call([sys.executable, '-m', 'PyInstaller', '--onefile', '--noconsole', '--name', 'CAATmaster', 'main.py'])
         else:
             # Use build_windows.py for portable
