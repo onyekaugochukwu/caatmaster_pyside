@@ -545,6 +545,24 @@
     border-radius: 3px;
   }
 
+  .sql-block {
+    background: var(--bg-sidebar);
+    border: 1px solid var(--rule-strong);
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+    margin: 1.5rem 0;
+    overflow-x: auto;
+  }
+
+  .sql-block pre {
+    margin: 0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.86rem;
+    line-height: 1.6;
+    color: var(--ink);
+    white-space: pre;
+  }
+
   hr.rule {
     border: none;
     border-top: 1px solid var(--rule);
@@ -585,9 +603,12 @@
 
     .chapter { break-before: page; padding-top: 0; }
 
-    figure.screenshot, .callout, .case-study, .interpret, .steps {
+    figure.screenshot, .callout, .case-study, .interpret, .steps, .sql-block {
       break-inside: avoid;
     }
+
+    .sql-block { overflow: visible; }
+    .sql-block pre { white-space: pre-wrap; overflow-wrap: break-word; }
 
     a { color: inherit; text-decoration: none; }
 
@@ -742,6 +763,15 @@
     <ul class="toc-list">
       <li><a href="#ch31"><span class="toc-num">31</span>Every Flag Is a Question</a></li>
       <li><a href="#ch32"><span class="toc-num">32</span>Governance, Security, and Limits</a></li>
+    </ul>
+
+    <p class="toc-part">Part IX &mdash; Direct Data Access</p>
+    <ul class="toc-list">
+      <li><a href="#ch33"><span class="toc-num">33</span>The SQL Query Workflow</a></li>
+    </ul>
+
+    <p class="toc-part">Appendices</p>
+    <ul class="toc-list">
       <li><a href="#appa"><span class="toc-num">A</span>Operation Reference</a></li>
       <li><a href="#appb"><span class="toc-num">B</span>Dataset Reference</a></li>
       <li><a href="#appc"><span class="toc-num">C</span>Default Thresholds Reference</a></li>
@@ -752,12 +782,12 @@
     <button class="toc-toggle" onclick="document.getElementById('sidebar').classList.add('open')">Contents</button>
 
     <div class="cover" id="cover">
-      <p class="cover-eyebrow">Complete Edition &middot; Eight Parts, Thirty-Two Chapters, Three Appendices</p>
+      <p class="cover-eyebrow">Complete Edition &middot; Nine Parts, Thirty-Three Chapters, Three Appendices</p>
       <h1 class="cover-title">Audit Analytics with CaatMaster</h1>
       <p class="cover-sub">A practitioner&#8217;s guide to testing for error, omission, and fraud, using computer-assisted audit techniques, financial statement analytics, and AI-assisted review.</p>
       <div class="cover-meta">
-        <span>Parts I&ndash;VIII: Complete</span>
-        <span>32 Chapters</span>
+        <span>Parts I&ndash;IX: Complete</span>
+        <span>33 Chapters</span>
         <span>Companion to CaatMaster</span>
       </div>
     </div>
@@ -842,9 +872,22 @@
         <ul class="toc-print-list">
           <li><a class="toc-print-row" href="#ch31"><span class="toc-print-num">31</span><span class="toc-print-name">Every Flag Is a Question</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch31">165</span></a></li>
           <li><a class="toc-print-row" href="#ch32"><span class="toc-print-num">32</span><span class="toc-print-name">Governance, Security, and Limits</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch32">168</span></a></li>
-          <li><a class="toc-print-row" href="#appa"><span class="toc-print-num">A</span><span class="toc-print-name">Operation Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appa">171</span></a></li>
-          <li><a class="toc-print-row" href="#appb"><span class="toc-print-num">B</span><span class="toc-print-name">Dataset Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appb">187</span></a></li>
-          <li><a class="toc-print-row" href="#appc"><span class="toc-print-num">C</span><span class="toc-print-name">Default Thresholds Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appc">190</span></a></li>
+        </ul>
+      </div>
+
+      <div class="toc-print-part">
+        <p class="toc-print-part-label"><a href="#part9">Part IX &mdash; Direct Data Access</a></p>
+        <ul class="toc-print-list">
+          <li><a class="toc-print-row" href="#ch33"><span class="toc-print-num">33</span><span class="toc-print-name">The SQL Query Workflow</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="ch33">172</span></a></li>
+        </ul>
+      </div>
+
+      <div class="toc-print-part">
+        <p class="toc-print-part-label">Appendices</p>
+        <ul class="toc-print-list">
+          <li><a class="toc-print-row" href="#appa"><span class="toc-print-num">A</span><span class="toc-print-name">Operation Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appa">179</span></a></li>
+          <li><a class="toc-print-row" href="#appb"><span class="toc-print-num">B</span><span class="toc-print-name">Dataset Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appb">195</span></a></li>
+          <li><a class="toc-print-row" href="#appc"><span class="toc-print-num">C</span><span class="toc-print-name">Default Thresholds Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appc">198</span></a></li>
         </ul>
       </div>
     </div>
@@ -881,9 +924,9 @@
 
         <h2>How This Book Is Organized</h2>
 
-        <p>The eight parts of this book move from general capability toward specific application. Part I, which this chapter opens, covers the application itself: its structure, how to bring data into it without corrupting the very numbers under examination, and the design philosophy that separates deterministic calculation from AI assistance. Part II covers the classic techniques common to almost every CAAT tool: profiling, completeness testing, cross-tabulation, Benford&#8217;s Law, ratio analysis, anomaly detection, and sampling. Part III addresses internal control testing under the frameworks most commonly referenced in a financial statement audit, the Sarbanes-Oxley Act and the COSO Internal Control Framework. Part IV takes up the estimate-heavy areas of International Financial Reporting Standards where a recalculation, rather than a simple exception test, is the appropriate audit response: revenue recognition, expected credit losses, leases, impairment, provisions, inventory, tax, and foreign currency.</p>
+        <p>The nine parts of this book move from general capability toward specific application. Part I, which this chapter opens, covers the application itself: its structure, how to bring data into it without corrupting the very numbers under examination, and the design philosophy that separates deterministic calculation from AI assistance. Part II covers the classic techniques common to almost every CAAT tool: profiling, completeness testing, cross-tabulation, Benford&#8217;s Law, ratio analysis, anomaly detection, and sampling. Part III addresses internal control testing under the frameworks most commonly referenced in a financial statement audit, the Sarbanes-Oxley Act and the COSO Internal Control Framework. Part IV takes up the estimate-heavy areas of International Financial Reporting Standards where a recalculation, rather than a simple exception test, is the appropriate audit response: revenue recognition, expected credit losses, leases, impairment, provisions, inventory, tax, and foreign currency.</p>
 
-        <p>Part V returns to a problem introduced in Chapter 3 and treats it at full length: getting genuinely reliable figures out of a client&#8217;s own reporting, whether that reporting arrives as a spreadsheet or as a structured XBRL filing. Part VI covers the AI-assisted features in detail, beginning with the architectural pattern that keeps them from inventing figures. Part VII covers what happens after an analysis is complete: visualizing results, building a report, saving a procedure for reuse next year, and managing the underlying projects and datasets. Part VIII closes the book with two chapters on the limits of everything that came before it, on professional skepticism as an operating discipline rather than a slogan, and on the data governance obligations that a tool like this one creates for the firm that deploys it.</p>
+        <p>Part V returns to a problem introduced in Chapter 3 and treats it at full length: getting genuinely reliable figures out of a client&#8217;s own reporting, whether that reporting arrives as a spreadsheet or as a structured XBRL filing. Part VI covers the AI-assisted features in detail, beginning with the architectural pattern that keeps them from inventing figures. Part VII covers what happens after an analysis is complete: visualizing results, building a report, saving a procedure for reuse next year, and managing the underlying projects and datasets. Part VIII closes with two chapters on the limits of everything that came before it, on professional skepticism as an operating discipline rather than a slogan, and on the data governance obligations that a tool like this one creates for the firm that deploys it. Part IX closes the book with a single chapter on querying data directly with SQL, for the relational questions &mdash; self-joins, cross-dataset joins, and per-group ranking &mdash; that the Applied Steps pipeline's single-operation model doesn&#8217;t fit as naturally.</p>
 
         <h2>How to Read This Book</h2>
 
@@ -924,7 +967,7 @@
 
         <h2>Moving Around the Application</h2>
 
-        <p>CaatMaster presents its functionality through a set of views, reached from the sidebar, each responsible for one stage of the work. The Data view displays the current state of a dataset in a table and is where a dataset is first imported. The Transform view exposes the Applied Steps pipeline described above and is where the great majority of the transformations and tests covered in this book are actually run, since every statistical, audit, financial, and machine-learning operation opens as a dialog on top of it, in one of the three ways described below. The SQL Query view provides a direct SQL interface against every dataset currently open in the project, useful when a question is more naturally expressed as a join or an aggregation than as a sequence of individual operations. The Visualizations view builds charts from any dataset in the project. The Reports view assembles findings into a document for distribution, covered in Chapter 28. The Projects view manages the engagements themselves, and the Dashboard view gives a summary of recent activity across the current project.</p>
+        <p>CaatMaster presents its functionality through a set of views, reached from the sidebar, each responsible for one stage of the work. The Data view displays the current state of a dataset in a table and is where a dataset is first imported. The Transform view exposes the Applied Steps pipeline described above and is where the great majority of the transformations and tests covered in this book are actually run, since every statistical, audit, financial, and machine-learning operation opens as a dialog on top of it, in one of the three ways described below. The SQL Query workspace, covered in full in Chapter 33, provides a direct SQL interface against every dataset currently open in the project, useful when a question is more naturally expressed as a join or an aggregation than as a sequence of individual operations. The Visualizations view builds charts from any dataset in the project. The Reports view assembles findings into a document for distribution, covered in Chapter 28. The Projects view manages the engagements themselves, and the Dashboard view gives a summary of recent activity across the current project.</p>
 
         <p>A single dataset can be worked on from more than one view without conflict, because every view operates against the same underlying Applied Steps pipeline for that dataset. A transformation applied from the Transform view is immediately reflected in the Data view&#8217;s table, and a chart built in the Visualizations view against a dataset updates automatically if an upstream step in that dataset&#8217;s pipeline is later modified.</p>
 
@@ -2706,6 +2749,124 @@
 
       </section>
 
+      <div class="part-opener" id="part9">
+        <p class="part-label">Part IX</p>
+        <h2 class="part-title">Direct Data Access</h2>
+      </div>
+
+      <!-- ================= CHAPTER 33 ================= -->
+      <section class="chapter" id="ch33">
+        <p class="chapter-num">Chapter 33</p>
+        <h1 class="chapter-title">The SQL Query Workflow</h1>
+
+        <p class="lede"><span class="drop">E</span>very technique covered so far in this book is reached as a discrete operation: a dialog collects a handful of parameters, and a single, named transformation is appended to the Applied Steps pipeline. That model works well for a test that can be stated as a filter or a per-row calculation, but some audit questions are naturally relational instead &mdash; comparing a table against itself, joining two datasets on a shared key, or ranking each row against others in its own group. CaatMaster&#8217;s SQL Query workspace exists for exactly that class of question: a full SQL editor, backed by DuckDB, that queries one dataset or several at once without leaving the application or exporting anything to an external tool.</p>
+
+        <h2>Reaching the SQL Workspace</h2>
+
+        <p>The sidebar carries a segmented Data / <span class="ui">SQL Query</span> switch near its top, above the page navigation list. Clicking <span class="ui">SQL Query</span> replaces the Data workspace with the SQL editor; clicking <span class="ui">Data</span> switches back. This is a workspace mode, not a page in the usual sidebar list &mdash; it sits alongside Data rather than being reached from the same navigation list as Transform, Visualizations, or Reports.</p>
+
+        <h2>How It Works Internally</h2>
+
+        <p>The SQL workspace keeps its own in-memory DuckDB connection, entirely separate from the SQLite database that stores user accounts. Every dataset in the current project that has been checked in the Model Query list, described below, is registered as a DuckDB table under a sanitized version of its display name: spaces and punctuation become underscores, and a name that doesn&#8217;t already start with a letter or underscore gets one prefixed, so a dataset named <span class="ui">AP Transactions</span> becomes queryable as <code>AP_Transactions</code>. Registration happens against the dataset&#8217;s <em>current</em> data &mdash; whatever the Applied Steps pipeline currently produces, refreshed automatically whenever that pipeline changes, a dataset is renamed, or a new dataset is added, so a query never runs against data that CaatMaster has already moved past showing you.</p>
+
+        <h2>Model Query: Joining Across Datasets</h2>
+
+        <p>Above the query editor, a checklist labeled <span class="ui">Model Query</span> lists every dataset in the project; every checked one becomes a table you can reference by name in the query below. This is what makes a cross-dataset join possible without any separate Table &rarr; Join operation: check two datasets, and a query like <code>SELECT g.*, s.vendor FROM GL_Entries g JOIN Subledger s ON g.gl_id = s.gl_id</code> runs directly against both of them, exactly as it would against two tables in any relational database.</p>
+
+        <h2>The Toolbar</h2>
+
+        <p>Six controls sit above the query editor. <span class="ui">Execute</span> runs the current text against the registered tables and displays the result below, up to the first thousand rows. <span class="ui">Format SQL</span> uppercases keywords and puts one major clause per line &mdash; useful on a query pasted from elsewhere or drafted by AI, described further below. <span class="ui">Clear</span> empties the editor. A <span class="ui">Template</span> dropdown loads one of seven skeleton queries (a plain <code>SELECT</code>, a filtered <code>SELECT</code>, a <code>GROUP BY</code>, a join, a window-function rank, and two statistical patterns) as a starting point to edit rather than a runnable query as-is, since they reference a placeholder table named <code>data</code> rather than any specific dataset.</p>
+
+        <h3>Two Ways to Keep a Result: Apply to Dataset vs. Create New Dataset</h3>
+
+        <p>Running a query only displays its result; nothing is kept until one of two remaining toolbar buttons is used, and the choice between them matters. <span class="ui">Apply to Dataset</span> records the query as a genuine step on the currently active dataset&#8217;s Applied Steps pipeline &mdash; it shows up in the audit trail described in Chapter 2, and it replays automatically the next time that dataset&#8217;s source file refreshes. This only makes sense for a query against a single table, the active dataset itself, since the pipeline step re-runs the query against a fresh single-table connection each time. <span class="ui">Create New Dataset</span> instead materializes the query&#8217;s full result set as a brand new dataset in the project, the right choice for a Model Query join or union whose result doesn&#8217;t semantically belong to any one source dataset&#8217;s own pipeline. The new dataset records which of the registered tables its defining query actually referenced, so its lineage remains visible from the Dependencies view described in Chapter 30, even though it isn&#8217;t a literal pipeline step on any single source.</p>
+
+        <h2>Reusable Query Parameters</h2>
+
+        <p>A query can reference <code>{{parameter_name}}</code> placeholders, resolved at run time against a set of named values managed at the project level through <span class="ui">Query Parameters&hellip;</span>. A materiality threshold, a reporting-period start and end date, or any other value a recorded audit program needs to change between engagements can be defined once as a parameter and referenced by name in as many SQL steps as needed; updating the parameter's value updates every step that references it, without editing the query text itself. This is what lets a SQL-based test recorded this period become a genuinely reusable audit program next period, in the sense Chapter 29 describes for the pipeline as a whole &mdash; only the parameter values change, not the query.</p>
+
+        <h2>Worked Example: Suspected Duplicate Payments via Self-Join</h2>
+
+        <p>Chapter 5&#8217;s profile of the AP Transactions dataset reported zero duplicate rows, and that&#8217;s correct as far as it goes &mdash; no two rows in the file are identical across every column. But a duplicate <em>payment</em> doesn&#8217;t require identical rows; it requires the same vendor paid the same amount more than once, typically under a different invoice number and a different date. That&#8217;s a self-join, not a row-equality check, and it&#8217;s exactly the kind of question the Applied Steps pipeline has no single operation for.</p>
+
+        <div class="sql-block"><pre>SELECT a.invoice_id AS invoice_a, b.invoice_id AS invoice_b,
+       a.vendor, a.amount, a.invoice_date AS date_a, b.invoice_date AS date_b
+FROM AP_Transactions a
+JOIN AP_Transactions b
+  ON a.vendor = b.vendor
+ AND a.amount = b.amount
+ AND a.invoice_id &lt; b.invoice_id
+ORDER BY a.vendor, a.amount</pre></div>
+
+        <p>The <code>a.invoice_id &lt; b.invoice_id</code> condition is what keeps a pair from being reported twice in both directions, and keeps a row from matching itself. Run against AP Transactions, this returns exactly three rows:</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Invoice A</th><th>Invoice B</th><th>Vendor</th><th>Amount</th><th>Date A</th><th>Date B</th></tr>
+            </thead>
+            <tbody class="flagged-row">
+              <tr><td>20001</td><td>20008</td><td>Anderson Paper Co</td><td>842.50</td><td>2025-01-03</td><td>2025-01-13</td></tr>
+              <tr><td>20001</td><td>20024</td><td>Anderson Paper Co</td><td>842.50</td><td>2025-01-03</td><td>2025-02-05</td></tr>
+              <tr><td>20008</td><td>20024</td><td>Anderson Paper Co</td><td>842.50</td><td>2025-01-13</td><td>2025-02-05</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="figure-caption">Figure 33.1 &mdash; All three pairings of the same underlying pattern: three separate Anderson Paper Co invoices, 20001, 20008, and 20024, each for exactly 842.50, each described as &#8220;Copy paper and toner restock,&#8221; spaced roughly ten days to three weeks apart across January and February.</p>
+
+        <h2>Interpreting the Result</h2>
+
+        <div class="interpret">
+          <p class="interpret-label">When a self-join surfaces a repeated payment</p>
+          <ol>
+            <li><strong>Benign explanation.</strong> A recurring, fixed-cost restocking order, copy paper and toner at a stable unit price, placed on a routine cadence, produces exactly this pattern: same vendor, same amount, same description, different dates. Many organizations genuinely do reorder standard supplies at a fixed price on a schedule.</li>
+            <li><strong>Error or judgment lapse.</strong> The same invoice submitted, approved, and paid twice under two different invoice numbers, whether through a vendor billing error or a duplicate data entry on receipt, produces an identical pattern and is indistinguishable from the benign case by amount and vendor alone.</li>
+            <li><strong>What would indicate something more serious.</strong> A repeated round-amount payment to a vendor without a corresponding pattern of genuine recurring deliveries, particularly one clustered just under an approval threshold, is a classic indicator explored further in Chapter 12&#8217;s segregation-of-duties material, and warrants confirming the underlying delivery or service actually recurred three separate times rather than assuming it did.</li>
+          </ol>
+        </div>
+
+        <p>Resolving which explanation applies here needs one more fact this query alone can&#8217;t supply: whether three physical shipments of paper and toner genuinely arrived, once every few weeks, which the vendor&#8217;s own delivery records would confirm or refute in a single lookup.</p>
+
+        <h2>Worked Example: Ranking a Row Against Its Own Group</h2>
+
+        <p>Chapter 10&#8217;s interquartile range test flagged invoice 20027, Cascade IT Solutions&#8217; $48,750.00 server rack cooling fan, as more than forty-one interquartile ranges beyond the upper fence of the <em>entire</em> AP Transactions population, and Chapter 11&#8217;s Monetary Unit Sample absorbed three of its eight selection points on that same invoice regardless of random seed. Both tests compare this invoice to every other invoice in the file, across every department. A window function can ask a narrower, complementary question instead: how unusual is this invoice next to only the <em>other</em> IT invoices it competes with for the same budget.</p>
+
+        <div class="sql-block"><pre>SELECT invoice_id, vendor, amount,
+       ROUND(AVG(amount) OVER (), 2) AS dept_avg,
+       ROUND(amount / AVG(amount) OVER (), 2) AS x_dept_avg
+FROM AP_Transactions
+WHERE department = 'IT' AND status = 'Approved'
+ORDER BY x_dept_avg DESC</pre></div>
+
+        <p><code>AVG(amount) OVER ()</code>, with an empty <code>OVER</code> clause, computes the average across every row the surrounding <code>WHERE</code> has already narrowed to IT&#8217;s five approved invoices, and repeats that same average on every output row &mdash; which is exactly what dividing each row&#8217;s own amount by it requires. A version of this query scoped to the whole table, replacing the <code>WHERE</code> clause with <code>PARTITION BY department</code> inside each <code>OVER (&hellip;)</code>, would compute a separate average per department in one pass instead of one department at a time.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Invoice</th><th>Vendor</th><th>Amount</th><th>IT Dept. Avg</th><th>&times; Dept. Avg</th></tr>
+            </thead>
+            <tbody>
+              <tr class="flagged-row"><td>20027</td><td>Cascade IT Solutions</td><td>48,750.00</td><td>13,335.00</td><td>3.66</td></tr>
+              <tr><td>20010</td><td>Cascade IT Solutions</td><td>9,900.00</td><td>13,335.00</td><td>0.74</td></tr>
+              <tr><td>20019</td><td>Cascade IT Solutions</td><td>4,875.00</td><td>13,335.00</td><td>0.37</td></tr>
+              <tr><td>20036</td><td>Cascade IT Solutions</td><td>1,860.00</td><td>13,335.00</td><td>0.14</td></tr>
+              <tr><td>20002</td><td>Cascade IT Solutions</td><td>1,290.00</td><td>13,335.00</td><td>0.10</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="figure-caption">Figure 33.2 &mdash; The same server rack invoice this book has now flagged three separate ways: by interquartile range against the whole population in Chapter 10, by selection-point absorption under Monetary Unit Sampling in Chapter 11, and here, at more than three-and-a-half times its own department&#8217;s average approved invoice.</p>
+
+        <h2>Ask AI: Drafting a Query in Plain Language</h2>
+
+        <p>The <span class="ui">Ask AI</span> button opens a dialog that accepts a plain-language description of the query wanted, such as &#8220;show me every vendor whose total approved spend exceeds ten thousand dollars,&#8221; and returns generated SQL text for review. This follows the grounded AI pattern described in Chapter 23 precisely: the dialog never executes anything itself, only writes the proposed SQL into the editor on <span class="ui">Insert</span>, and the query still has to be reviewed and run with the ordinary <span class="ui">Execute</span> button, exactly as if it had been typed by hand. Before a generated query ever reaches the editor, it is independently checked to confirm it is a single, read-only <code>SELECT</code> (or <code>WITH &hellip; SELECT</code>) statement referencing only the tables already registered &mdash; a check performed in code, not merely requested in the prompt, on the same principle Chapter 23 applies everywhere else the AI proposes something a human has to approve.</p>
+
+        <div class="callout">
+          <p class="callout-label">Why this matters for review</p>
+          <p>A SQL step recorded through <span class="ui">Apply to Dataset</span> is exactly as visible in the Applied Steps audit trail as a step created by any ribbon operation &mdash; a second reviewer sees the literal query text, not a paraphrase of it, and can re-run it against the same or updated data. The flexibility SQL adds over the built-in operations doesn&#8217;t come at the cost of traceability; it uses the same pipeline every other technique in this book already relies on.</p>
+        </div>
+
+      </section>
+
       <section class="chapter" id="appa">
         <p class="chapter-num">Appendix A</p>
         <h1 class="chapter-title">Operation Reference</h1>
@@ -3103,7 +3264,7 @@
     </div>
 
     <div class="book-status">
-Audit Analytics with CaatMaster is complete: all eight parts, thirty-two chapters, and all three appendices.
+Audit Analytics with CaatMaster is complete: all nine parts, thirty-three chapters, and all three appendices.
     </div>
 
   </main>
