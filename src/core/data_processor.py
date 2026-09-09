@@ -15,6 +15,18 @@ import inspect
 # Import the operation registry
 from .operation_registry import OPERATION_REGISTRY, TransformationStepType
 
+_BARE_COL_PATTERN = re.compile(r'(?<!\.)\bcol\(')
+
+
+def _resolve_col_shorthand(expr: str) -> str:
+    """Rewrite the user-facing col('Name') shorthand to the pl.col('Name')
+    Polars actually needs in scope for eval() - every dialog that accepts
+    a raw expression (Custom Column from Math, Calculated Columns, Query
+    Sheet) advertises the short form in its placeholder text, so all three
+    must accept it identically rather than only the one that happens to
+    perform this substitution itself."""
+    return _BARE_COL_PATTERN.sub('pl.col(', expr)
+
 
 class DataProcessor:
     """
@@ -2949,34 +2961,20 @@ class DataProcessor:
             )
 
     def custom_column_from_math(self, df: pl.DataFrame, expression: str, output_col: str = "custom_result", columns: List[str] = None) -> pl.DataFrame:
-        """Create custom column using mathematical expression"""
-        # For safety, use polars expressions
+        """Create custom column using mathematical expression. `columns` is
+        not read here - it exists in the parameter schema so the dialog
+        can offer a column picker and so a step's dependencies are
+        recorded for lineage, independent of this method's own logic."""
         try:
-            # Replace column names with pl.col() calls. Note: the loop
-            # variable must NOT be named "col" — that would leak into this
-            # function's local scope (Python for-loops don't have their own
-            # scope) and shadow the col(...) call syntax the user actually
-            # typed for any column reference that DIDN'T get substituted
-            # (e.g. a typo'd or no-longer-existing column name), turning a
-            # clear "column not found" failure into a baffling
-            # "'str' object is not callable".
-            expr = expression
-            for col_name in columns or []:
-                expr = expr.replace(f"col('{col_name}')", f"pl.col('{col_name}')")
-
-            # Create the expression
-            result_expr = eval(expr)
+            result_expr = eval(_resolve_col_shorthand(expression))
             return df.with_columns(result_expr.alias(output_col))
-        except NameError as e:
-            raise ValueError(f"Invalid expression: unknown column reference ({e}). "
-                              f"Check for typos — available columns: {', '.join(columns or [])}")
         except Exception as e:
             raise ValueError(f"Invalid expression: {e}")
 
     def calculated_columns(self, df: pl.DataFrame, formula: str, output_col: str, formula_type: str = "arithmetic") -> pl.DataFrame:
         """Create calculated column using formula"""
         try:
-            return df.with_columns(eval(formula).alias(output_col))
+            return df.with_columns(eval(_resolve_col_shorthand(formula)).alias(output_col))
         except Exception as e:
             raise ValueError(f"Invalid formula: {e}")
 
@@ -3953,7 +3951,7 @@ class DataProcessor:
                      sort_order: str = "asc", select_columns: List[str] = None) -> pl.DataFrame:
         """Filter by a polars expression condition, then optionally sort and select columns."""
         try:
-            result = df.filter(eval(condition))
+            result = df.filter(eval(_resolve_col_shorthand(condition)))
         except Exception as e:
             raise ValueError(f"Invalid filter condition: {e}")
         if sort_by:

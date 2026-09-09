@@ -873,3 +873,39 @@ class TestLegacyDataProcessor:
 
         result = processor.math_abs(numeric_dataframe, "negative")
         assert "negative_abs" in result.columns
+
+
+class TestColShorthandExpressions:
+    """custom_column_from_math, calculated_columns, and query_sheet all
+    accept a raw Polars expression and all three advertise the same
+    col('Name') shorthand in their dialog placeholder text. Only
+    custom_column_from_math performed the col() -> pl.col() rewrite
+    needed for that shorthand to actually eval - calculated_columns and
+    query_sheet raised NameError on their own placeholder text. All
+    three must now accept the shorthand identically."""
+
+    @pytest.fixture
+    def df(self):
+        return pl.DataFrame({"A": [1, 2, 3], "B": [3, 2, 1]})
+
+    def test_custom_column_from_math_accepts_shorthand(self, df):
+        processor = DataProcessor()
+        result = processor.custom_column_from_math(
+            df, "col('A') + col('B') * 2", "x", columns=["A", "B"]
+        )
+        assert result["x"].to_list() == [7, 6, 5]
+
+    def test_calculated_columns_accepts_shorthand(self, df):
+        processor = DataProcessor()
+        result = processor.calculated_columns(df, "col('A') > col('B')", "flag")
+        assert result["flag"].to_list() == [False, False, True]
+
+    def test_query_sheet_accepts_shorthand(self, df):
+        processor = DataProcessor()
+        result = processor.query_sheet(df, "col('A') > 1")
+        assert result["A"].to_list() == [2, 3]
+
+    def test_unknown_column_in_shorthand_raises_helpful_error(self, df):
+        processor = DataProcessor()
+        with pytest.raises(ValueError, match="NoSuch"):
+            processor.calculated_columns(df, "col('NoSuch') > 1", "flag")
