@@ -775,6 +775,7 @@
       <li><a href="#appa"><span class="toc-num">A</span>Operation Reference</a></li>
       <li><a href="#appb"><span class="toc-num">B</span>Dataset Reference</a></li>
       <li><a href="#appc"><span class="toc-num">C</span>Default Thresholds Reference</a></li>
+      <li><a href="#appd"><span class="toc-num">D</span>A Quick Reference for Polars and SQL</a></li>
     </ul>
   </nav>
 
@@ -782,7 +783,7 @@
     <button class="toc-toggle" onclick="document.getElementById('sidebar').classList.add('open')">Contents</button>
 
     <div class="cover" id="cover">
-      <p class="cover-eyebrow">Complete Edition &middot; Nine Parts, Thirty-Three Chapters, Three Appendices</p>
+      <p class="cover-eyebrow">Complete Edition &middot; Nine Parts, Thirty-Three Chapters, Four Appendices</p>
       <h1 class="cover-title">Audit Analytics with CaatMaster</h1>
       <p class="cover-sub">A practitioner&#8217;s guide to testing for error, omission, and fraud, using computer-assisted audit techniques, financial statement analytics, and AI-assisted review.</p>
       <div class="cover-meta">
@@ -888,6 +889,7 @@
           <li><a class="toc-print-row" href="#appa"><span class="toc-print-num">A</span><span class="toc-print-name">Operation Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appa">179</span></a></li>
           <li><a class="toc-print-row" href="#appb"><span class="toc-print-num">B</span><span class="toc-print-name">Dataset Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appb">195</span></a></li>
           <li><a class="toc-print-row" href="#appc"><span class="toc-print-num">C</span><span class="toc-print-name">Default Thresholds Reference</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appc">198</span></a></li>
+          <li><a class="toc-print-row" href="#appd"><span class="toc-print-num">D</span><span class="toc-print-name">A Quick Reference for Polars and SQL</span><span class="toc-print-leader"></span><span class="toc-print-page" data-target="appd">201</span></a></li>
         </ul>
       </div>
     </div>
@@ -3261,10 +3263,76 @@ ORDER BY x_dept_avg DESC</pre></div>
         <p>One entry deserves a direct note rather than a bare number. Chapter 16&#8217;s walkthrough of the SICR PD trigger sets the multiplier to 3.00x for that specific worked example; the application&#8217;s own default, shown whenever the IFRS 9 Staging dialog first opens, is 2.00x. The chapter says so explicitly at the point it changes the value, and this appendix repeats it here since a threshold reference that silently mismatched its own book would defeat the purpose of compiling one.</p>
       </section>
 
+      <section class="chapter" id="appd">
+        <p class="chapter-num">Appendix D</p>
+        <h1 class="chapter-title">A Quick Reference for Polars and SQL</h1>
+        <p class="lede">This book teaches CaatMaster almost entirely through its dialogs, without asking a reader to write a line of code. Two exceptions exist: three transformation dialogs accept a Polars expression directly, and the SQL Query workspace covered in Chapter 33 accepts genuine SQL. Neither demands real programming experience to use productively for the kind of one-off calculation or filter this book&#8217;s built-in operations don&#8217;t happen to cover, and this appendix collects just enough of each to get a reader started. It is a launching point, not a substitute for either language&#8217;s own documentation.</p>
+
+        <h2>D.1 &mdash; Polars Expressions</h2>
+
+        <p>Three dialogs accept a raw expression instead of a fixed set of parameters: <span class="ui">Custom Column from Math</span> and <span class="ui">Calculated Columns</span>, both reached by right-clicking a column header and choosing Calculate, and <span class="ui">Query Sheet</span>, reached from the sidebar, which filters and reshapes a table using an expression instead of the Filter dialog&#8217;s point-and-click conditions. All three placeholder hints show the same shorthand, and as of this printing all three actually accept it identically.</p>
+
+        <p>The one syntax rule that matters: refer to a column by writing <code>col('Column Name')</code> exactly as the column appears in the dataset, including spaces and case. Everything else is ordinary Polars &mdash; comparison operators (<code>&gt;</code>, <code>&lt;</code>, <code>==</code>, <code>!=</code>), arithmetic (<code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>), and a small set of methods chained after a column reference for text, null, and rounding work.</p>
+
+        <div class="table-wrap">
+          <table>
+            <colgroup>
+              <col style="width: 22%">
+              <col style="width: 56%">
+              <col style="width: 22%">
+            </colgroup>
+            <thead>
+              <tr><th>Task</th><th>Expression</th><th>Used In</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Compute a difference</td><td><code>col('Revenue') - col('COGS')</code></td><td>Custom Column from Math</td></tr>
+              <tr><td>Round to two decimals</td><td><code>col('Amount').round(2)</code></td><td>Custom Column from Math</td></tr>
+              <tr><td>Flag values over a threshold</td><td><code>col('Amount') &gt; 10000</code></td><td>Calculated Columns, Query Sheet</td></tr>
+              <tr><td>Text contains a substring</td><td><code>col('Vendor').str.contains('Consulting')</code></td><td>Query Sheet</td></tr>
+              <tr><td>Row has a missing value</td><td><code>col('Approver').is_null()</code></td><td>Query Sheet</td></tr>
+              <tr><td>Three-way conditional label</td><td><code>pl.when(col('Amount') &gt; 10000).then(pl.lit('High')).otherwise(pl.lit('Normal'))</code></td><td>Calculated Columns</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="figure-caption">Table D.1 &mdash; Every expression above was run against a real dataframe before being printed here, not composed from memory of Polars&#8217; API.</p>
+
+        <div class="callout">
+          <p class="callout-label">A gotcha worth knowing</p>
+          <p>Combining two conditions with Python&#8217;s own <code>and</code>/<code>or</code>, as in <code>col('Amount') &gt; 1000 and col('Approver').is_not_null()</code>, fails with <code>the truth value of an Expr is ambiguous</code> &mdash; a Polars expression is a description of a calculation, not yet a value, so it cannot be True or False the way <code>and</code>/<code>or</code> require. Use <code>&amp;</code> and <code>|</code> instead, and parenthesize each side: <code>(col('Amount') &gt; 1000) &amp; (col('Approver').is_not_null())</code>. The parentheses are not optional style &mdash; <code>&amp;</code> binds tighter than <code>&gt;</code> in Python, so <code>col('Amount') &gt; 1000 &amp; col('Approver').is_not_null()</code> without them fails with a different, equally real error, <code>cannot unpack series of type `bool` into `i32`</code>, because <code>&amp;</code> is evaluated before <code>&gt;</code> gets to it.</p>
+        </div>
+
+        <h2>D.2 &mdash; SQL for the Query Workspace</h2>
+
+        <p>Chapter 33 covers reaching the SQL Query workspace, its DuckDB internals, Model Query cross-dataset joins, and worked audit examples in full. This section is a minimal starting point for a reader who has never written SQL, using the same AP_Transactions table Chapter 33 works with throughout.</p>
+
+        <div class="sql-block"><pre>-- Every column, every row
+SELECT * FROM AP_Transactions
+
+-- Only rows meeting a condition
+SELECT * FROM AP_Transactions WHERE amount > 5000
+
+-- Combine conditions with AND / OR
+SELECT * FROM AP_Transactions
+WHERE department = 'IT' AND amount > 1000
+
+-- Sort results, largest first
+SELECT * FROM AP_Transactions ORDER BY amount DESC
+
+-- One row per group, with an aggregate per group
+SELECT department, SUM(amount) AS total, COUNT(*) AS n
+FROM AP_Transactions
+WHERE status = 'Approved'
+GROUP BY department
+ORDER BY total DESC</pre></div>
+
+        <p>Every clause above is standard SQL, not a CaatMaster-specific dialect &mdash; DuckDB, the SQL engine described in Chapter 33, accepts all of it directly. The self-join, window-function, and Model Query join patterns that come up specifically in audit work are covered where they belong, worked through against real figures, in Chapter 33 itself.</p>
+
+      </section>
+
     </div>
 
     <div class="book-status">
-Audit Analytics with CaatMaster is complete: all nine parts, thirty-three chapters, and all three appendices.
+Audit Analytics with CaatMaster is complete: all nine parts, thirty-three chapters, and all four appendices.
     </div>
 
   </main>
