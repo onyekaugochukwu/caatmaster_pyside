@@ -50,6 +50,7 @@ data/caatmaster_backup_*.db
 *.key
 secret_key
 
-# Markdown (except README.md)
+# Markdown (except README.md and LICENSE.md)
 *.md
 !README.md
+!LICENSE.md

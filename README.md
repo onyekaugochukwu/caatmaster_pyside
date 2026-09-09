@@ -158,4 +158,4 @@ Issues and pull requests are welcome. Before submitting a change, run the test s
 
 ## License
 
-No license file is currently published in this repository. Contact the repository owner before reusing or redistributing this code.
+Licensed under the [Apache License, Version 2.0](LICENSE.md).
