@@ -710,10 +710,10 @@
     /* 100vh is unreliable for Chrome print pagination (it does not
        track the @page size), overflowing the cover across two pages -
        a physical unit matching @page size letter keeps it to one.
-       The source image is pre-cropped to the exact 8.5:11 page ratio
-       (see CaatMaster_Cover.jpeg), so plain width:100% needs no
-       object-fit or parent overflow:hidden to fill the page - both
-       of those independently corrupt this Chrome print engine's
+       caatmaster_cover.png is supplied at exactly 2550x3300px (8.5x11in
+       @ 300dpi), matching this @page size precisely, so plain width:100%
+       needs no object-fit or parent overflow:hidden to fill the page -
+       both of those independently corrupt this Chrome print engine's
        column width for every page after the cover, for reasons that
        could not be fully explained even after extensive isolation. */
     .cover-page { padding: 0; height: 11in; background: none; }
@@ -908,7 +908,7 @@
     <button class="toc-toggle" onclick="document.getElementById('sidebar').classList.add('open')">Contents</button>
 
     <div class="cover-page" id="cover">
-      <img class="cover-image" src="CaatMaster_Cover.jpeg" alt="Book cover for Audit Analytics with CaatMaster, by Ugochukwu Onyeka">
+      <img class="cover-image" src="caatmaster_cover.png" alt="Book cover for Audit Analytics with CaatMaster, by Ugochukwu Onyeka">
     </div>
 
     <div class="cover" id="title-page">
