@@ -64,6 +64,7 @@ class CosoDialog(BaseModal):
         
         # Refresh mapping button
         refresh_btn = QPushButton("Load Unique Categories")
+        refresh_btn.setStyleSheet("min-width: 170px; padding: 4px 8px;")
         refresh_btn.clicked.connect(self._load_categories)
         map_layout.addWidget(refresh_btn)
         
@@ -77,6 +78,7 @@ class CosoDialog(BaseModal):
         cancel_btn.clicked.connect(self.reject)
         
         run_btn = create_primary_button("Generate Heatmap Data")
+        run_btn.setStyleSheet("min-width: 170px; padding: 4px 8px;")
         run_btn.clicked.connect(self.accept_changes)
         
         btn_layout.addWidget(cancel_btn)

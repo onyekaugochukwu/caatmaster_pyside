@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
     QPushButton, QRadioButton, QButtonGroup, QGroupBox, QTableWidget,
     QTableWidgetItem, QHeaderView, QScrollArea, QWidget, QMessageBox,
-    QLineEdit, QCheckBox
+    QLineEdit, QCheckBox, QFrame
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 
@@ -30,7 +30,23 @@ class UnpivotDialog(BaseModal):
 
     def _setup_ui(self):
         """Setup the unpivot dialog UI"""
-        layout = QVBoxLayout(self)
+        # 4 stacked group boxes (one of them a multi-row column
+        # selector) plus a 10-row preview table add up to ~900px of
+        # natural content height with no scroll area - on a shorter
+        # screen or under Windows' DPI scaling that reliably pushes the
+        # Unpivot/Cancel buttons off-screen with no way to reach them
+        # (the same bug the Benford dialog had). Content goes in a
+        # scroll area; the buttons are a fixed footer outside it.
+        main_layout = QVBoxLayout(self)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+
+        content_widget = QWidget()
+        layout = QVBoxLayout(content_widget)
         layout.setSpacing(15)
 
         # Unpivot options
@@ -96,7 +112,10 @@ class UnpivotDialog(BaseModal):
         """)
         layout.addWidget(self.row_info)
 
-        # Button row
+        scroll_area.setWidget(content_widget)
+        main_layout.addWidget(scroll_area)
+
+        # Button row - fixed footer, outside the scroll area
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
@@ -105,6 +124,7 @@ class UnpivotDialog(BaseModal):
         btn_layout.addWidget(self.cancel_btn)
 
         self.preview_btn = QPushButton("Update Preview")
+        self.preview_btn.setStyleSheet("min-width: 140px; padding: 4px 8px;")
         self.preview_btn.clicked.connect(self.preview)
         btn_layout.addWidget(self.preview_btn)
 
@@ -112,7 +132,7 @@ class UnpivotDialog(BaseModal):
         self.unpivot_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.unpivot_btn)
 
-        layout.addLayout(btn_layout)
+        main_layout.addLayout(btn_layout)
 
         # Connect signals
         self.option_group.buttonClicked.connect(self._on_option_changed)

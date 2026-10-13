@@ -174,6 +174,7 @@ class BenfordDialog(BaseModal):
         view_chart_btn = QPushButton("View Larger Chart")
         view_chart_btn.setStyleSheet(f"""
             QPushButton {{
+                min-width: 140px;
                 padding: 6px 12px;
                 border: 1px solid {Colors.ACCENT};
                 border-radius: 4px;
@@ -250,7 +251,19 @@ class BenfordDialog(BaseModal):
 
         layout.addWidget(preview_group)
 
-        # Button row
+        # Set scroll area content
+        scroll_area.setWidget(content_widget)
+        main_layout = QVBoxLayout(self)
+        main_layout.addWidget(scroll_area)
+
+        # Button row - kept OUTSIDE the scroll area as a fixed footer.
+        # Previously this was the last item inside the scrollable content
+        # column (column selector + options + chart/stats splitter +
+        # output columns + a 10-row preview table easily exceed the
+        # dialog's 650-800px height cap), so Cancel/Run Analysis/Apply
+        # were only reachable by scrolling - easy to miss entirely on
+        # Windows, where taskbar/title-bar chrome and DPI scaling leave
+        # even less of the dialog visible above the fold.
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
@@ -259,10 +272,12 @@ class BenfordDialog(BaseModal):
         btn_layout.addWidget(self.cancel_btn)
 
         self.analyze_btn = create_primary_button("Run Analysis")
+        self.analyze_btn.setStyleSheet("min-width: 120px; padding: 4px 8px;")
         self.analyze_btn.clicked.connect(self._run_analysis)
         btn_layout.addWidget(self.analyze_btn)
 
         self.apply_btn = create_success_button("Apply to Dataset")
+        self.apply_btn.setStyleSheet("min-width: 150px; padding: 4px 8px;")
         self.apply_btn.setToolTip(
             "Add the leading-digit, expected-frequency, and deviation columns\n"
             "to the dataset as a real, replayable Applied Step."
@@ -270,12 +285,7 @@ class BenfordDialog(BaseModal):
         self.apply_btn.clicked.connect(self._on_apply_clicked)
         btn_layout.addWidget(self.apply_btn)
 
-        layout.addLayout(btn_layout)
-
-        # Set scroll area content
-        scroll_area.setWidget(content_widget)
-        main_layout = QVBoxLayout(self)
-        main_layout.addWidget(scroll_area)
+        main_layout.addLayout(btn_layout)
 
     def _show_chart_popup(self):
         """Show chart in a larger popup window"""

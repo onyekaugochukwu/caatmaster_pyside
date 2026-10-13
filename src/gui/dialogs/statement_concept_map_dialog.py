@@ -152,11 +152,13 @@ class StatementConceptMapDialog(BaseModal):
 
         btn_row = QHBoxLayout()
         self.build_table_btn = QPushButton("Load Unique Accounts")
+        self.build_table_btn.setStyleSheet("min-width: 150px; padding: 4px 8px;")
         self.build_table_btn.setCursor(Qt.PointingHandCursor)
         self.build_table_btn.clicked.connect(self._build_account_table)
         btn_row.addWidget(self.build_table_btn)
 
         self.ai_btn = QPushButton("AI Suggest")
+        self.ai_btn.setStyleSheet("min-width: 100px; padding: 4px 8px;")
         self.ai_btn.setCursor(Qt.PointingHandCursor)
         self.ai_btn.clicked.connect(self._on_ai_suggest)
         btn_row.addWidget(self.ai_btn)
@@ -179,6 +181,7 @@ class StatementConceptMapDialog(BaseModal):
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
         self.apply_btn = create_primary_button("Reshape Dataset")
+        self.apply_btn.setStyleSheet("min-width: 150px; padding: 4px 8px;")
         self.apply_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.apply_btn)
         layout.addLayout(btn_layout)

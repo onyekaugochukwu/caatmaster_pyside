@@ -131,6 +131,7 @@ class RenameColumnsDialog(BaseModal):
 
         # Reset button
         reset_btn = QPushButton("Reset to Original")
+        reset_btn.setStyleSheet("min-width: 140px; padding: 4px 8px;")
         reset_btn.clicked.connect(self._reset_mapping)
         bulk_layout.addWidget(reset_btn, 3, 0, 1, 2)
 
@@ -150,6 +151,7 @@ class RenameColumnsDialog(BaseModal):
         btn_layout.addWidget(self.cancel_btn)
 
         self.apply_btn = create_primary_button("Apply Renames")
+        self.apply_btn.setStyleSheet("min-width: 120px; padding: 4px 8px;")
         self.apply_btn.clicked.connect(self._apply_renames)
         btn_layout.addWidget(self.apply_btn)
 
@@ -337,19 +339,27 @@ class ChooseColumnsDialog(BaseModal):
         move_layout = QHBoxLayout(self.move_widget)
         move_layout.setContentsMargins(0, 0, 0, 0)
 
+        # Explicit min-width on this whole row so none of these four
+        # labels (the two multi-word ones especially) get squeezed below
+        # readable size under a narrower window or Windows' wider
+        # DPI-scaled font metrics - the window grows instead.
         add_btn = QPushButton("Add →")
+        add_btn.setStyleSheet("min-width: 70px; padding: 4px 8px;")
         add_btn.clicked.connect(self._add_selected)
         move_layout.addWidget(add_btn)
 
         add_all_btn = QPushButton("Add All >>")
+        add_all_btn.setStyleSheet("min-width: 100px; padding: 4px 8px;")
         add_all_btn.clicked.connect(self._add_all)
         move_layout.addWidget(add_all_btn)
 
         remove_btn = QPushButton("← Remove")
+        remove_btn.setStyleSheet("min-width: 90px; padding: 4px 8px;")
         remove_btn.clicked.connect(self._remove_selected)
         move_layout.addWidget(remove_btn)
 
         remove_all_btn = QPushButton("<< Remove All")
+        remove_all_btn.setStyleSheet("min-width: 120px; padding: 4px 8px;")
         remove_all_btn.clicked.connect(self._remove_all)
         move_layout.addWidget(remove_all_btn)
 

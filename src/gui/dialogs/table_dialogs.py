@@ -1169,8 +1169,31 @@ class QuerySheetDialog(BaseModal):
         self.setMinimumSize(700, 500)
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
+        # Filter/Sort/Select/Preview groups plus a 10-row preview table
+        # stack to ~830px of natural content height with no scroll area -
+        # the same overflow risk JoinDatasetsDialog/CompareDatasetsDialog/
+        # AppendDatasetsDialog in this same file already guard against;
+        # this one just hadn't been given the same treatment.
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+
+        content = QWidget()
+        content.setObjectName("DialogScrollContent")
+        content.setStyleSheet("QWidget#DialogScrollContent { background-color: transparent; }")
+        layout = QVBoxLayout(content)
         layout.setSpacing(15)
+        layout.setContentsMargins(15, 15, 15, 15)
 
         # Filter condition
         filter_group = QGroupBox("Filter Condition")
@@ -1237,8 +1260,13 @@ class QuerySheetDialog(BaseModal):
         self.update_preview()
         layout.addWidget(preview_group)
 
-        # Button row
+        # Set content and add scroll area
+        scroll.setWidget(content)
+        main_layout.addWidget(scroll)
+
+        # Button row (outside scroll area)
         btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(15, 10, 15, 10)
         btn_layout.addStretch()
 
         self.cancel_btn = QPushButton("Cancel")
@@ -1249,7 +1277,7 @@ class QuerySheetDialog(BaseModal):
         self.apply_btn.clicked.connect(self._apply_query)
         btn_layout.addWidget(self.apply_btn)
 
-        layout.addLayout(btn_layout)
+        main_layout.addLayout(btn_layout)
 
     def _on_all_cols_changed(self):
         """Enable/disable column list"""

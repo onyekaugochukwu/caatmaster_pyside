@@ -224,6 +224,7 @@ class FilterDialog(BaseModal):
 
         # Add condition button
         add_btn = QPushButton("+ Add Condition")
+        add_btn.setStyleSheet("min-width: 130px; padding: 4px 8px;")
         add_btn.clicked.connect(self._add_condition)
         conditions_layout.addWidget(add_btn)
 
@@ -264,6 +265,7 @@ class FilterDialog(BaseModal):
         btn_layout.addStretch()
 
         self.clear_btn = QPushButton("Clear All")
+        self.clear_btn.setStyleSheet("min-width: 90px; padding: 4px 8px;")
         self.clear_btn.clicked.connect(self._clear_all)
         btn_layout.addWidget(self.clear_btn)
 
@@ -272,10 +274,12 @@ class FilterDialog(BaseModal):
         btn_layout.addWidget(self.cancel_btn)
 
         self.preview_btn = QPushButton("Update Preview")
+        self.preview_btn.setStyleSheet("min-width: 140px; padding: 4px 8px;")
         self.preview_btn.clicked.connect(self.preview)
         btn_layout.addWidget(self.preview_btn)
 
         self.filter_btn = create_primary_button("Apply Filter")
+        self.filter_btn.setStyleSheet("min-width: 120px; padding: 4px 8px;")
         self.filter_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.filter_btn)
 

@@ -280,10 +280,12 @@ class PivotTableDialog(BaseModal):
         btn_layout.addWidget(self.cancel_btn)
 
         self.preview_btn = QPushButton("Update Preview")
+        self.preview_btn.setStyleSheet("min-width: 140px; padding: 4px 8px;")
         self.preview_btn.clicked.connect(self.preview)
         btn_layout.addWidget(self.preview_btn)
 
         self.create_btn = create_primary_button("Create Pivot")
+        self.create_btn.setStyleSheet("min-width: 130px; padding: 4px 8px;")
         self.create_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.create_btn)
 

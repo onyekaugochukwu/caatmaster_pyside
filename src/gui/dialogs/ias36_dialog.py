@@ -70,8 +70,10 @@ class IAS36ReverseDCFDialog(BaseModal):
 
         cf_btn_row = QHBoxLayout()
         add_year_btn = QPushButton("+ Add Year")
+        add_year_btn.setStyleSheet("min-width: 100px; padding: 4px 8px;")
         add_year_btn.clicked.connect(self._add_cf_row)
         remove_year_btn = QPushButton("- Remove Last Year")
+        remove_year_btn.setStyleSheet("min-width: 160px; padding: 4px 8px;")
         remove_year_btn.clicked.connect(self._remove_cf_row)
         cf_btn_row.addWidget(add_year_btn)
         cf_btn_row.addWidget(remove_year_btn)
@@ -129,6 +131,7 @@ class IAS36ReverseDCFDialog(BaseModal):
         cancel_btn = QPushButton("Cancel")
         cancel_btn.clicked.connect(self.reject)
         run_btn = create_primary_button("Solve Implied Growth Rate")
+        run_btn.setStyleSheet("min-width: 220px; padding: 4px 8px;")
         run_btn.clicked.connect(self.accept_changes)
         btn_layout.addWidget(cancel_btn)
         btn_layout.addWidget(run_btn)

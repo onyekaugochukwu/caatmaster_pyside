@@ -99,6 +99,7 @@ class SoxSodDialog(BaseModal):
         # Row controls
         row_btn_layout = QHBoxLayout()
         add_row_btn = QPushButton("+ Add Row")
+        add_row_btn.setStyleSheet("min-width: 90px; padding: 4px 8px;")
         add_row_btn.clicked.connect(self._add_row)
         clear_btn = QPushButton("Clear")
         clear_btn.clicked.connect(self._clear_rows)
@@ -118,6 +119,7 @@ class SoxSodDialog(BaseModal):
         cancel_btn.clicked.connect(self.reject)
         
         run_btn = create_primary_button("Scan for Conflicts")
+        run_btn.setStyleSheet("min-width: 170px; padding: 4px 8px;")
         run_btn.clicked.connect(self.accept_changes)
         
         btn_layout.addWidget(cancel_btn)

@@ -29,6 +29,18 @@ class GroupSummaryDialog(BaseModal):
         super().__init__("Group Summary", dataframe, parent)
         self.setMinimumSize(600, 450)
 
+    def _setup_ui(self):
+        # BaseModal.__init__ calls _setup_ui() itself and expects it to
+        # install self's layout - building the scroll area + buttons
+        # AFTER super().__init__() (the previous structure here) meant
+        # BaseModal's own default placeholder layout had already been
+        # installed on self, so the second QVBoxLayout(self) call below
+        # silently failed (Qt: "already has a layout") and left
+        # scroll_area permanently unparented - the dialog only ever
+        # showed the literal "Modal: Group Summary" placeholder text,
+        # with the real content never appearing at all.
+        main_layout = QVBoxLayout(self)
+
         # Create scroll area
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -40,11 +52,10 @@ class GroupSummaryDialog(BaseModal):
         self._setup_ui_content()
 
         self.scroll_area.setWidget(self.content_widget)
-        main_layout = QVBoxLayout(self)
         main_layout.addWidget(self.scroll_area)
 
-        # Add buttons at bottom
-        self._setup_buttons()
+        # Add buttons at bottom (fixed footer, outside the scroll area)
+        self._setup_buttons(main_layout)
 
     def _setup_ui_content(self):
         layout = QVBoxLayout(self.content_widget)
@@ -92,9 +103,10 @@ class GroupSummaryDialog(BaseModal):
 
         layout.addWidget(preview_group)
 
-    def _setup_buttons(self):
+    def _setup_buttons(self, main_layout):
         """Setup buttons at the bottom of the dialog"""
         btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self.reject)
@@ -105,7 +117,7 @@ class GroupSummaryDialog(BaseModal):
         btn_layout.addWidget(self.apply_btn)
 
         # Add buttons to main layout (outside scroll area)
-        self.layout().addLayout(btn_layout)
+        main_layout.addLayout(btn_layout)
 
     def _apply_summary(self):
         """Validate and accept summary"""
@@ -252,11 +264,14 @@ class StratificationDialog(BaseModal):
 
         # Quick presets
         preset_layout = QHBoxLayout()
-        preset_layout.addWidget(QLabel("Presets:"))
+        preset_label = QLabel("Presets:")
+        preset_label.setStyleSheet("min-width: 55px;")
+        preset_layout.addWidget(preset_label)
         for name, value in [("Small", "0, 100, 500, 1000"),
                            ("Medium", "0, 50, 100, 250, 500, 1000, inf"),
                            ("Large", "0, 1000, 5000, 10000, 50000, inf")]:
             btn = QPushButton(name)
+            btn.setStyleSheet("min-width: 80px; padding: 4px 8px;")
             btn.clicked.connect(lambda checked, v=value: self.boundaries_edit.setText(v))
             preset_layout.addWidget(btn)
         preset_layout.addStretch()
@@ -343,7 +358,7 @@ class AgingAnalysisDialog(BaseModal):
     def __init__(self, dataframe: pl.DataFrame, parent=None):
         self.original_df = dataframe
         super().__init__("Aging Analysis", dataframe, parent)
-        self.setMinimumSize(600, 480)
+        self.setMinimumSize(680, 520)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -372,11 +387,18 @@ class AgingAnalysisDialog(BaseModal):
         self.boundaries_edit = QLineEdit("0, 30, 60, 90")
         bounds_layout.addWidget(self.boundaries_edit)
         preset_layout = QHBoxLayout()
-        preset_layout.addWidget(QLabel("Presets:"))
+        preset_label = QLabel("Presets:")
+        preset_label.setStyleSheet("min-width: 55px;")
+        preset_layout.addWidget(preset_label)
         for name, value in [("Standard (30/60/90)", "0, 30, 60, 90"),
                            ("Fine (15-day)", "0, 15, 30, 45, 60, 90, 120"),
                            ("Quarterly", "0, 90, 180, 270, 365")]:
             btn = QPushButton(name)
+            # Explicit min-width so a narrow dialog (or Windows' wider
+            # DPI-scaled font metrics) can't force these below a
+            # readable size - the window grows instead of the text
+            # squishing/truncating.
+            btn.setStyleSheet("min-width: 130px; padding: 4px 8px;")
             btn.clicked.connect(lambda checked, v=value: self.boundaries_edit.setText(v))
             preset_layout.addWidget(btn)
         preset_layout.addStretch()
@@ -740,7 +762,23 @@ class TrendAnalysisDialog(BaseModal):
         self.setMinimumSize(700, 500)
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
+        # Five stacked group boxes plus a 15-row preview table reliably
+        # exceed a typical window's usable height (measured sizeHint
+        # ~900px even on this dev machine's fonts - worse under Windows
+        # DPI scaling), which with no scroll area would push the
+        # Cancel/Generate buttons off-screen with no way to reach them -
+        # the same bug the Benford dialog had. Content goes in a scroll
+        # area; the buttons are a fixed footer outside it.
+        main_layout = QVBoxLayout(self)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+
+        content_widget = QWidget()
+        layout = QVBoxLayout(content_widget)
         layout.setSpacing(15)
 
         # Date and value columns
@@ -823,7 +861,10 @@ class TrendAnalysisDialog(BaseModal):
 
         layout.addWidget(preview_group)
 
-        # Button row
+        scroll_area.setWidget(content_widget)
+        main_layout.addWidget(scroll_area)
+
+        # Button row - fixed footer, outside the scroll area
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
@@ -835,7 +876,7 @@ class TrendAnalysisDialog(BaseModal):
         self.apply_btn.clicked.connect(self._apply_trend)
         btn_layout.addWidget(self.apply_btn)
 
-        layout.addLayout(btn_layout)
+        main_layout.addLayout(btn_layout)
 
     def _apply_trend(self):
         """Accept trend parameters"""

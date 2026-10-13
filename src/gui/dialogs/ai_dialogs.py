@@ -8,7 +8,8 @@ from typing import Optional, List, Dict, Any
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
     QPushButton, QGroupBox, QWidget, QMessageBox, QLineEdit,
-    QRadioButton, QButtonGroup, QTabWidget, QProgressBar, QTextEdit, QCheckBox
+    QRadioButton, QButtonGroup, QTabWidget, QProgressBar, QTextEdit, QCheckBox,
+    QScrollArea, QFrame
 )
 from PySide6.QtCore import Qt, QTimer, Signal
 
@@ -309,7 +310,22 @@ class AIEntityExtractionDialog(BaseModal):
 
     def _setup_ui(self):
         """Setup the entity extraction dialog UI"""
-        layout = QVBoxLayout(self)
+        # Four stacked group boxes (incl. a 10-checkbox entity-type grid
+        # and a preview table) push this dialog's natural height to
+        # ~710px with no scroll area - risking the Extract/Cancel
+        # buttons landing off-screen on shorter displays or under
+        # Windows DPI scaling, the same bug the Benford dialog had.
+        # Content goes in a scroll area; the buttons stay a fixed footer.
+        main_layout = QVBoxLayout(self)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+
+        content_widget = QWidget()
+        layout = QVBoxLayout(content_widget)
         layout.setSpacing(15)
 
         # Column selection
@@ -381,7 +397,10 @@ class AIEntityExtractionDialog(BaseModal):
 
         layout.addWidget(preview_group)
 
-        # Button row
+        scroll_area.setWidget(content_widget)
+        main_layout.addWidget(scroll_area)
+
+        # Button row - fixed footer, outside the scroll area
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
@@ -397,7 +416,7 @@ class AIEntityExtractionDialog(BaseModal):
         self.extract_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.extract_btn)
 
-        layout.addLayout(btn_layout)
+        main_layout.addLayout(btn_layout)
 
     def get_parameters(self) -> dict:
         """Get the entity extraction parameters"""

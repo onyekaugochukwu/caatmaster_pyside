@@ -159,6 +159,7 @@ class FinancialRatiosDialog(BaseModal):
             self.row_mode_checks[stmt_type] = row_mode_check
 
             map_accounts_btn = QPushButton("Map Accounts...")
+            map_accounts_btn.setStyleSheet("min-width: 110px; padding: 4px 8px;")
             map_accounts_btn.setVisible(False)
             map_accounts_btn.clicked.connect(
                 lambda checked, st=stmt_type: self._on_map_accounts_clicked(st)
@@ -171,6 +172,7 @@ class FinancialRatiosDialog(BaseModal):
         # AI auto-detect button (all statements)
         ai_btn_layout = QHBoxLayout()
         self.ai_detect_btn = QPushButton("AI Auto-Detect All Statements")
+        self.ai_detect_btn.setStyleSheet("min-width: 260px;")
         self.ai_detect_btn.setToolTip("Use AI to detect columns across all datasets")
         self.ai_detect_btn.setObjectName("PrimaryButton")
         self.ai_detect_btn.clicked.connect(self._ai_detect_columns)
@@ -354,6 +356,7 @@ class FinancialRatiosDialog(BaseModal):
         cancel_btn.clicked.connect(self.reject)
         
         calc_btn = create_primary_button("Calculate Ratios")
+        calc_btn.setStyleSheet("min-width: 150px; padding: 4px 8px;")
         calc_btn.clicked.connect(self.accept_changes)
         
         btn_layout.addWidget(cancel_btn)

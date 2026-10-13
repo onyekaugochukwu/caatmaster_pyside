@@ -7,7 +7,8 @@ import polars as pl
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QDialogButtonBox,
     QLabel, QLineEdit, QComboBox, QListWidget, QListWidgetItem,
-    QGroupBox, QHBoxLayout, QPushButton, QProgressBar, QTextEdit
+    QGroupBox, QHBoxLayout, QPushButton, QProgressBar, QTextEdit,
+    QScrollArea, QFrame, QWidget
 )
 from PySide6.QtCore import Qt, Signal, Slot
 from typing import Dict, Any, List, Optional
@@ -37,7 +38,23 @@ class MLTrainingDialog(QDialog):
 
     def setup_ui(self):
         """Set up the dialog UI."""
-        layout = QVBoxLayout(self)
+        # Four stacked group boxes (incl. a multi-select feature list and
+        # a training-progress/results text box) push this dialog's
+        # natural height to ~760px with no scroll area - risking the
+        # OK/Cancel buttons landing off-screen on shorter displays or
+        # under Windows DPI scaling, the same bug the Benford dialog
+        # had. Content goes in a scroll area; the button box stays a
+        # fixed footer outside it.
+        main_layout = QVBoxLayout(self)
+
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+
+        content_widget = QWidget()
+        layout = QVBoxLayout(content_widget)
 
         # Model configuration section
         config_group = QGroupBox("Model Configuration")
@@ -73,15 +90,20 @@ class MLTrainingDialog(QDialog):
         self.features_list.setSelectionMode(QListWidget.MultiSelection)
         features_layout.addWidget(self.features_list)
 
-        # Select/Deselect buttons
+        # Select/Deselect buttons - explicit min-width so a narrow
+        # dialog (or Windows' wider DPI-scaled font metrics) can't
+        # force this text below a readable size.
         btn_layout = QHBoxLayout()
         select_all_btn = QPushButton("Select All")
+        select_all_btn.setStyleSheet("min-width: 90px; padding: 4px 8px;")
         select_all_btn.clicked.connect(self.select_all_features)
         deselect_all_btn = QPushButton("Deselect All")
+        deselect_all_btn.setStyleSheet("min-width: 100px; padding: 4px 8px;")
         deselect_all_btn.clicked.connect(self.deselect_all_features)
 
         btn_layout.addWidget(select_all_btn)
         btn_layout.addWidget(deselect_all_btn)
+        btn_layout.addStretch()
         features_layout.addLayout(btn_layout)
 
         layout.addWidget(features_group)
@@ -115,13 +137,16 @@ class MLTrainingDialog(QDialog):
 
         layout.addWidget(results_group)
 
-        # Dialog buttons
+        scroll_area.setWidget(content_widget)
+        main_layout.addWidget(scroll_area)
+
+        # Dialog buttons - fixed footer, outside the scroll area
         self.button_box = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
         self.button_box.accepted.connect(self.accept)
         self.button_box.rejected.connect(self.reject)
-        layout.addWidget(self.button_box)
+        main_layout.addWidget(self.button_box)
 
     def populate_columns(self):
         """Populate column selection widgets."""
