@@ -36,6 +36,9 @@ hiddenimports = [
     'numpy',
     'keyring',
     'keyring.backends',
+    'keyring.backends.Windows',
+    'keyring.backends.macOS',
+    'keyring.backends.SecretService',
     'jwt',
     'qtawesome',
     'qtpy',
@@ -58,6 +61,19 @@ hiddenimports += collect_submodules('arelle')
 # passlib's argon2 handler and CryptContext are reached through
 # lazy/dynamic lookups that PyInstaller's static analysis misses.
 hiddenimports += collect_submodules('passlib')
+
+# The AI provider SDKs (openai, anthropic, google-generativeai,
+# huggingface_hub) are only ever imported lazily from inside
+# src/services/ai_service.py - and src/ ships as plain data (see `datas`
+# below), loaded at runtime via sys.path.insert() in main.py, not through
+# PyInstaller's static Analysis of main.py's own import graph. So none of
+# these packages were ever discovered automatically and were silently
+# left out of the frozen build entirely, which surfaced as every AI
+# provider failing with "Failed to initialize provider client" (the
+# generic message ai_service.py's `except ImportError` handlers produce)
+# even with a correct, working API key.
+for pkg in ['openai', 'anthropic', 'google.generativeai', 'huggingface_hub']:
+    hiddenimports += collect_submodules(pkg)
 
 datas += collect_data_files('arelle')
 # qtawesome's font/charmap data files are collected by PyInstaller's
