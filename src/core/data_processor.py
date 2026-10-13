@@ -2758,16 +2758,20 @@ class DataProcessor:
         return pl.DataFrame(rows)
 
     def quick_stats(self, df: pl.DataFrame, column: str, output_cols: List[str] = None) -> pl.DataFrame:
-        """Add the column's min/max/mean/std as new columns (same value on every row)."""
+        """Add the column's min/max/mean/std as new columns (same value on every row).
+        mean/std are undefined for non-numeric dtypes (polars raises on
+        Series.std() for strings), so those two are left null there; min/max
+        still work since they're well-defined lexicographically."""
         if output_cols is None or len(output_cols) < 4:
             output_cols = [f"{column}_min", f"{column}_max", f"{column}_mean", f"{column}_std"]
         min_col, max_col, mean_col, std_col = output_cols[:4]
         s = df[column]
+        is_numeric = s.dtype.is_numeric()
         return df.with_columns([
             pl.lit(s.min()).alias(min_col),
             pl.lit(s.max()).alias(max_col),
-            pl.lit(s.mean()).alias(mean_col),
-            pl.lit(s.std()).alias(std_col),
+            pl.lit(s.mean() if is_numeric else None).alias(mean_col),
+            pl.lit(s.std() if is_numeric else None).alias(std_col),
         ])
 
     def stat_add_group_stats(self, df: pl.DataFrame, group_column: str, target_column: str,
