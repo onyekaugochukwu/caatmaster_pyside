@@ -204,7 +204,10 @@ class BaseAIProvider(ABC):
         "deepseek": {
             "base_url": "https://api.deepseek.com",
             "chat_endpoint": "/chat/completions",
-            "models": ["deepseek-chat"]
+            # deepseek-chat/deepseek-reasoner were discontinued 2026-07-24 in
+            # favor of deepseek-flash (non-thinking/thinking modes); DeepSeek's
+            # current model list is just these two - see api-docs.deepseek.com.
+            "models": ["deepseek-flash", "deepseek-v4-pro"]
         },
         "anthropic": {
             "base_url": "https://api.anthropic.com/v1",
@@ -562,7 +565,7 @@ class GoogleProvider(BaseAIProvider):
 class DeepSeekProvider(BaseAIProvider):
     """DeepSeek provider - OpenAI compatible API"""
 
-    def __init__(self, api_key: str, model: str = "deepseek-chat"):
+    def __init__(self, api_key: str, model: str = "deepseek-flash"):
         super().__init__(api_key, model, base_url="https://api.deepseek.com")
         self._client = None
 
