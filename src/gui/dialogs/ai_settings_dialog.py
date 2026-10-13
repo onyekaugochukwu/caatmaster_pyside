@@ -486,6 +486,15 @@ class AISettingsDialog(QDialog):
                 )
                 configs[provider] = config
                 saved_providers.append(provider)
+                # Credentials on disk are useless until the live AIManager
+                # actually has a provider instance for this name - without
+                # this, get_provider()/default_provider display stays
+                # "Not Configured" until the app is restarted (which
+                # triggers load_stored_providers()).
+                if self.ai_manager:
+                    self.ai_manager.add_provider(
+                        provider, config["api_key"], config["model"], config["base_url"]
+                    )
 
         # Save custom provider if configured
         if self.custom_provider_widget:
@@ -499,6 +508,11 @@ class AISettingsDialog(QDialog):
                 )
                 configs[custom_config["provider"]] = custom_config
                 saved_providers.append(custom_config["provider"])
+                if self.ai_manager:
+                    self.ai_manager.add_provider(
+                        custom_config["provider"], custom_config["api_key"],
+                        custom_config["model"], custom_config["base_url"]
+                    )
 
         # Save active provider
         active_index = self.active_provider_combo.currentIndex()
